@@ -198,7 +198,7 @@ Payload budget: **180 bytes** per chunk body. Outgoing messages sit in a queue d
 | `SUBMIT` | client → host | `sessionId^entry~entry…` where entry is `itemIdx=charName=overrideFlag=star` | Submit or revise entries (`star` is the SK priority pick, 010 §7) |
 | `STATE` | host → all | `sessionId^submittedNames~…^entry~entry…` where entry is `itemIdx=charName=owner=tier` | Authoritative aggregate; drives the live open view |
 | `RESULT` | host → all | `sessionId^result~result…` where result is `itemIdx=winner=tier=roll=outcome` | Resolved batch |
-| `ROLLS` | host → all | `sessionId^roll~roll…` where roll is `itemIdx=charName=tier=roll=listIdx` | Full roll record for the results table; `roll` is 0 under SK, `listIdx` is 0 under ROLL |
+| `ROLLS` | host → all | `sessionId^roll~roll…` where roll is `itemIdx=charName=tier=roll=listIdx=status=rerolls` | Full roll record for the results table; `roll` is 0 under SK, `listIdx` is 0 under ROLL. `status` is empty for a rolled entry, `NC` not consulted, `WD` withdrawn (010 §7); `rerolls` is the tie re-roll list joined with `+`. Both exist so the results table can show a not-consulted entry as such and a re-roll inline (005 §5) — neither is derivable from the roll value |
 | `ABORT` | host → all | `sessionId^reasonCode` | Batch cancelled |
 | `CFG` | host → all | `tierCount^timerSeconds^lootMode` | Settings changed between batches |
 | `SKLIST` | host → all | `version^seed^name~name…` | The authoritative priority list, sent immediately after `OPEN` and on request (010 §8) |

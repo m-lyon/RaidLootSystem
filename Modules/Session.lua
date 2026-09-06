@@ -253,8 +253,12 @@ function Session.RollRows(results)
     for i = 1, #results do
         local r = results[i]
         for _, e in ipairs(r.record or {}) do
-            rows[#rows + 1] = { itemIdx = r.itemIdx, char = e.char, tier = e.tier,
-                                roll = e.roll or 0, listIdx = e.listIdx or 0 }
+            rows[#rows + 1] = {
+                itemIdx = r.itemIdx, char = e.char, tier = e.tier,
+                roll = e.roll or 0, listIdx = e.listIdx or 0,
+                status = C.ROLL_STATUS_OF_REASON[e.reason or ""] or C.ROLL_STATUS.ROLLED,
+                rerolled = e.rerolled or {},
+            }
         end
     end
     return rows

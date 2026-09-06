@@ -157,6 +157,24 @@ C.NOT_ROLLED = {
     WITHDRAWN     = "withdrawn",
 }
 
+-- The same, on the wire (ROLLS, spec 000 section 5). An entry that rolled, or that
+-- was looked up under SK, carries an empty status.
+C.ROLL_STATUS = {
+    ROLLED        = "",
+    NOT_CONSULTED = "NC",
+    WITHDRAWN     = "WD",
+}
+C.ROLL_STATUS_OF_REASON = {
+    [C.NOT_ROLLED.NOT_CONSULTED] = C.ROLL_STATUS.NOT_CONSULTED,
+    [C.NOT_ROLLED.WITHDRAWN]     = C.ROLL_STATUS.WITHDRAWN,
+}
+C.REROLL_JOIN = "+"           -- joins a re-roll list inside one ROLLS element
+
+-- The roll window turns amber for the last seconds of a batch (spec 005 section 3) and
+-- shows an abort reason in place for this long before closing (section 6).
+C.COUNTDOWN_WARN_SECONDS = 30
+C.ABORT_LINGER_SECONDS = 10
+
 --------------------------------------------------------------------------------
 -- Saved-variable defaults (spec 000 section 4). Database.lua owns the copy.
 --------------------------------------------------------------------------------
@@ -190,6 +208,12 @@ C.DEFAULTS = {
     },
     history = {},
     pending = {},
+    -- Ticks the player has made in the roll window but not yet submitted. Kept in saved
+    -- variables so a /reload mid-batch loses nothing (spec 005 section 6).
+    scratch = {
+        sessionId = "",
+        ticks = {},               -- itemIdx -> charName -> { override, star }
+    },
 }
 
 -- The enUS class file names. Used by the manual-entry class picker (spec 001 section 4).

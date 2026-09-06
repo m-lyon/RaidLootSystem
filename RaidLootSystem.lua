@@ -137,7 +137,9 @@ end
 
 local function help()
     ns.Print("commands:")
-    ns.Print("  /rls              open your hierarchy")
+    ns.Print("  /rls              open the roll window, or your hierarchy when no batch is live")
+    ns.Print("  /rls window       open the roll window")
+    ns.Print("  /rls hierarchy    open your hierarchy")
     ns.Print("  /rls status       version, roster size, conflicts")
     ns.Print("  /rls tiers <0-5>  set the tier count you host with")
     ns.Print("  /rls publish      resend your roster to the raid")
@@ -158,6 +160,14 @@ local function dispatch(input)
     command = (command or ""):lower()
 
     if command == "" then
+        if ns.RollWindow.HasContent() then
+            ns.RollWindow.Toggle()
+        else
+            ns.HierarchyEditor.Toggle()
+        end
+    elseif command == "window" then
+        ns.RollWindow.Show()
+    elseif command == "hierarchy" then
         ns.HierarchyEditor.Toggle()
     elseif command == "status" then
         status()
@@ -226,6 +236,7 @@ loader:SetScript("OnEvent", function(_, event, addonName)
         ns.LootDetect.Init()
         ns.Session.Init()
         ns.Client.Init()
+        ns.RollWindow.Init()
         ns.Minimap.Init()
         ns.Comms.Send(C.OPS.HI, C.VERSION)
     end

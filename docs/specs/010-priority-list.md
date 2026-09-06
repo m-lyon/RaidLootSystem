@@ -239,7 +239,7 @@ Existing ops change:
 | Op | Change |
 |---|---|
 | `SUBMIT` | entry becomes `itemIdx=charName=overrideFlag=star` |
-| `ROLLS` | roll becomes `itemIdx=charName=tier=roll=listIdx`; `roll` is 0 under SK, `listIdx` is 0 under ROLL |
+| `ROLLS` | roll becomes `itemIdx=charName=tier=roll=listIdx=status=rerolls`; `roll` is 0 under SK, `listIdx` is 0 under ROLL; `status` is `WD` for an entry withdrawn by rule (1) or the star, so the results table can mark it (§11) |
 | `CFG` | `tierCount^timerSeconds^lootMode` |
 
 **`/rls sk verify`** recomputes the list from `priority.seed` plus the chronological award events

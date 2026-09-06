@@ -409,17 +409,26 @@ function Serialize.decodeResult(body)
 end
 
 --------------------------------------------------------------------------------
--- ROLLS: sessionId^itemIdx=charName=tier=roll=listIdx~...
+-- ROLLS: sessionId^itemIdx=charName=tier=roll=listIdx=status=rerolls~...
 --
 -- The full record behind the results table. `roll` is 0 under SK and `listIdx`
--- is 0 under ROLL (spec 010 section 8).
+-- is 0 under ROLL (spec 010 section 8). `status` is empty for an entry that rolled
+-- (or was looked up under SK), NC for one never consulted and WD for one withdrawn
+-- by SK's one-win rule; `rerolls` is the entry's tie re-rolls joined with "+". Both
+-- are what let the results table show an entry as not-consulted rather than as a
+-- loss, and a re-roll as "83 -> 47" (spec 005 section 5). A row without them
+-- decodes as rolled with no re-rolls.
 --------------------------------------------------------------------------------
 
 function Serialize.encodeRolls(sessionId, rolls)
     local rows = {}
     for i = 1, #rolls do
         local r = rolls[i]
-        rows[i] = { r.itemIdx, r.char, r.tier or 0, r.roll or 0, r.listIdx or 0 }
+        local rerolls = {}
+        for j, value in ipairs(r.rerolled or {}) do rerolls[j] = tostring(value) end
+        rows[i] = { r.itemIdx, r.char, r.tier or 0, r.roll or 0, r.listIdx or 0,
+                    r.status or C.ROLL_STATUS.ROLLED,
+                    table.concat(rerolls, C.REROLL_JOIN) }
     end
     local body, err = encodeElements(rows)
     if not body then return nil, err end
@@ -437,9 +446,16 @@ function Serialize.decodeRolls(body)
         local itemIdx, char = tonumber(sub[1]), sub[2]
         if not itemIdx then return nil, "ROLLS has a non-numeric item index" end
         if not char or char == "" then return nil, "ROLLS entry has no character" end
+        local rerolled = {}
+        for _, value in ipairs(Util.split(sub[7] or "", C.REROLL_JOIN)) do
+            local n = tonumber(value)
+            if n then rerolled[#rerolled + 1] = n end
+        end
         rolls[#rolls + 1] = { itemIdx = itemIdx, char = char,
                               tier = number(sub[3], 0), roll = number(sub[4], 0),
-                              listIdx = number(sub[5], 0) }
+                              listIdx = number(sub[5], 0),
+                              status = sub[6] or C.ROLL_STATUS.ROLLED,
+                              rerolled = rerolled }
     end
 
     return { sessionId = sessionId, rolls = rolls }
