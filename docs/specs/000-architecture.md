@@ -55,9 +55,7 @@ RaidLootSystem/
     Tiers.lua                 -- hierarchy ordering -> tier assignment
     Eligibility.lua           -- (itemInfo, charInfo, config) -> bool, reason
     Resolve.lua               -- entries -> ordered winners + full roll record
-    GearScore.lua             -- (itemLevel, quality, equipLoc) -> item value   [010]
-    Ledger.lua                -- history records -> per-player standings        [010]
-    Fairness.lua              -- ledger + entries -> tier deltas / roll penalties [011]
+    PriorityList.lua          -- Suicide Kings list: seed, suicide, restore     [010]
   Modules/
     Database.lua              -- SavedVariables load, defaults, migration
     Comms.lua                 -- addon-message transport: queue, chunk, throttle
@@ -69,7 +67,7 @@ RaidLootSystem/
     Award.lua                 -- GiveMasterLoot, failures, trade fallback, auto-equip
     Pending.lua               -- undelivered items and their 2h countdown
     History.lua               -- record, retain, export
-    Ledger.lua                -- host-side derivation + LEDGER broadcast        [010]
+    PriorityList.lua          -- list storage, sync, SKLIST broadcast, verify   [010]
     Announce.lua              -- chat output, verbosity levels
     Simulate.lua              -- /rls simulate harness
   UI/
@@ -131,8 +129,13 @@ RaidLootSystemDB = {
     tierCount        = 3,            -- 0..5
     timerSeconds     = 180,          -- 15..300
     qualityThreshold = 4,            -- 3 = rare, 4 = epic
-    -- fairness ledger and modes: see spec 010 §8 for the full block
-    fairnessMode     = "OFF",        -- OFF | TIER | ROLL
+    lootMode         = "ROLL",       -- ROLL | SK; SK selectable only once seeded (010 §2)
+  },
+
+  priority = {                       -- Suicide Kings list. Every client stores it, not just
+    version = 0,                     -- the host, because every client renders it. Spec 010 §9.
+    seed    = 0,
+    order   = {},                    -- character names, index 1 = highest priority
   },
 
   history = { --[[ see spec 008 ]] },
@@ -187,13 +190,13 @@ Payload budget: **180 bytes** per chunk body. Outgoing messages sit in a queue d
 | `ROSTER` | client → all | `name=class~name=class~…` (in hierarchy order) | Publish this player's claimed roster |
 | `RREQ` | host → all | *(empty)* | Ask everyone to resend `ROSTER` |
 | `OPEN` | host → all | `sessionId^tierCount^endsAt^item~item…` where item is `idx=itemString=count` | Open a batch |
-| `SUBMIT` | client → host | `sessionId^entry~entry…` where entry is `itemIdx=charName=overrideFlag` | Submit or revise entries |
+| `SUBMIT` | client → host | `sessionId^entry~entry…` where entry is `itemIdx=charName=overrideFlag=star` | Submit or revise entries (`star` is the SK priority pick, 010 §7) |
 | `STATE` | host → all | `sessionId^submittedNames~…^entry~entry…` where entry is `itemIdx=charName=owner=tier` | Authoritative aggregate; drives the live open view |
 | `RESULT` | host → all | `sessionId^result~result…` where result is `itemIdx=winner=tier=roll=outcome` | Resolved batch |
-| `ROLLS` | host → all | `sessionId^roll~roll…` where roll is `itemIdx=charName=baseTier=effTier=roll=penalty` | Full roll record for the results table (011 §7) |
+| `ROLLS` | host → all | `sessionId^roll~roll…` where roll is `itemIdx=charName=tier=roll=listIdx` | Full roll record for the results table; `roll` is 0 under SK, `listIdx` is 0 under ROLL |
 | `ABORT` | host → all | `sessionId^reasonCode` | Batch cancelled |
-| `CFG` | host → all | `tierCount^timerSeconds^fairnessMode` | Settings changed between batches |
-| `LEDGER` | host → all | `mode^reference^params^row~row…` where row is `player=count=weight` | The host's loot-ledger standings, sent immediately after `OPEN` (010 §7) |
+| `CFG` | host → all | `tierCount^timerSeconds^lootMode` | Settings changed between batches |
+| `SKLIST` | host → all | `version^seed^name~name…` | The authoritative priority list, sent immediately after `OPEN` and on request (010 §8) |
 | `SYNC` | client → host | `sessionId` | Request a resend of `OPEN` + `STATE` |
 
 ### Authority rules

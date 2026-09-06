@@ -122,17 +122,35 @@ which takes ten seconds to fix properly.
 
 ---
 
-## ~~History-driven priority decay~~ — PROMOTED
+## Ledger-based fairness adjustment
 
-**Promoted** to [proposal 001](proposals/001-loot-fairness.md), specs
-[010](specs/010-loot-ledger.md) and [011](specs/011-fairness-modes.md).
+**What:** keep a **ledger** of what each player's roster has recently received — per owning
+player, over a rolling window of loot-bearing bosses, delivered items only — and use it to
+adjust outcomes. Two mechanisms were designed against it:
 
-Two mechanisms are on the table — tier demotion and decayed roll weighting — and the group has
-yet to pick one. Both are off by default until it does.
+- **Tier adjustment.** Entrants who are ahead of the field drop one tier per item ahead, capped
+  at two, possibly below Rest.
+- **Roll adjustment.** Items weighed by GearScore with an exponential decay; players who are
+  ahead roll at a penalty, capped, tiers untouched.
 
-The deferral note's one hard constraint was carried through: history reaches `Core/Resolve` as
-an **injected ledger parameter**, never a global read, so the pure-core testability guarantee
-survives.
+Both are fully specified in [proposal 001](proposals/001-loot-fairness.md) §2–§3, including the
+parameters, the worked example, and the reasoning for per-player rather than per-character
+accounting.
+
+**Why deferred:** the group chose **Suicide Kings** instead ([spec 010](specs/010-priority-list.md)).
+Tier adjustment can override the hierarchy, which the group didn't want; roll adjustment turned
+out too gentle to fix the problem, and neither lets you answer *"where will I stand tomorrow?"*
+without a calculator. Suicide Kings is deterministic, which beat both.
+
+**Promote if:** Suicide Kings' tier gating proves too blunt in practice — the specific failure to
+watch for is a player whose main is uncontested in a slot winning that slot indefinitely
+regardless of list position (proposal 001 §4, spec 010 §7). These are the designed fallback.
+
+**Cost:** medium. The history fields it needs (`itemLevel`, `quality`, `equipLoc` per item) are
+**already being logged** under both v1 modes precisely so this stays buildable — see
+[spec 008](specs/008-history-and-export.md) §3. Resolution stops being a pure function of the
+current batch; design the ledger as an injected parameter, never a global read, or spec 003's
+testability guarantee goes with it.
 
 ---
 
@@ -159,6 +177,11 @@ our own scanning — and the group is still asking for it.
 **Cost:** medium-high, and it shares its entire data problem with **Gear-aware upgrade
 filtering** below. If either is promoted, both should be: they stand or fall on the same
 question of whether we can trust per-bot gear data.
+
+Under Suicide Kings this would most naturally appear as a *seeding* rule — order the initial list
+by gear, worst first — rather than as an ongoing adjustment. That is a far smaller change than
+the ledger-based version, and it only needs the gear data to be good **once**, which makes the
+staleness objection much weaker. Worth considering first if this is ever promoted.
 
 ---
 

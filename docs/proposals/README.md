@@ -19,4 +19,10 @@ record of the reasoning.
 
 | # | Proposal | Status |
 |---|---|---|
-| [001](001-loot-fairness.md) | Making loot distribution fairer over time | **Open — awaiting review** |
+| [001](001-loot-fairness.md) | Making loot distribution fairer over time | **Decided** — Suicide Kings ([spec 010](../specs/010-priority-list.md)) |
+
+A decided proposal keeps its full comparison rather than being trimmed to the winner. "Why did we
+not do the obvious thing?" is the question that gets re-asked, and the losing options are the
+only answer to it. If the group later picks an option the proposal did not contain, add it to the
+comparison rather than appending a note — a document that argues for two things and concludes
+"we chose neither" teaches nobody anything.

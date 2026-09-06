@@ -1,8 +1,12 @@
 # Proposal 001 — Making loot distribution fairer over time
 
-**Status:** open, awaiting review.
-**Decision needed:** pick one of three settings — **Off**, **Tier adjustment**, or **Roll
-adjustment**.
+> **Status: DECIDED — Option 3, Suicide Kings, chosen for v1.**
+>
+> Options 1 and 2 are deferred to the [roadmap](../ROADMAP.md) with their reasoning intact.
+> Implementation: [spec 010](../specs/010-priority-list.md).
+>
+> This document is kept as the comparison that produced the decision. If someone wants to
+> re-open it, this is what they should argue with.
 
 ---
 
@@ -16,206 +20,145 @@ an outcome nobody actually wants:
 > On the fifth, the rules treat you both identically.
 
 That is not a bug in the roll — it is what an independent lottery does. Rolls cluster. The fix
-is to give the system a memory: **the more you have recently received, the less the rules
-favour you.**
+is to give the system a memory.
 
-Both options below do exactly that, and they differ only in *how* they intervene. Both are
-optional, both are off unless the raid leader turns them on, and both are visible to everyone
-before you commit an entry.
+Three options were considered. All three keep the hierarchy and the tier gate exactly as they
+are: a T1 entry still beats a T2 entry, always. They differ in what happens **inside** a tier,
+where several characters are genuinely competing.
 
-## 2. What both options share: the ledger
+## 2. Option 1 — Tier adjustment *(not chosen)*
 
-Whichever option we pick, the addon keeps a **ledger** — a running record of what each player's
-roster has recently received.
+Keep a **ledger** of what each player's roster has recently received — per owning player, over
+the last 12 loot-bearing bosses, delivered items only. For each item, the entrant who has
+received least sets a baseline; everyone else drops one tier per item they are ahead, capped at
+two.
 
-**The ledger counts players, not characters.** Your whole roster shares one entry. If your mage
-main wins a weapon, your rogue bot carries that too.
+A demotion could push below Rest, shown as `Rest −1`.
 
-> **Why:** the entire point of ranking your mage 1st is that it eats first. A per-character
-> ledger would demote it *for doing exactly that*, quietly flattening your own hierarchy over a
-> night. Player-level accounting leaves your internal ordering completely untouched and only
-> arbitrates *between* rosters — which is the thing that actually feels unfair.
->
-> This assumes rosters are roughly the same size. Ours are. If that changes, the ledger becomes
-> unfair in the opposite direction and needs revisiting.
+**Character:** blunt and decisive. Being one item ahead does not make you slightly less likely to
+win — it takes you out of contention, because a lower tier is never consulted while a higher one
+can supply a winner.
 
-**What goes in it:**
+**Why it lost:** it is the only one of the three that can override the hierarchy, and the group
+preferred a system where a high ranking still means what it says. It also required accepting that
+Rest is no longer strictly equal chance.
 
-- Only items **actually delivered**. An award that failed, or that you never received, does not
-  count against you — and if a delivery later fails, the ledger gives it back.
-- Only items at or above the raid's quality threshold (epic by default).
-- Items nobody claimed, and items you passed on, do nothing.
+## 3. Option 2 — Roll adjustment *(not chosen)*
 
-**How far back it looks:** the last **12 loot-bearing bosses**, and nothing older than **14
-days**. Bosses that dropped nothing relevant don't age the window.
-
-> **Note:** this is deliberately *not* "tonight only". The window spans nights — if last night
-> ended six bosses ago, tonight's first roll already knows about it. Fairness across a week of
-> raiding is a stronger property than fairness within one evening, and a nightly reset would
-> mean whoever cleaned up on Tuesday starts Wednesday level with everyone.
-
-**It is completely public.** The master looter's ledger is broadcast to the raid when a roll
-opens, and the roll window shows everyone's standing. There is no hidden number moving your
-odds. If the master looter's ledger looks wrong — they joined late, they reinstalled — everyone
-can see that it looks wrong and say so.
-
-**It resolves item by item within a boss.** If a boss drops four things and you win the first,
-you carry that weight into the other three. A boss dropping four epics is exactly where "one
-person took everything" happens, and freezing the ledger at the start of the roll would switch
-the feature off at the worst possible moment.
-
----
-
-## 3. Option 1 — Tier adjustment
-
-**Players who are ahead drop tiers for that item.**
-
-Your tier comes from your hierarchy as it does today. Then, for each item, the addon compares
-you against **the other people entering that specific item**. Whoever has received least among
-them sets the baseline and is unaffected. Everyone else drops one tier per item they are ahead,
-to a maximum of two tiers.
-
-| Items ahead of the field | Adjustment |
-|---|---|
-| 0 | none |
-| 1 | −1 tier |
-| 2 | −2 tiers |
-| 3 or more | −2 tiers (capped) |
-
-A demotion can push you **below Rest**, shown as `Rest −1` and `Rest −2`. Rest is where most bot
-loot is actually decided, so an adjustment that couldn't reach into it would barely do anything.
-
-> **This means Rest is no longer strictly "equal chance"** — it is equal chance *before* the
-> adjustment. That is a real change to a promise the design currently makes, and it is the main
-> thing to weigh up about this option.
-
-Your own ordering is preserved: every character you enter for an item is adjusted by the same
-amount, so your mage still sits above your rogue.
-
-### What this feels like
-
-Blunt and decisive. Being one item ahead does not make you slightly less likely to win — it can
-take you out of contention entirely, because a lower tier is never consulted while a higher one
-can supply a winner. When it fires, it fires hard.
-
----
-
-## 4. Option 2 — Roll adjustment
-
-**Players who are ahead roll with a penalty. Tiers are untouched.**
-
-Your tier is exactly what your hierarchy says, always. Instead, within each tier, players who
-have received more recently roll at a disadvantage.
-
-**Items are weighed, not counted.** A 264 weapon is worth far more than a 232 ring, and this
-option measures that using **GearScore** — the same scale PlayerbotManager already shows you.
-Winning a big upgrade costs you more than winning a trinket.
-
-**Older wins fade.** A win loses half its weight every **6 loot-bearing bosses** — roughly half a
-raid night. Something from earlier this evening still bites hard; something from a night ago is
-worth about half; from two nights ago, about a quarter. It fades by *bosses elapsed*, not by
-time, so a fortnight's break doesn't forgive anything a week of raiding wouldn't have.
-
-**The penalty:** being one average item ahead of the field costs **15 roll points**, out of 100.
-The penalty is capped at **30** — roughly two items — so it never becomes mathematically
-impossible to win, it just becomes hard.
-
-The roll window shows the arithmetic, never just the result:
+The same ledger, but weighing items by **GearScore** rather than counting them, with older wins
+fading — half-life six bosses. Players who are ahead roll at a penalty: being one average item
+ahead costs 15 points out of 100, capped at 30. Tiers untouched.
 
 ```
 Bonk   (Dave)   T1   88 − 12 = 76
-Chop   (Anna)   T1   41 −  0 = 41     <- Anna has received nothing recently
+Chop   (Anna)   T1   41 −  0 = 41
 ```
 
-### What this feels like
+**Character:** gentle and continuous. No cliff edges, and it can never overturn the hierarchy.
 
-Gentle and continuous. There are no cliff edges: one more item makes you a bit worse off, not
-suddenly ineligible. But it also **can never overturn your hierarchy** — a T1 entry still beats
-every T2 entry no matter how much loot that player has taken, because tiers are still walked
-strictly. It only reorders people who were already competing directly.
+**Why it lost:** too polite to fix the problem it was built for. It only reorders people already
+competing directly, does nothing where one person's top tier is uncontested, and — the deciding
+objection — nobody can answer *"where will I stand tomorrow?"* without a calculator. Its
+adjustment is a decayed weighted number that moves every raid.
 
-It also does **nothing** on an item where only one person's top tier is entered, which is
-common.
+## 4. Option 3 — Suicide Kings *(chosen)*
 
----
+A single ordered list of **every character** in the raid, shuffled once at the start.
+
+When an item drops, tier gating applies exactly as today. Inside a tier, **the character highest
+on the list wins.** No roll. That character then drops to the **bottom** of the list, and
+everyone below it moves up one.
+
+That is the whole system.
+
+- **Nothing is random.** Once the list is seeded, every outcome is a fact you can look up in
+  advance, and disputes end by pointing at a number.
+- **Your position only improves while you wait.** Losing costs you nothing; not entering costs
+  you nothing. Priority is earned purely by not having won recently.
+- **Characters, not players.** Your mage winning sinks your mage. Your rogue keeps its place — so
+  your bots getting kitted out never costs your main its priority.
+- **Characters not in the raid don't move.** A bot left at home doesn't drift up the list while
+  everyone else raids.
+
+### What it costs
+
+**The guarantee only holds inside a tier.** Classic Suicide Kings promises: *wait long enough,
+reach the top, and the next thing you want is yours.* Because we keep the tier gate, that promise
+holds only among characters in the same bucket. If Anna's main is the raid's only warrior, she
+takes every plate item at T1 forever, however far down the list she falls.
+
+What limits it: **an uncontested win still suicides you.** Anna keeps her uncontested plate, but
+she drops down the list and stops winning the *contested* things — tokens, weapons, trinkets. The
+list works where people are actually competing and is inert where nobody is.
+
+**Ticking a box is still free at the player level.** Suicide Kings is often described as making
+entry a real decision, because entering costs you your position. With a per-character list, that
+pressure exists per character: your bot spends its own place, not yours. Don't expect the
+strategic layer that guild write-ups describe.
+
+### Two rules that classic Suicide Kings doesn't need
+
+Classic SK resolves one item at a time, by hand. We resolve a whole boss at once, which creates a
+problem: your mage has one position but six items to want.
+
+1. **One win per character per batch.** A character that wins is withdrawn from the rest of that
+   boss's items. Without this, being top of the list and ticking everything wins you everything,
+   for the price of one suicide.
+2. **The priority pick.** Each character stars **one** of its ticked items. If it would win more
+   than one, the star decides which. Starring costs nothing — it is consulted only when you would
+   genuinely have won several — and without it your mage wins the junk ring in loot slot 1 and
+   loses the weapon in slot 4 to arbitrary ordering.
 
 ## 5. Side by side
 
-| | **Tier adjustment** | **Roll adjustment** |
-|---|---|---|
-| What moves | Your tier, for one item | Your roll, within your tier |
-| Strength | Strong — can remove you from contention | Gentle — makes you a slight underdog |
-| Counts | Items, equally | Item value, via GearScore |
-| Older wins | Count fully inside the window, then vanish | Fade smoothly, half-life 6 bosses |
-| Can it overturn the hierarchy? | **Yes** — that is the mechanism | **No**, ever |
-| Effect inside Rest | Strong (can push below Rest) | Strong (Rest is one big bucket) |
-| Effect on a solo top-tier entry | Can hand the item to a lower tier | **None** |
-| Predictable? | Very — whole tiers, easy to count | Less — a decayed weighted number |
-| Main risk | Overcorrects: "I'm T1 and I still can't win" | Undercorrects: too polite to fix anything |
-
-**The short version:** Tier adjustment treats your hierarchy as a strong default that fairness
-is allowed to override. Roll adjustment treats your hierarchy as inviolable and does what it can
-inside it.
+| | **1. Tier adjustment** | **2. Roll adjustment** | **3. Suicide Kings** |
+|---|---|---|---|
+| Deterministic? | No | No | **Yes** |
+| Can you predict your standing? | Roughly | Not really | **Exactly** |
+| What decides inside a tier | Tier drop, then a roll | A penalised roll | List position |
+| Can it overturn the hierarchy? | Yes | No | No |
+| Unit | Owning player | Owning player | **Character** |
+| Item value matters? | No | Yes, GearScore | No |
+| Effect on a solo top-tier entry | Can hand it to a lower tier | None | None, but still suicides |
+| State it keeps | Derived tally | Derived tally | **An ordered list that must not drift** |
+| Main risk | Overcorrects | Undercorrects | Tier gating blunts it |
 
 ## 6. Worked example
 
-Mid-raid. Tier count 3. A plate chest drops. Five people enter:
+Mid-raid. Tier count 3. A plate chest drops. Five characters are entered:
 
-| Character | Owner | Tier | Owner's recent haul |
+| Character | Owner | Tier | List position |
 |---|---|---|---|
-| Chop | Anna | T1 | nothing |
-| Bonk | Dave | T1 | one item, 2 bosses ago |
-| Smash | Steve | T3 | four items |
-| Rusty | Priya | Rest | nothing |
-| Grim | Tom | Rest | three items |
+| Chop | Anna | T1 | 14 |
+| Bonk | Dave | T1 | 2 |
+| Smash | Steve | T3 | 1 |
+| Rusty | Priya | Rest | 5 |
+| Grim | Tom | Rest | 3 |
 
-**Today (Off).** Anna and Dave roll it out at T1. Dave rolls 88, Anna rolls 41. **Dave wins.**
-Anna having received nothing all night is not a factor.
+**Under the old rules.** Anna and Dave roll it out at T1. Anyone can win.
 
-**Tier adjustment.** Anna and Priya set the baseline at zero. Dave is 1 ahead, so T1 becomes T2.
-Steve is 4 ahead, capped at 2, so T3 becomes `Rest −1`. Tom is 3 ahead, capped, so Rest becomes
-`Rest −2`. Anna is now **alone in T1** and wins uncontested without rolling. Dave's 88 never
-happens.
+**Under Suicide Kings.** T1 is occupied, so nothing below it is consulted — Steve's position 1
+is irrelevant, because his warrior is a T3 entry and a T1 entry exists. Between Chop (14) and
+Bonk (2), **Bonk wins**, with no roll. Bonk goes to the bottom of the list; Chop moves up to 13,
+and so does everyone else below Bonk who is in the raid.
 
-**Roll adjustment.** Tiers unchanged, so it is still Anna and Dave in T1. Dave's single win two
-bosses ago has decayed to about 79% of its value, giving a 12-point penalty. Dave rolls
-88 − 12 = 76, Anna rolls 41 − 0 = 41. **Dave still wins.**
+Next time a plate chest drops and both want it, Chop wins.
 
-Same board, three different answers. That gap is the decision.
+## 7. What it does not do
 
-## 7. Trying them properly
+- **No gear awareness.** An undergeared bot gets no priority for being undergeared. That needs
+  gear data that only exists when someone runs a manual scan with everyone in range. On the
+  [roadmap](../ROADMAP.md).
+- **No sense of what you need.** Winning a marginal upgrade costs your character exactly as much
+  as winning its best-in-slot.
+- **No item weighting.** A ring and a weapon both cost one suicide.
+- **Nothing for passing.** Passing earns no credit; only winning costs you.
 
-Both options will be built, behind one raid-leader setting with three values. Switching is a
-dropdown, not a release — so we can run one for a fortnight and change our minds cheaply.
+## 8. Settings
 
-There is also an optional **shadow mode** the master looter can switch on, which shows in the
-results what the *other* option would have done: *"under Roll adjustment, Bonk would have won
-this."* It is off by default, because a permanent stream of near-misses would be miserable.
-Turned on for a trial, it turns this argument from taste into evidence.
+`ROLL` — the original rules — stays available and is the **default**. Seeding the priority list
+is the deliberate act that makes Suicide Kings selectable, so there is no half-configured state
+to get stuck in. The raid leader can reseed, reorder and manually correct the list; every such
+change is announced in raid chat and recorded.
 
-## 8. What neither option does
-
-- **Neither looks at your gear.** An undergeared bot gets no priority for being undergeared —
-  only for having received little *recently*. Weighting by how geared a character actually is
-  is a real idea, and it is on the [roadmap](../ROADMAP.md); it needs gear data that only exists
-  when someone remembers to run a manual scan while everyone stands in range, so it is not
-  something to build a fairness rule on yet.
-- **Neither knows what you need.** Winning an item you barely wanted costs you exactly as much
-  as winning your best-in-slot.
-- **Neither can be gamed by passing.** Passing earns no credit; only receiving costs you.
-- **Neither touches your hierarchy.** You still set your ordering once and it still applies.
-
-## 9. The decision
-
-1. **Off** — keep today's rules. Every item independent, memory-free.
-2. **Tier adjustment** — strong, decisive, can override the hierarchy.
-3. **Roll adjustment** — gentle, continuous, never overrides the hierarchy.
-
-Argue with this document. The parameters — 12 bosses, 14 days, 2 tiers, 15 points, 30 cap,
-6-boss half-life — are all raid-leader settings, and every one of them is a guess that should be
-challenged.
-
----
-
-*Implementation: [spec 010](../specs/010-loot-ledger.md) (the ledger),
-[spec 011](../specs/011-fairness-modes.md) (both options).*
+The initial shuffle uses a **published seed**, so anyone can reproduce it and check.

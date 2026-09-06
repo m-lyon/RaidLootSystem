@@ -50,13 +50,16 @@ the purity rule.
 | `eligibility` | The check order and every reason code, incl. cloaks and tokens | 003 §8 |
 | `resolve` | Tier walking, multi-copy spill, boundary ties, unclaimed, degraded | 003 §9 |
 | `serialize` | Round-trip of every op, chunk split/join, malformed input rejection | 000 §5 |
-| `gearscore` | Real WotLK items pinned to exact scores; unscoreable slots and qualities | 010 §4 |
-| `ledger` | Window, decay, dedupe, delivery reversal, reset, manual adjustment | 010 §12 |
-| `fairness` | Both modes, neutrality under `OFF`, caps, sequential batch threading | 011 §9 |
+| `priority` | Seed, suicide with absentees, restore, roster churn, replay | 010 §12 |
+| `sk` | SK resolution: tier gating, one-win rule, the star fixed point | 010 §12 |
 
-The `fairness` suite carries a standing obligation: **every `resolve` case must also pass with
-`opts.fairness.mode = "OFF"` over a populated ledger.** That is what stops 011 from quietly
-changing the base algorithm.
+The `sk` suite carries a standing obligation: **every `resolve` case must also pass with
+`opts.lootMode` absent and with `"ROLL"`.** That is what stops 010 from quietly changing the base
+algorithm.
+
+Under `SK` the scripted rng must record **zero calls** during resolution — a test that asserts
+the absence of randomness, because the whole promise of the mode is that outcomes are lookups
+rather than draws.
 
 ### Scripted randomness
 
@@ -127,18 +130,20 @@ window → revision → close → resolution → results rendering → history w
 | `special` | An unclassifiable item with the filter off |
 | `abort` | Master looter changing mid-batch |
 | `chunked` | A payload large enough to require multi-chunk transport |
-| `ledger` | A seeded loot history, so adjustments are visible on the first roll |
-| `tiermode` | An entrant demoted below Rest, rendering as `Rest -1` |
-| `rollmode` | A visible roll penalty and its decomposition in the results table |
-| `sweep` | One roster winning item 1 of 4, so the within-batch ledger update is visible |
+| `sk` | A seeded priority list, so positions decide a batch with no rolls |
+| `star` | A character that would win two items, taking its starred one |
+| `absent` | A suicide with absent characters in the list, holding their indices |
+| `restore` | A failed delivery returning a character to its prior index |
 
 **Guard rails:**
 
 - Simulation refuses to run while a real batch is open.
 - It never sends a real addon message, a real chat message, or a real whisper.
 - History records written in simulation are tagged `simulated = true` and excluded from the
-  history browser by default, **and from the loot ledger unconditionally** (010 §5). A
-  simulation that moved real standings would be worse than no simulation.
+  history browser by default.
+- **Simulation never mutates the real priority list.** It operates on a copy and discards it. A
+  simulation that suicided people for pretend items would be worse than no simulation, and unlike
+  a bad history record it cannot be spotted by looking at it.
 - The award step is stubbed — `GiveMasterLoot` is never called.
 
 ## 5. Manual test checklist
@@ -153,6 +158,10 @@ Kept in the repo and run before tagging a release, because some things only exis
 - A real tier token drop → correct classes enterable.
 - Auto-equip whisper reaches a bot and is accepted by the server's playerbot build.
 - Trade path: take an item, log out, log in, deliver, confirm the pending record closed.
+- Seed the list on one client; confirm every other client shows the identical order and version.
+- Award under `SK`, `/reload` every client, confirm all copies still agree.
+- Fail a delivery under `SK` and confirm the winner is restored to its exact prior index on
+  every client, not just the host's.
 
 ## 6. CI
 
@@ -174,6 +183,5 @@ A GitHub Actions workflow on push and PR:
 - `/rls simulate scenario=tie` produces a visible re-roll in the roll window without a raid.
 - `/rls simulate` writes no addon messages and no chat output.
 - A simulated batch does not appear in the default history browser view.
-- A simulated batch contributes nothing to the loot ledger.
-- Introducing `GetItemInfo` into `Core/GearScore.lua`, or `time()` into `Core/Ledger.lua`,
-  fails CI.
+- A simulated batch leaves `priority.version` and `priority.order` untouched.
+- Introducing `math.random` or `time()` into `Core/PriorityList.lua` fails CI.

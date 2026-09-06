@@ -98,7 +98,7 @@ the failure mode that destroys trust in a loot addon.
 - The host records `submittedAt` on first submission and `revisedAt` on each subsequent one.
 - Both timestamps go into the history record (008). They are not shown in the roll window —
   they exist so that persistent last-second submitting is visible as a fact after the fact,
-  rather than being mechanically prevented (DESIGN §9, ROADMAP: anti-sniping lockout).
+  rather than being mechanically prevented (DESIGN §10, ROADMAP: anti-sniping lockout).
 - **Tier snapshot:** an entry's tier is fixed when the host accepts it. A player who reorders
   their hierarchy after submitting does not retroactively change a pending entry. Re-submitting
   re-derives it from the current order.

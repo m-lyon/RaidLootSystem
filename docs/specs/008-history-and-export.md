@@ -15,10 +15,9 @@ later — priority decay, per-bot gearing statistics, attendance, sniping patter
 people have a tier's worth of raiding logged you cannot retroactively add fields. Log
 generously now; read simply now.
 
-**Out of scope:** using history as a resolution input — that is [010](010-loot-ledger.md), which
-derives the loot ledger from these records. This spec owns the record; 010 owns the reading of
-it. The fields 010 needs are listed in §3 and are written regardless of whether any fairness
-mode is active.
+**Out of scope:** the priority list itself ([010](010-priority-list.md)). The list is stored
+state, not derived from history — but history is what `verify` replays to prove the stored list
+is correct, and the fields that makes possible are in §3.
 
 ## 2. Who records what
 
@@ -45,13 +44,11 @@ context, and splitting them loses that.
 
   settings   = {                          -- what the rules were AT THE TIME
     tierCount = 3, timerSeconds = 180, qualityThreshold = 4,
-    fairnessMode = "TIER",                -- OFF | TIER | ROLL           (011 §2)
-    fairnessParams = { tierStep=1, tierCap=2, penaltyPerItem=15, penaltyCap=30,
-                       halfLifeBatches=6, ledgerBatches=12, ledgerMaxDays=14 },
+    lootMode  = "SK",                     -- ROLL | SK                    (010 §2)
   },
 
-  ledgerAtOpen = {                        -- host standings when the batch opened (010 §9)
-    Steve = { count = 3, weight = 1180.4 }, Anna = { count = 0, weight = 0 },
+  priorityAtOpen = {                      -- the list when the batch opened (010 §9)
+    version = 47, order = { "Chop", "Sneaky", "Steve", "Botty" },
   },
 
   raid = { "Steve", "Dave", "Anna" },     -- players running the addon, for attendance later
@@ -66,20 +63,22 @@ context, and splitting them loses that.
       unclaimed  = false,
       degraded   = false,
 
-      gsValue    = 494,                    -- item value, ALWAYS written, even under OFF (010 §9)
+      itemLevel  = 264,                    -- the three inputs an item valuation needs.
+      quality    = 4,                      -- ALWAYS written, under both modes. Nothing in v1
+      equipLoc   = "INVTYPE_CHEST",        -- reads them. See below.
 
       entries = {                          -- EVERY entry, including not-consulted ones
-        { char="Bonk", owner="Dave", tier=1, effTier=1, penalty=0,
-          rolled=true, roll=91, score=91,
-          rerolled={}, override=false,
+        { char="Bonk", owner="Dave", tier=1, listIdx=3, star=true,
+          rolled=true, roll=91, rerolled={}, override=false,
+          withdrawn=false,                 -- SK: removed by the one-win rule or a star
           submittedAt=1757155230, revisedAt=nil },     -- host-only fields
-        { char="Sneaky", owner="Steve", tier=2, effTier=3, penalty=0,
+        { char="Sneaky", owner="Steve", tier=2, listIdx=9,
           rolled=false, reason="not consulted" },
       },
 
       awards = {
-        { copy=1, char="Bonk", owner="Dave", tier=1, effTier=1, roll=91, penalty=0,
-          gsValue=494,
+        { copy=1, char="Bonk", owner="Dave", tier=1, roll=91, listIdx=3,
+          priorIndex=3,                    -- SK: index before the suicide, for restore (010 §6)
           delivery="DELIVERED",            -- DELIVERED | PENDING | FAILED | LOST | UNCLAIMED
           deliveryPath="MASTER_LOOT",      -- MASTER_LOOT | TRADE
           deliveredAt=1757155390 },
@@ -92,9 +91,22 @@ context, and splitting them loses that.
 Delivery state is **updated in place** when a pending item is later handed over, so the history
 reflects what actually happened rather than what was intended at resolution time.
 
-This in-place update is also the loot ledger's only reversal path (010 §9): the ledger is
-derived from these records on demand, so an award that later becomes `FAILED` or `LOST` simply
-stops counting. Do not add a separate reversal mechanism, and do not cache the ledger.
+Under `SK` this update also **triggers a list restore** (010 §6): an award moving away from
+`DELIVERED` returns the character to `priorIndex`. That is why `priorIndex` is recorded rather
+than recomputed — by the time a delivery fails, the list has moved and the original position is
+no longer derivable from it.
+
+### Why `itemLevel`, `quality` and `equipLoc` are logged
+
+Nothing in v1 reads them. They are the exact inputs a GearScore-style valuation takes (ROADMAP:
+ledger-based fairness adjustment), and logging the *inputs* rather than a computed score means a
+later formula change recomputes the whole history correctly instead of leaving two incompatible
+vintages in one log.
+
+They are also not recoverable afterwards. `itemString` gives an item id, but resolving it back to
+an item level needs `GetItemInfo` and a warm client cache — months later, that cache is cold and
+the answer is nil. This is the "log generously, read simply" rule doing real work: three integers
+per item now, or a permanently unusable history later.
 
 ## 4. Retention
 
@@ -128,8 +140,8 @@ write files):
 - **Plain text** — human-readable, for pasting into Discord. One line per award, with a batch
   header.
 - **CSV** — one row per **entry**, not per award, so the data is analysable:
-  `timestamp, zone, source, item, gsValue, character, owner, tier, effTier, rolled, roll,
-  penalty, score, awarded, delivery`
+  `timestamp, zone, source, item, itemLevel, quality, equipLoc, character, owner, tier, listIdx,
+  star, rolled, roll, withdrawn, awarded, delivery`
 
 Export respects the browser's current filters, so "everything Botty won in ICC" is one action.
 
@@ -147,9 +159,10 @@ The addon never transmits history anywhere. Export is manual, local, and user-in
 - Client and host records of the same batch are both present and distinguishable by
   `recordedAsHost`.
 - CSV export of a 6-item batch with 20 entries produces 20 rows plus a header.
-- `gsValue` and `ledgerAtOpen` are written under `fairnessMode = "OFF"`, so a group that later
-  switches modes has a usable ledger from day one.
-- `settings.fairnessParams` captures the values in force at open and is unaffected by later
-  changes.
+- `itemLevel`, `quality` and `equipLoc` are written under `lootMode = "ROLL"` too.
+- `priorityAtOpen` captures the list version and order at open and is unaffected by later
+  suicides.
+- An award flipped from `DELIVERED` to `FAILED` under `SK` restores the character to
+  `priorIndex` and bumps the list version.
 - The per-character summary for a bot lists exactly the items it was awarded, and nothing it
   merely rolled on.

@@ -36,16 +36,21 @@ with the reasoning.
   overwriting a roster on import.
 - **Failures are surfaced, never swallowed.** A silently dropped entry or a silently failed award
   costs someone an item.
-- **The loot ledger counts owning players, not characters.** Per-character accounting penalises
-  a player's top-ranked character for being top-ranked, inverting the hierarchy. Spec 010 §3.
-- **The ledger is derived, never cached.** It is recomputed from history on demand so a
-  delivery that later fails stops counting with no reversal path. Spec 010 §8.
-- **`gsValue` is written to every award even when `fairnessMode = "OFF"`.** A group that enables
-  a mode later must find usable history waiting.
-- **`Core/GearScore.lua` takes scalars, not an item link.** PlayerbotManager's version calls
-  `GetItemInfo` itself; ours cannot. `Modules/ItemInfo.lua` does the lookup.
-- **With fairness on, items in a batch are no longer independent** — spec 003 §7 changed.
-  Resolution order (ascending `item.idx`) is load-bearing, not incidental.
+- **The priority list is per character; the hierarchy is per player.** They are orthogonal on
+  purpose: the hierarchy picks your bucket, the list decides who wins inside it. Spec 010 §3.
+- **The priority list is stored, not derived.** Unlike a tally, it degrades catastrophically —
+  one missing batch silently corrupts every later position. `verify` replays history to *detect*
+  drift; it never repairs. Spec 010 §8.
+- **Under `SK` the resolution engine calls `rng` zero times.** There are no ties to break; the
+  003 §6 re-roll path is unreachable and should assert rather than sit there as dead code.
+- **A failed delivery restores the winner's list position** from the recorded `priorIndex`.
+  Never recompute it — by then the list has moved. Spec 010 §6.
+- **Absent characters hold their absolute index.** The naive remove-and-append rewards not
+  showing up. Spec 010 §6.
+- **SK batches are a fixed point, not a sequential pass.** Loot-slot order must not decide who
+  wins what; only the order suicides are applied in. Spec 010 §7.
+- **`itemLevel` / `quality` / `equipLoc` are logged on every item under both modes.** Nothing in
+  v1 reads them; they cannot be backfilled once the client cache is cold.
 
 ## Testing
 
@@ -63,12 +68,6 @@ getting them wrong silently makes a class ineligible for a whole item category:
 - WotLK class → weapon-subclass permissions (`Data/ClassArmor.lua`)
 - Tier token item ids (`Data/TierTokens.lua`) — the trailing-word match is the robust path
 - The exact mod-playerbots `equip` command syntax
-- GearScore constants (`Core/GearScore.lua`) — copied from
-  `../PlayerbotManager/PBM/PBM_Constants.lua:12–50`, pinned by the `gearscore` fixture suite
-
-**PlayerbotManager naming trap:** in `LichborneTrackerDB`, `row.gs` is **average item level**
-and `row.realGs` is the GearScore (`PBM_Inspect.lua:151`). We don't read that DB — this note
-exists so nobody starts.
 
 ## Conventions
 

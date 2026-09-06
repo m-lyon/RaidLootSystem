@@ -55,11 +55,10 @@ With a tier count of 3, Steve's hierarchy resolves like this:
 Everything below the cut-off collapses into a single **Rest** tier where all characters are
 equal. If Steve had nine characters, positions 4 through 9 would all sit in Rest together.
 
-> Rest is equal chance *before any fairness adjustment*. The raid leader can enable an
-> adjustment that reorders or demotes players according to what they have recently received;
-> under it, Rest is still one bucket but not a level one. See
-> [proposal 001](proposals/001-loot-fairness.md), which is currently open for review. With the
-> adjustment off — the default — Rest is exactly the flat lottery described above.
+> Rest is a flat lottery under the default **Roll** mode. Under **Suicide Kings** (§9) it is
+> still a single bucket, but the winner inside it is decided by list position rather than by a
+> roll. Either way, every character below the cut-off is equal *as far as the hierarchy is
+> concerned*.
 
 Lowering the tier count does not destroy your ordering — the addon always stores your full
 list, so if the raid leader raises the count from 3 to 5 next week, your 4th and 5th positions
@@ -180,12 +179,11 @@ something that isn't yours.
 | Entry timer | 180s | 15–300s |
 | Quality threshold for auto-added items | Epic | Rare or better |
 | Chat verbosity | Summary | Off / Summary / Verbose |
-| Fairness adjustment | Off | Off / Tier adjustment / Roll adjustment |
+| Loot mode | Roll | Roll / Suicide Kings |
 
-The fairness adjustment gives the rules a memory of what each player has recently received. It
-is **off by default** and is the subject of [proposal 001](proposals/001-loot-fairness.md),
-which the group has yet to decide. Like the tier count, it can only change between batches and
-the change is announced.
+**Roll** is the original behaviour: highest roll in the highest occupied tier. **Suicide Kings**
+replaces the roll with a persistent priority list — see §9. It can only be selected once the list
+has been seeded, and like the tier count it changes only between batches, with an announcement.
 
 The tier count can be changed mid-raid, but only between batches, never while a roll is open —
 and the change is announced.
@@ -206,14 +204,74 @@ Every batch is recorded: what dropped, who entered, what tier they were, what th
 won, and whether the handover actually completed. Both the master looter and every player keep
 their own copy. It can be exported as plain text or CSV.
 
-Every award also records the item's **GearScore value**, whether or not any fairness adjustment
-is switched on. That is what lets the group turn one on later and have it work immediately from
-the history already logged, rather than starting from nothing.
+Under Suicide Kings it also records the priority list as it stood when the roll opened, so an
+argument about a past award is settled by looking it up rather than by remembering.
 
 The log is deliberately richer than v1 needs, because it's the raw material for anything we
 build later — per-bot gearing statistics, attendance, sniping patterns.
 
-## 9. What this deliberately does not do
+## 9. Suicide Kings
+
+An alternative to rolling, chosen by the group in
+[proposal 001](proposals/001-loot-fairness.md). Off until the raid leader seeds the list and
+switches the mode on.
+
+**The list.** One ordered list containing **every character** in every roster — yours and
+everyone's bots. It is shuffled once, from a published seed, and then it lives forever.
+
+**Winning an item.** Tier gating works exactly as before: a T1 entry still beats a T2 entry,
+always. But inside a tier, there is no roll — **the character highest on the list wins.** That
+character then drops to the **bottom**, and everyone below it moves up one.
+
+That is the whole system. Three things follow from it:
+
+- **Nothing is random.** You can look up who will win before you tick a box. Disputes end by
+  pointing at a number.
+- **Waiting is the only way to gain priority.** Losing costs you nothing. Not entering costs you
+  nothing. Your position improves purely by not having won recently.
+- **Characters are independent.** Your mage winning sinks your mage. Your rogue keeps its place,
+  so gearing your bots never costs your main its priority.
+
+**Characters not in the raid don't move.** A bot left at home doesn't drift up the list while
+everyone else is raiding.
+
+### Two rules a boss-at-a-time system needs
+
+Classic Suicide Kings hands out one item at a time. We resolve a whole boss at once, and your
+character has one position but six items to want.
+
+1. **One win per character per batch.** Once a character wins, it's out of the rest of that
+   boss's items. Otherwise being top of the list and ticking everything wins you everything, for
+   the price of one suicide.
+2. **The priority pick.** Star **one** of the items you ticked for that character. If it would
+   win more than one, the star decides which. Starring costs you nothing — it only ever applies
+   when you'd have won several anyway — and without it you win the junk ring in the first loot
+   slot and lose the weapon in the fourth.
+
+### What it costs
+
+**The guarantee only holds inside a tier.** Suicide Kings normally promises: *wait long enough,
+reach the top, and the next thing you want is yours.* Because we keep the tier gate, that holds
+only among characters in the same bucket. If your main is the raid's only warrior, you take every
+plate item at T1 forever, however far down the list you fall.
+
+What limits it: **an uncontested win still suicides you.** You keep the plate nobody else can
+use, but you fall down the list and stop winning the things several people want — tokens,
+weapons, trinkets. The list works where people are actually competing.
+
+**And ticking a box is still free.** Because positions are per character rather than per player,
+entering an item spends that character's place and nothing else. Suicide Kings is often described
+as making every entry a hard choice; in this variant it isn't one.
+
+### When something goes wrong
+
+If an award fails to arrive — you disconnect, the trade never happens — **your position comes
+back.** You are never suicided for an item you didn't receive.
+
+The raid leader can reseed, reorder and manually correct the list. Every such change is announced
+in raid chat and recorded, because a priority list edited quietly is worse than no list at all.
+
+## 10. What this deliberately does not do
 
 These were considered and left out on purpose. They're on the [roadmap](ROADMAP.md) with the
 reasoning attached, so we don't re-argue them every month.
@@ -232,13 +290,16 @@ reasoning attached, so we don't re-argue them every month.
 - **No entering on someone else's behalf.** You enter your own characters, nobody enters for
   you. A bot nobody has claimed simply can't be entered, and the master looter sees a warning
   so it gets fixed.
-- **No points, DKP or EPGP.** Rolls only.
-- **No memory of past loot — by default.** Out of the box every item is an independent lottery,
-  and a player who won three things tonight is treated exactly like one who won nothing. Whether
-  to change that, and how, is [proposal 001](proposals/001-loot-fairness.md) — open for review,
-  two options on the table, neither switched on until the group picks one.
+- **No points, DKP or EPGP.** Rolls, or the priority list.
+- **No item weighting.** Under Suicide Kings a ring and a weapon both cost one suicide. Weighing
+  items by GearScore was considered and rejected: it turns the list into a soft points system and
+  destroys the one thing it's good at, which is that you can predict it. See
+  [proposal 001](proposals/001-loot-fairness.md) §3.
+- **No memory of past loot under Roll mode.** If the group runs Roll rather than Suicide Kings,
+  every item is an independent lottery and a player who won three things tonight is treated
+  exactly like one who won nothing.
 
-## 10. Glossary
+## 11. Glossary
 
 | Term | Meaning |
 |---|---|
@@ -250,6 +311,7 @@ reasoning attached, so we don't re-argue them every month.
 | **Batch** | One roll covering every item from a single loot source |
 | **Entry** | One character submitted for one item |
 | **Host** | The client running the batch. Always whoever holds master looter |
-| **Ledger** | A running, public record of what each player's roster has recently received |
-| **Standing** | One player's position in the ledger — how much they have had lately |
-| **Adjustment** | The tier or roll change the ledger applies to a player, when enabled |
+| **Loot mode** | Roll or Suicide Kings. Raid leader's setting |
+| **Priority list** | The Suicide Kings order — every character, highest priority first |
+| **Suicide** | Dropping to the bottom of the priority list after winning an item |
+| **Priority pick** | The one item a character stars, deciding which it spends its position on |

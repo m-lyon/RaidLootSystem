@@ -18,8 +18,7 @@ layout, pure-core boundary, saved-variable schema and comms protocol.
 | [007](007-award-and-delivery.md) | Award and delivery | `Award`, `Pending` | 000, 002, 003, 004 |
 | [008](008-history-and-export.md) | History and export | `History`, `UI/HistoryBrowser` | 000, 002, 003, 007 |
 | [009](009-simulation-and-testing.md) | Simulation and testing | `tests/`, `Simulate` | 000 |
-| [010](010-loot-ledger.md) | Loot ledger | `Core/Ledger`, `Core/GearScore`, `Modules/Ledger` | 000, 003, 004, 007, 008 |
-| [011](011-fairness-modes.md) | Fairness modes | `Core/Fairness`, `Core/Resolve` | 003, 010 |
+| [010](010-priority-list.md) | Priority list (Suicide Kings) | `Core/PriorityList`, `Modules/PriorityList`, `Core/Resolve` | 000, 001, 002, 003, 007, 008 |
 
 ## Suggested build order
 
@@ -32,21 +31,20 @@ windows), **007** (delivery), and **008** last.
 **009 is not last.** Stand `tests/run.lua` up alongside 003 — it exists to make 003 verifiable,
 and retrofitting a test runner after the fact reliably doesn't happen.
 
-**010 and 011 come after 008**, since the ledger is derived from history records and cannot be
-built before there are any. But **the history fields 010 needs (`gsValue`, `ledgerAtOpen`) must
-land with 008 itself**, not later: they are written under every mode including `OFF`, and a
-group that raids for a month before enabling a fairness mode should find a month of usable
-ledger waiting rather than starting from zero.
+**010 can come early — its pure half, at least.** `Core/PriorityList` has no dependencies beyond
+Lua and belongs alongside 001 and 003 with its fixtures. The stateful half (storage, sync,
+`SKLIST`, restore-on-failure) needs 002 and 007 and should follow them.
 
-**011 is trivial once 010 exists**, and that is by design — the two modes are a few dozen lines
-of pure arithmetic each. If implementing 011 feels large, something that belongs in 010 has
-leaked into it.
+**Log 008's `itemLevel` / `quality` / `equipLoc` fields when you build 008**, not later. Nothing
+in v1 reads them; they exist so the ROADMAP's ledger-based adjustment stays buildable, and they
+cannot be backfilled — `GetItemInfo` needs a warm cache that a months-old history won't have.
 
 ## Proposals
 
-[`../proposals/`](../proposals/) holds open design questions — options with trade-offs, written
-for players rather than implementers. A spec may be written against a proposal that has not been
-decided yet (010 and 011 both are); it ships switched off until the group chooses.
+[`../proposals/`](../proposals/) holds design questions the group needs to decide — options with
+trade-offs, written for players rather than implementers. Spec 010 implements the option chosen
+in [proposal 001](../proposals/001-loot-fairness.md); the options that lost are on the roadmap
+with their reasoning, not in a spec.
 
 ## Conventions for spec authors
 
