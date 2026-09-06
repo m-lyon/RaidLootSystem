@@ -277,10 +277,8 @@ return {
                             entries = {}, awards = { { copy = 1, char = "Bob", owner = "B", tier = 1, roll = 0, listIdx = 2,
                                                        delivery = "DELIVERED" } } } },
             } } },
-            expected = "D" .. T .. "  ICC / Boss  (host Steve, SK, 3 tiers)
-"
-                .. "  [item:5] -> Bob (B) T1, position 2, delivered
-",
+            expected = "D" .. T .. "  ICC / Boss  (host Steve, SK, 3 tiers)\n"
+                .. "  [item:5] -> Bob (B) T1, position 2, delivered\n",
         },
         {
             -- Aborted before ROLLS: the client's entries fall back to what STATE said.
