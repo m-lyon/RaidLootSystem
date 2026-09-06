@@ -160,7 +160,8 @@ function Simulate.Build(scenario, params)
         plan.lootMode = C.LOOT_MODE.SK
         if scenario == "absent" then
             -- Two characters stay home: their indices must not move.
-            plan.absent = { plan.players[1].order[3], plan.players[2].order[2] }
+            plan.absent = { plan.players[1].order[3] }
+            if plan.players[2] then plan.absent[2] = plan.players[2].order[2] end
         elseif scenario == "restore" then
             plan.failDelivery = true
         end
@@ -385,11 +386,18 @@ end
 --------------------------------------------------------------------------------
 
 local function finish()
+    if not Simulate.active then return end
     say("done. " .. table.concat(summary, " "))
     say("The roll window shows the result; the history record is tagged simulated.")
     Simulate.active = false
     plan = nil
-    timeline = {}
+    timeline, wire = {}, {}
+
+    -- Whatever is still queued is simulated traffic: a chat line the drain has not
+    -- reached, the tail of a chunked ROLLS. It must never meet the real transports.
+    ns.Announce.Reset()
+    ns.Comms.Reset()
+
     -- Back to the real world: overrides off, fake rosters and peers forgotten.
     restoreAll()
     for _, name in ipairs({ "Simdave", "Simanna", "Simerin", "Simkate", "Simoli" }) do
@@ -398,8 +406,34 @@ local function finish()
     end
     ns.Roster.RefreshPresence()
     ns.Roster.Publish()
+    -- The abort scenario changed hands; the remembered host must be the real one
+    -- again before any real batch opens, or a roster event would abort it.
+    ns.Session.CheckHost()
+    ns.Client.CheckHost()
     if ns.HostPanel and ns.HostPanel.IsShown() then ns.HostPanel.Refresh() end
     frame:Hide()
+end
+
+--- A step failed: say so and put everything back rather than leave the loopback
+-- installed for the rest of the session.
+local function guarded(fn, ...)
+    local ok, err = pcall(fn, ...)
+    if not ok then
+        say("|cffff6060error:|r " .. tostring(err) .. " -- stopping the simulation.")
+        finish()
+    end
+    return ok
+end
+
+--- `/rls simulate stop`
+function Simulate.Stop()
+    if not Simulate.active then
+        say("no simulation is running.")
+        return false
+    end
+    summary[#summary + 1] = "stopped by hand."
+    finish()
+    return true
 end
 
 local function awardAll(session)
@@ -477,7 +511,8 @@ local function onUpdate(_, elapsed)
         local batch = wire
         wire = {}
         for _, w in ipairs(batch) do
-            ns.Comms.Receive(w.prefix, w.message, w.channel, w.sender)
+            if not Simulate.active then return end
+            guarded(ns.Comms.Receive, w.prefix, w.message, w.channel, w.sender)
         end
     end
 
@@ -488,7 +523,10 @@ local function onUpdate(_, elapsed)
         if clock >= step.at then due[#due + 1] = step else rest[#rest + 1] = step end
     end
     timeline = rest
-    for _, step in ipairs(due) do step.fn() end
+    for _, step in ipairs(due) do
+        if not Simulate.active then return end
+        guarded(step.fn)
+    end
 end
 
 --- `/rls simulate [items=N] [players=N] [scenario=name]`
@@ -518,7 +556,7 @@ function Simulate.Run(argument)
     if not frame then
         frame = CreateFrame("Frame", "RaidLootSystemSimulateFrame")
         frame:SetScript("OnUpdate", onUpdate)
-        ns.Client.RegisterListener(onMirror)
+        ns.Client.RegisterListener(function(session) guarded(onMirror, session) end)
     end
 
     Simulate.active = true

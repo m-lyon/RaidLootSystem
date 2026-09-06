@@ -160,7 +160,9 @@ window → revision → close → resolution → results rendering → history w
 - The award step is stubbed — `GiveMasterLoot` is never called. The award click marks the copy
   delivered on the spot (or terminally failed, for `restore`).
 - The scripted rng, the loot mode and the master looter derivation are restored when the run
-  ends; fake rosters and peers are forgotten.
+  ends; fake rosters and peers are forgotten; anything still queued for chat or the wire is
+  dropped before the real transports come back. A step that errors stops the run and restores
+  everything; `/rls simulate stop` does the same by hand.
 
 ## 5. Manual test checklist
 

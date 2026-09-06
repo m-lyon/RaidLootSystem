@@ -60,6 +60,32 @@ local function run(input, ns)
             for _, e in ipairs(list) do if e.star then starred = starred + 1 end end
         end
         return starred
+    elseif input.op == "resolve" then
+        -- Feed a plan through Resolve.batch as the host would: tiers from roster
+        -- position under tier count 3, the rng replaying plan.rolls.
+        local plan = S.Build(input.scenario)
+        local items, entriesByItem = {}, {}
+        for i, item in ipairs(plan.items) do
+            items[i] = { idx = i, itemString = "item:" .. i, count = item.quantity }
+            entriesByItem[i] = {}
+        end
+        for _, player in ipairs(plan.players) do
+            for _, e in ipairs(plan.entries[player.name]) do
+                local position = ns.Util.indexOf(player.order, e.char)
+                table.insert(entriesByItem[e.itemIdx], { char = e.char, owner = player.name,
+                    tier = ns.Tiers.forPosition(position, 3) })
+            end
+        end
+        local n = 0
+        local results = ns.Resolve.batch(items, entriesByItem, {
+            rng = function() n = n + 1; return plan.rolls[n] end,
+            lootMode = plan.lootMode,
+        })
+        local first = results[1]
+        local tiers, rerolled = {}, 0
+        for i, a in ipairs(first.awards) do tiers[i] = a.tier end
+        for _, r in ipairs(first.record) do rerolled = rerolled + #r.rerolled end
+        return { winnerTiers = tiers, rerolled = rerolled, rngCalls = n, degraded = first.degraded }
     elseif input.op == "scenarios" then
         return S.ListScenarios()
     end
@@ -120,5 +146,22 @@ return {
           input = { op = "token" }, expected = { tokenGroup = "CONQUEROR" } },
         { name = "the star scenario stars exactly one entry",
           input = { op = "star" }, expected = 1 },
+        {
+            -- Acceptance: scenario=tie produces a visible re-roll.
+            name = "the tie scenario's rolls tie and re-roll",
+            input = { op = "resolve", scenario = "tie" },
+            expected = { winnerTiers = { 1 }, rerolled = 2, rngCalls = 4, degraded = false },
+        },
+        {
+            -- The second copy spills from T1 into T2.
+            name = "the duplicate scenario's second copy spills into T2",
+            input = { op = "resolve", scenario = "duplicate" },
+            expected = { winnerTiers = { 1, 2 }, rerolled = 0, rngCalls = 3, degraded = false },
+        },
+        { name = "the absent scenario builds with a single player",
+          input = { op = "build", scenario = "absent", params = { players = 1 } },
+          expected = { players = 1, items = 4, entries = 8, badEntries = 0, badItems = 0,
+                       lootMode = "SK", revisers = 1, rolls = 0, absent = 1, hostChange = 0,
+                       failDelivery = false, copies = 1 } },
     },
 }

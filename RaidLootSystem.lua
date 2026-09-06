@@ -146,6 +146,7 @@ local function help()
     ns.Print("  /rls sk list      print the priority list")
     ns.Print("  /rls sk verify    replay the priority list from its seed and report drift")
     ns.Print("  /rls simulate [items=N] [players=N] [scenario=name]  run the pipeline solo")
+    ns.Print("  /rls simulate stop   end a running simulation and restore everything")
     ns.Print("  /rls pending      list items you hold for other characters")
     ns.Print("  /rls deliver <n>  open a trade for pending item n")
     ns.Print("  /rls abandon <n>  give up on pending item n (confirmed)")
@@ -185,6 +186,8 @@ local function dispatch(input)
     elseif command == "simulate" then
         if argument:lower() == "list" then
             ns.Print("scenarios: " .. ns.Simulate.ListScenarios())
+        elseif argument:lower() == "stop" then
+            ns.Simulate.Stop()
         else
             ns.Simulate.Run(argument)
         end
