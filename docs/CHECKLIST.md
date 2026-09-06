@@ -14,7 +14,7 @@ Tick a box when done. Where a check needs a code change afterwards, it says so.
       on load (`/console scriptErrors 1` to be sure).
 - [x] `/rls status` prints the version, roster size and master looter.
 - [x] `/rls` opens the hierarchy editor. Claim your character and your bots, drag them into order.
-- [ ] `/reload`. The roster and order survive.
+- [x] `/reload`. The roster and order survive.
 
 ## 2. Data tables (`Data/VERIFY.md` has the detail)
 
