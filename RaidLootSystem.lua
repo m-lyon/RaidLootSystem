@@ -142,6 +142,7 @@ local function help()
     ns.Print("  /rls window       open the roll window")
     ns.Print("  /rls hierarchy    open your hierarchy")
     ns.Print("  /rls host         open the host panel (master looter)")
+    ns.Print("  /rls history      open the history browser")
     ns.Print("  /rls pending      list items you hold for other characters")
     ns.Print("  /rls deliver <n>  open a trade for pending item n")
     ns.Print("  /rls abandon <n>  give up on pending item n (confirmed)")
@@ -176,6 +177,8 @@ local function dispatch(input)
         ns.HierarchyEditor.Toggle()
     elseif command == "host" then
         ns.HostPanel.Toggle()
+    elseif command == "history" then
+        ns.HistoryBrowser.Toggle()
     elseif command == "pending" then
         ns.Pending.PrintList()
     elseif command == "deliver" then
@@ -256,6 +259,7 @@ loader:SetScript("OnEvent", function(_, event, addonName)
         math.randomseed(time())         -- exactly once, spec 000 section 7
     elseif event == "PLAYER_LOGIN" then
         ns.Comms.Init()
+        ns.History.Init()
         ns.Announce.Init()
         ns.Roster.Init()
         ns.ItemInfo.Init()

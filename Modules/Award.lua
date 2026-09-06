@@ -292,7 +292,7 @@ end
 --- A record's delivery changed. History (008) updates in place; the priority list
 -- (010) restores a position when a delivery moves away from DELIVERED.
 local function deliveryChanged(record, previous)
-    if ns.History and ns.History.UpdateDelivery then ns.History.UpdateDelivery(record) end
+    if ns.History then ns.History.UpdateDeliveryFromAward(record) end
     if ns.PriorityList and ns.PriorityList.OnDeliveryChanged then
         ns.PriorityList.OnDeliveryChanged(record, previous)
     end

@@ -213,6 +213,7 @@ LootDetect.candidates = {}     -- from Collapse
 LootDetect.skipped = {}        -- { lootSlot, info, quality, reason } -- the manual-add list
 LootDetect.scanning = false
 LootDetect.windowOpen = false
+LootDetect.sourceName = nil    -- the looted creature, as far as 3.3.5a lets us tell
 
 local scanRows = {}            -- every slot of the last scan: { lootSlot, quantity, quality, info }
 local manualIds = {}           -- item ids the host added by hand from the skipped list
@@ -427,6 +428,13 @@ end
 local function onEvent(_, event, arg1)
     if event == "LOOT_OPENED" then
         LootDetect.windowOpen = true
+        -- 3.3.5a has no loot-source API. The dead target is the best available guess
+        -- and is right whenever the looter is targeting what they killed (spec 008).
+        if UnitExists("target") and UnitIsDead("target") then
+            LootDetect.sourceName = UnitName("target")
+        else
+            LootDetect.sourceName = nil
+        end
         -- Only the master looter builds a batch, and only they see the candidate list.
         if not ns.Session.IsHost() then return end
         LootDetect.Scan(function(items)
