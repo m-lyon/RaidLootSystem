@@ -30,6 +30,8 @@ Modules\ItemInfo.lua
 Modules\LootDetect.lua
 Modules\Session.lua
 Modules\Client.lua
+Modules\Award.lua
+Modules\Pending.lua
 Modules\Announce.lua
 
 UI\Widgets.lua

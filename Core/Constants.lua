@@ -184,6 +184,44 @@ C.COUNTDOWN_WARN_SECONDS = 30
 C.ABORT_LINGER_SECONDS = 10
 
 --------------------------------------------------------------------------------
+-- Award and delivery (spec 007)
+--------------------------------------------------------------------------------
+
+-- Per-copy delivery state, as recorded in history (spec 008 section 3). AWAITING is
+-- the state between resolution and the host's click; it is distinct from PENDING,
+-- which means the host holds the item for a trade.
+C.DELIVERY = {
+    AWAITING  = "AWAITING",
+    DELIVERED = "DELIVERED",
+    PENDING   = "PENDING",
+    FAILED    = "FAILED",
+    LOST      = "LOST",
+    UNCLAIMED = "UNCLAIMED",
+}
+
+C.DELIVERY_PATH = { MASTER_LOOT = "MASTER_LOOT", TRADE = "TRADE" }
+
+-- Named failure states (spec 007 section 4). Every one is visible and retryable.
+C.AWARD_FAILURE = {
+    NOT_A_CANDIDATE  = "NOT_A_CANDIDATE",
+    SOURCE_INVALID   = "SOURCE_INVALID",
+    SLOT_NOT_CLEARED = "SLOT_NOT_CLEARED",
+    NO_LOOT_METHOD   = "NO_LOOT_METHOD",
+    NOT_LOOTED       = "NOT_LOOTED",       -- the host's own LootSlot never cleared the slot
+    TRADE_EXPIRED    = "TRADE_EXPIRED",    -- the two-hour window ran out; bound to the host
+}
+
+C.AWARD_CLEAR_TIMEOUT = 3          -- seconds to wait for LOOT_SLOT_CLEARED after GiveMasterLoot
+C.TRADE_OPEN_TIMEOUT = 30          -- seconds to wait for TRADE_SHOW after InitiateTrade
+C.PENDING_TTL = 7200               -- the 3.3.0 bind-on-pickup trade window
+C.PENDING_WARN_AMBER = 30 * 60
+C.PENDING_WARN_RED = 10 * 60
+
+-- The mod-playerbots equip command (spec 007 section 7). Unconfirmed against the server
+-- build; the argument form (link vs name) is the open question.
+C.BOT_EQUIP_COMMAND = "equip"
+
+--------------------------------------------------------------------------------
 -- Saved-variable defaults (spec 000 section 4). Database.lua owns the copy.
 --------------------------------------------------------------------------------
 

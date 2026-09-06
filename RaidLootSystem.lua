@@ -142,6 +142,9 @@ local function help()
     ns.Print("  /rls window       open the roll window")
     ns.Print("  /rls hierarchy    open your hierarchy")
     ns.Print("  /rls host         open the host panel (master looter)")
+    ns.Print("  /rls pending      list items you hold for other characters")
+    ns.Print("  /rls deliver <n>  open a trade for pending item n")
+    ns.Print("  /rls abandon <n>  give up on pending item n (confirmed)")
     ns.Print("  /rls status       version, roster size, conflicts")
     ns.Print("  /rls tiers <0-5>  set the tier count you host with")
     ns.Print("  /rls publish      resend your roster to the raid")
@@ -173,6 +176,24 @@ local function dispatch(input)
         ns.HierarchyEditor.Toggle()
     elseif command == "host" then
         ns.HostPanel.Toggle()
+    elseif command == "pending" then
+        ns.Pending.PrintList()
+    elseif command == "deliver" then
+        local n = tonumber(argument)
+        local record = n and ns.Pending.OutstandingRecords()[n] or nil
+        if not record then
+            ns.Print("no pending item " .. tostring(argument) .. "; /rls pending lists them.")
+        else
+            ns.Pending.Deliver(record)
+        end
+    elseif command == "abandon" then
+        local n = tonumber(argument)
+        local record = n and ns.Pending.OutstandingRecords()[n] or nil
+        if not record then
+            ns.Print("no pending item " .. tostring(argument) .. "; /rls pending lists them.")
+        else
+            StaticPopup_Show("RLS_CONFIRM_ABANDON", record.winner, nil, record)
+        end
     elseif command == "status" then
         status()
     elseif command == "tiers" then
@@ -241,6 +262,8 @@ loader:SetScript("OnEvent", function(_, event, addonName)
         ns.LootDetect.Init()
         ns.Session.Init()
         ns.Client.Init()
+        ns.Award.Init()
+        ns.Pending.Init()
         ns.RollWindow.Init()
         ns.HostPanel.Init()
         ns.Minimap.Init()
