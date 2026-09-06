@@ -52,14 +52,44 @@ function Pending.Expire(records, now)
     return newly
 end
 
---- Records still to deliver, expired ones included, oldest first.
+--- Records still to deliver, expired ones included, oldest first. An abandoned
+-- record stays in the table (nothing is deleted) but is no longer outstanding.
 function Pending.Outstanding(records)
     local out = {}
     for _, r in ipairs(records or {}) do
-        if not r.delivered then out[#out + 1] = r end
+        if not r.delivered and not r.abandoned then out[#out + 1] = r end
     end
     table.sort(out, function(a, b) return a.takenAt < b.takenAt end)
     return out
+end
+
+local function sameCopy(r, award)
+    return r.sessionId == award.sessionId and r.itemIdx == award.itemIdx
+        and (r.copy or 1) == (award.copy or 1)
+end
+
+--- The undelivered record for this award's copy, or nil.
+function Pending.FindRecord(records, award)
+    for _, r in ipairs(records or {}) do
+        if not r.delivered and not r.abandoned and sameCopy(r, award) then return r end
+    end
+    return nil
+end
+
+--- Units of an item id that undelivered records already account for, so that a
+-- second copy is looted rather than assumed to be the first one (spec 007 section 5).
+-- @param except  an award whose own record, if any, is not counted
+function Pending.UnitsHeld(records, itemId, except)
+    local units = 0
+    for _, r in ipairs(records or {}) do
+        if not r.delivered and not r.abandoned then
+            local _, id = ns.ItemInfo.ParseLink(r.itemString)
+            if id == itemId and not (except and sameCopy(r, except)) then
+                units = units + 1
+            end
+        end
+    end
+    return units
 end
 
 --- "1h 32m" and how urgent it is: "ok", "amber" (under 30 min), "red" (under 10) or
@@ -114,7 +144,7 @@ Pending.BOT_TRADE_COMMAND = nil    -- whisper sent to a bot after the item is pl
 
 local frame
 local expected = {}                -- lootSlot -> true while our own LootSlot is in flight
-local trade                        -- { record, bothAccepted } during a delivery
+local trade                        -- { record, shown, bothAccepted, unitsBefore, startedAt }
 local tickAccumulator = 0
 
 local function DB() return ns.Database.Pending() end
@@ -128,18 +158,23 @@ local function fireChanged()
     if ns.HostPanel then ns.HostPanel.Refresh() end
 end
 
---- Record an item the host has just taken (from Award.takeIntoBags).
+--- Record an item that has reached the host's bags (from Award, once observed).
 function Pending.Add(award)
     local record = Pending.NewRecord(award, time())
     local records = DB()
     records[#records + 1] = record
-    if award.lootSlot then expected[award.lootSlot] = true end
     fireChanged()
     return record
 end
 
---- Is this loot slot one our own trade-path LootSlot is emptying? Answers the
--- LOOT_BIND_CONFIRM that Award.lua watches for.
+--- Award is about to LootSlot this slot itself, for the trade path. Registered before
+-- the call: LOOT_BIND_CONFIRM fires from inside LootSlot.
+function Pending.ExpectSlot(lootSlot)
+    if lootSlot then expected[lootSlot] = true end
+end
+
+--- Is this loot slot one our own LootSlot is emptying? Answers the LOOT_BIND_CONFIRM
+-- that Award.lua watches for. Consumed on answer.
 function Pending.ExpectsSlot(lootSlot)
     if expected[lootSlot] then
         expected[lootSlot] = nil
@@ -148,8 +183,22 @@ function Pending.ExpectsSlot(lootSlot)
     return false
 end
 
+--- The slot cleared, or the attempt is over: a later corpse's slot of the same index
+-- must never be auto-confirmed on the strength of this one.
+function Pending.ForgetSlot(lootSlot)
+    if lootSlot then expected[lootSlot] = nil end
+end
+
+function Pending.ClearExpectations()
+    expected = {}
+end
+
 function Pending.Records()
     return DB()
+end
+
+function Pending.Find(award)
+    return Pending.FindRecord(DB(), award)
 end
 
 function Pending.OutstandingRecords()
@@ -174,12 +223,14 @@ function Pending.MarkDelivered(record)
     fireChanged()
 end
 
---- The host has given up on it (or it expired and they say so).
+--- The host has given up on it: it stays in the table, marked, but leaves the list.
 function Pending.Abandon(record)
-    if record.delivered then return end
-    record.expired = true
+    if record.delivered or record.abandoned then return end
+    record.abandoned = true
     local award = awardFor(record)
-    if award then ns.Award.MarkFailed(award, C.AWARD_FAILURE.SLOT_NOT_CLEARED) end
+    if award then ns.Award.MarkFailed(award, C.AWARD_FAILURE.TRADE_EXPIRED) end
+    ns.Print(string.format("%s for %s abandoned. It stays in your bags and in the history.",
+        labelFor(record.itemString), record.winner))
     fireChanged()
 end
 
@@ -219,17 +270,27 @@ function Pending.Deliver(record)
         ns.Print(labelFor(record.itemString) .. " is not in your bags.")
         return false
     end
-    if trade then
+    if trade and trade.shown and TradeFrame and TradeFrame:IsShown() then
         ns.Print("a trade is already in progress.")
         return false
     end
-    trade = { record = record, bothAccepted = false }
+    -- A request that never opened a window (declined silently, too far, busy) leaves
+    -- no event behind; a new Deliver replaces it rather than waiting on it.
+    local _, id = ns.ItemInfo.ParseLink(record.itemString)
+    trade = { record = record, shown = false, bothAccepted = false,
+              unitsBefore = ns.Award.CountInBags(id), startedAt = GetTime() }
     InitiateTrade(unit)
     return true
 end
 
+local function unitsNow(record)
+    local _, id = ns.ItemInfo.ParseLink(record.itemString)
+    return ns.Award.CountInBags(id)
+end
+
 local function onTradeShow()
     if not trade then return end
+    trade.shown = true
     local bag, slot = ns.Award.FindInBags(trade.record.itemString)
     if not bag then
         ns.Print(labelFor(trade.record.itemString) .. " is not in your bags; the trade was cancelled.")
@@ -253,10 +314,12 @@ local function onEvent(_, event, arg1, arg2)
     elseif event == "TRADE_ACCEPT_UPDATE" then
         if trade and arg1 == 1 and arg2 == 1 then trade.bothAccepted = true end
     elseif event == "TRADE_CLOSED" then
-        if not trade then return end
+        if not trade or not trade.shown then return end
         local current = trade
         trade = nil
-        if current.bothAccepted and not ns.Award.FindInBags(current.record.itemString) then
+        -- Delivered when a unit left the bags, not when none of the id remain: the
+        -- host may hold another copy for another winner, or one of their own.
+        if current.bothAccepted and unitsNow(current.record) < current.unitsBefore then
             Pending.MarkDelivered(current.record)
         else
             ns.Print(string.format("the trade with %s did not complete; %s is still in your bags. %s",
@@ -267,6 +330,13 @@ local function onEvent(_, event, arg1, arg2)
             ns.Print(trade.record.winner .. " declined the trade.")
             trade = nil
         end
+    elseif event == "UI_ERROR_MESSAGE" then
+        -- Too far, busy, dead, no response: the server says so here and nowhere else.
+        if trade and not trade.shown then
+            ns.Print("the trade with " .. trade.record.winner .. " could not be opened: "
+                .. tostring(arg1))
+            trade = nil
+        end
     end
 end
 
@@ -275,6 +345,11 @@ end
 --------------------------------------------------------------------------------
 
 local function onUpdate(_, elapsed)
+    if trade and not trade.shown and GetTime() - trade.startedAt > C.TRADE_OPEN_TIMEOUT then
+        ns.Print("no trade window opened with " .. trade.record.winner .. "; try again.")
+        trade = nil
+    end
+
     tickAccumulator = tickAccumulator + elapsed
     if tickAccumulator < 30 then return end
     tickAccumulator = 0
@@ -283,7 +358,7 @@ local function onUpdate(_, elapsed)
         ns.Print(string.format("%s for %s can no longer be traded: the two hours are up. "
             .. "It stays in the pending list.", labelFor(r.itemString), r.winner))
         local award = awardFor(r)
-        if award then ns.Award.MarkFailed(award, C.AWARD_FAILURE.SLOT_NOT_CLEARED) end
+        if award then ns.Award.MarkFailed(award, C.AWARD_FAILURE.TRADE_EXPIRED) end
     end
     if #newly > 0 then fireChanged() end
 end
@@ -303,7 +378,7 @@ function Pending.PrintList()
         ns.Print(string.format("  %d. %s for %s (%s) -- %s%s|r", i, labelFor(r.itemString),
             r.winner, r.owner or "?", colour, left))
     end
-    ns.Print("/rls deliver <n> opens the trade.")
+    ns.Print("/rls deliver <n> opens the trade; /rls abandon <n> gives up on one.")
 end
 
 function Pending.Init()
@@ -313,6 +388,7 @@ function Pending.Init()
     frame:RegisterEvent("TRADE_ACCEPT_UPDATE")
     frame:RegisterEvent("TRADE_CLOSED")
     frame:RegisterEvent("TRADE_REQUEST_CANCEL")
+    frame:RegisterEvent("UI_ERROR_MESSAGE")
     frame:SetScript("OnEvent", onEvent)
     frame:SetScript("OnUpdate", onUpdate)
 

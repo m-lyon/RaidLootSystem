@@ -207,9 +207,12 @@ C.AWARD_FAILURE = {
     SOURCE_INVALID   = "SOURCE_INVALID",
     SLOT_NOT_CLEARED = "SLOT_NOT_CLEARED",
     NO_LOOT_METHOD   = "NO_LOOT_METHOD",
+    NOT_LOOTED       = "NOT_LOOTED",       -- the host's own LootSlot never cleared the slot
+    TRADE_EXPIRED    = "TRADE_EXPIRED",    -- the two-hour window ran out; bound to the host
 }
 
 C.AWARD_CLEAR_TIMEOUT = 3          -- seconds to wait for LOOT_SLOT_CLEARED after GiveMasterLoot
+C.TRADE_OPEN_TIMEOUT = 30          -- seconds to wait for TRADE_SHOW after InitiateTrade
 C.PENDING_TTL = 7200               -- the 3.3.0 bind-on-pickup trade window
 C.PENDING_WARN_AMBER = 30 * 60
 C.PENDING_WARN_RED = 10 * 60

@@ -386,6 +386,7 @@ function Session.Open(items)
     session.openedAt = time()
     session.openedAtLocal = GetTime()      -- GetTime for elapsed, time() for history
     Session.current = session
+    if ns.Award then ns.Award.Snapshot(session) end     -- spec 007: what the host already had
 
     local body, err = Serialize.encodeOpen(session.id, tierCount, seconds, session.items)
     if not body then

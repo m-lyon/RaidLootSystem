@@ -651,6 +651,12 @@ local function pendingRow(i)
     end)
     row.done:SetPoint("RIGHT", row.deliver, "LEFT", -4, 0)
     Widgets.Tooltip(row.done, "Mark delivered", "You handed it over yourself. Confirmed.")
+    row.abandon = Widgets.Button(row, "Abandon", 64, 18, function()
+        if row.record then StaticPopup_Show("RLS_CONFIRM_ABANDON", row.record.winner, nil, row.record) end
+    end)
+    row.abandon:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+    Widgets.Tooltip(row.abandon, "Abandon",
+        "Give up on this delivery. The item stays with you and the history says so. Confirmed.")
     row.left2 = Widgets.Label(row, "", "GameFontHighlightSmall")
     row.left2:SetPoint("RIGHT", row.done, "LEFT", -6, 0)
     row.left2:SetJustifyH("RIGHT")
@@ -679,6 +685,14 @@ local function refreshPending()
             .. record.winner .. " |cff888888(" .. tostring(record.owner or "?") .. ")|r")
         local left, urgency = ns.Pending.TimeLeft(record, now)
         row.left2:SetText(URGENCY_COLOUR[urgency] .. left .. "|r")
+        -- An expired item cannot be traded; the only actions left are Done and Abandon.
+        if urgency == "expired" then
+            row.deliver:Hide()
+            row.abandon:Show()
+        else
+            row.abandon:Hide()
+            row.deliver:Show()
+        end
         row:Show()
     end
     for i = #records + 1, #pendingRows do pendingRows[i]:Hide() end
@@ -728,6 +742,14 @@ local function build()
     local scroll
     scroll, content = Widgets.ScrollArea(frame, "RaidLootSystemHostScroll", INNER + 4, 560)
     scroll:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, -40)
+
+    StaticPopupDialogs["RLS_CONFIRM_ABANDON"] = {
+        text = "Give up on delivering to %s? The item stays in your bags and the history records the failure.",
+        button1 = "Abandon",
+        button2 = CANCEL,
+        OnAccept = function(self) ns.Pending.Abandon(self.data) end,
+        timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+    }
 
     StaticPopupDialogs["RLS_CONFIRM_DELIVERED"] = {
         text = "Mark %s as delivered to %s? This updates the history record.",

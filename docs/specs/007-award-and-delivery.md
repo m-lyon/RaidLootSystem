@@ -59,6 +59,8 @@ quietly fails to be awarded is an item nobody notices is missing until the raid 
 | `SOURCE_INVALID` | Corpse despawned, loot window closed, slot no longer matches | *"The corpse is gone."* Offers the trade path if the item was already looted, otherwise marks the item lost and records it. |
 | `SLOT_NOT_CLEARED` | `GiveMasterLoot` returned but the slot never cleared within 3s — commonly the winner's bags are full | *"Award didn't complete — check Botty's bags."* Retry button. |
 | `NO_LOOT_METHOD` | Loot method changed away from master loot | Explains, and routes to the trade path. |
+| `NOT_LOOTED` | The host's own `LootSlot` on the trade path never cleared the slot — bags full, or the bind confirmation cancelled | *"The item did not reach your bags."* Retry button. The pending record is only written once the slot clears, so a cancelled take leaves nothing behind. |
+| `TRADE_EXPIRED` | The 2-hour window ran out, or the host abandoned the delivery | *"The two-hour trade window ran out; the item is bound to you."* Not retryable: a fresh pending record would only lie. |
 
 Failed awards remain actionable in the results view and in the host panel's on-corpse banner
 until they succeed, are abandoned, or the corpse is gone.
@@ -86,6 +88,12 @@ Behaviour:
 - A live countdown per item, turning amber under 30 minutes and red under 10.
 - Expired entries are not deleted — they are marked `expired` and kept, because an item welded
   to the wrong character is exactly the kind of thing that needs to be visible afterwards.
+
+**Which copy is in the bags.** A bag lookup by item id cannot tell "this copy was looted" from
+"the host owns one of these anyway" or "copy 1 is already in my bags for its own trade". The
+host records how many of each batch item it holds when the batch opens; a copy counts as taken
+only when the bags hold more than that baseline plus what other pending records already
+account for. Otherwise the copy is looted from the corpse.
 
 **Constraint worth stating explicitly:** the 2-hour flag only permits trading to characters who
 were **eligible for that loot at kill time**. A bot summoned in after the boss died cannot
@@ -152,7 +160,7 @@ host holds the item for a trade, so a batch nobody awarded reads as exactly that
 | `AWAITING` | Resolved, no award attempted yet |
 | `DELIVERED` | In the winner's bags, by either path |
 | `PENDING` | In the host's bags with the 2-hour trade flag; a `Pending` record exists |
-| `FAILED` | The last attempt failed with a named reason (§4); retryable |
+| `FAILED` | The last attempt failed with a named reason (§4); retryable, except `TRADE_EXPIRED` |
 | `LOST` | The corpse is gone and the item was never looted |
 | `UNCLAIMED` | Nobody entered; master looter's choice |
 

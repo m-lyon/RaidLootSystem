@@ -1029,7 +1029,7 @@ local function refreshResults(session)
                         .. ns.Award.StatusText(record) .. "|r")
                     row.award.action = "award"
                     row.award:SetText(failed and "Retry" or "Award")
-                    row.award:Show()
+                    if ns.Award.Retryable(record) then row.award:Show() else row.award:Hide() end
                 end
                 row.status:Show()
             end

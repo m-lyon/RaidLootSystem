@@ -36,6 +36,9 @@ local function run(input, ns)
 
     elseif input.op == "equip" then
         return Award.ShouldAutoEquip(input.record, input.roster, input.settings)
+
+    elseif input.op == "retryable" then
+        return Award.Retryable(input.record)
     end
     error("unknown op: " .. tostring(input.op))
 end
@@ -80,6 +83,21 @@ return {
             },
         },
 
+        {
+            -- A stacked slot holds several units in one slot: every copy past the slot
+            -- count is awarded from the last slot.
+            name = "copies beyond the slot count share the last slot",
+            input = { op = "build", session = {
+                id = "Steve-101",
+                items = { { idx = 1, itemString = "item:9", count = 3, lootSlot = 4, lootSlots = { 4 } } },
+                results = { { itemIdx = 1, unclaimed = false,
+                              awards = { { char = "Ann", tier = 1 }, { char = "Bob", tier = 1 }, { char = "Cat", tier = 2 } },
+                              record = {} } },
+            } },
+            expected = { ["1"] = { "1:Ann slot=4 AWAITING L0", "2:Bob slot=4 AWAITING L0",
+                                   "3:Cat slot=4 AWAITING L0" } },
+        },
+
         -- The path (sections 2, 4, 5)
         { name = "corpse open, slot valid, master loot: the master-loot path",
           input = { op = "path", record = CORPSE, ctx = { lootMethod = "master", windowOpen = true, slotHolds = true } },
@@ -98,6 +116,9 @@ return {
           expected = { path = "TRADE", why = "" } },
         { name = "loot window closed and nothing in bags: tell the host what to do",
           input = { op = "path", record = CORPSE, ctx = { lootMethod = "master", windowOpen = false } },
+          expected = { path = "", why = "Open the corpse to award from it, or loot the item yourself and award again." } },
+        { name = "shift-click with the corpse closed and nothing in bags falls through to the instruction",
+          input = { op = "path", record = CORPSE, ctx = { forceTrade = true, lootMethod = "master", windowOpen = false, inBags = false } },
           expected = { path = "", why = "Open the corpse to award from it, or loot the item yourself and award again." } },
         { name = "an item-link batch goes to trade when the item is in bags",
           input = { op = "path", record = LINKED, ctx = { inBags = true } },
@@ -132,6 +153,15 @@ return {
         { name = "a failed record's status carries its reason",
           input = { op = "status", record = { char = "Bonk", delivery = "FAILED", failure = "NOT_A_CANDIDATE" } },
           expected = "failed: Bonk is out of range. Bring them closer and retry." },
+        { name = "an expired trade window is its own failure, and not retryable",
+          input = { op = "status", record = { char = "Bonk", delivery = "FAILED", failure = "TRADE_EXPIRED" } },
+          expected = "failed: The two-hour trade window ran out; the item is bound to you." },
+        { name = "TRADE_EXPIRED is not retryable",
+          input = { op = "retryable", record = { delivery = "FAILED", failure = "TRADE_EXPIRED" } },
+          expected = false },
+        { name = "NOT_A_CANDIDATE is retryable",
+          input = { op = "retryable", record = { delivery = "FAILED", failure = "NOT_A_CANDIDATE" } },
+          expected = true },
         { name = "an awaiting record says so",
           input = { op = "status", record = { char = "Bonk", delivery = "AWAITING" } },
           expected = "not awarded yet" },

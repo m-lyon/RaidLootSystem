@@ -120,8 +120,21 @@ function Award.FailureText(code, record)
         return "Award didn't complete -- check " .. who .. "'s bags."
     elseif code == C.AWARD_FAILURE.NO_LOOT_METHOD then
         return "The loot method is no longer master loot; the item goes through a trade."
+    elseif code == C.AWARD_FAILURE.NOT_LOOTED then
+        return "The item did not reach your bags -- full bags, or the loot was not confirmed."
+    elseif code == C.AWARD_FAILURE.TRADE_EXPIRED then
+        return "The two-hour trade window ran out; the item is bound to you."
     end
     return tostring(code)
+end
+
+--- May the host attempt this award again? Not once the trade window has expired: the
+-- item is bound to them and a fresh pending record would only lie about it.
+function Award.Retryable(record)
+    if record.delivery == C.DELIVERY.DELIVERED then return false end
+    if record.delivery == C.DELIVERY.FAILED
+        and record.failure == C.AWARD_FAILURE.TRADE_EXPIRED then return false end
+    return true
 end
 
 --- Short status for the results row.
@@ -172,8 +185,8 @@ Award.bySession = {}           -- sessionId -> itemIdx -> array of records
 
 local listeners = {}
 local frame
-local watching                 -- { record, slot, deadline } during a GiveMasterLoot
-local confirmed = {}           -- lootSlot -> true, LOOT_BIND_CONFIRM already answered
+local watching                 -- { record, slot, deadline, mode = "give" | "take" }
+local baseline = {}            -- sessionId -> itemId -> units in the host's bags at open
 
 function Award.RegisterListener(fn)
     listeners[#listeners + 1] = fn
@@ -184,6 +197,80 @@ local function fireChanged(record)
     if ns.RollWindow then ns.RollWindow.Refresh() end
     if ns.HostPanel then ns.HostPanel.Refresh() end
 end
+
+local function labelFor(record)
+    local info = record.itemString and ns.ItemInfo.Get(record.itemString) or nil
+    return (info and (info.link or info.name)) or record.itemString or "the item"
+end
+
+--------------------------------------------------------------------------------
+-- What the host holds
+--
+-- A bag lookup by item id alone cannot tell "this copy was looted" from "the host
+-- owns one of these anyway" or from "copy 1 is already in my bags for its own
+-- trade". So the count is taken against a baseline recorded when the batch opened,
+-- less whatever other pending records already account for.
+--------------------------------------------------------------------------------
+
+--- Units of an item id across the host's bags.
+local function countInBags(itemId)
+    if not itemId then return 0 end
+    local total = 0
+    for bag = 0, 4 do
+        for slot = 1, GetContainerNumSlots(bag) do
+            local link = GetContainerItemLink(bag, slot)
+            if link then
+                local _, id = ns.ItemInfo.ParseLink(link)
+                if id == itemId then
+                    local _, count = GetContainerItemInfo(bag, slot)
+                    total = total + (count or 1)
+                end
+            end
+        end
+    end
+    return total
+end
+Award.CountInBags = countInBags
+
+--- First bag slot holding the item, for placing it in a trade.
+local function findInBags(itemString)
+    local _, wantedId = ns.ItemInfo.ParseLink(itemString)
+    if not wantedId then return nil end
+    for bag = 0, 4 do
+        for slot = 1, GetContainerNumSlots(bag) do
+            local link = GetContainerItemLink(bag, slot)
+            if link then
+                local _, id = ns.ItemInfo.ParseLink(link)
+                if id == wantedId then return bag, slot end
+            end
+        end
+    end
+    return nil
+end
+Award.FindInBags = findInBags
+
+--- Called by Session.Open, host side: what the host already had of each item.
+function Award.Snapshot(session)
+    local map = {}
+    for _, item in ipairs(session.items or {}) do
+        local _, id = ns.ItemInfo.ParseLink(item.itemString)
+        if id then map[id] = countInBags(id) end
+    end
+    baseline[session.id] = map
+end
+
+--- Units of this record's item the host holds that no other record explains.
+local function spareUnits(record)
+    local _, id = ns.ItemInfo.ParseLink(record.itemString)
+    if not id then return 0 end
+    local base = baseline[record.sessionId] and baseline[record.sessionId][id] or 0
+    local claimed = ns.Pending.UnitsHeld(ns.Pending.Records(), id, record)
+    return countInBags(id) - base - claimed
+end
+
+--------------------------------------------------------------------------------
+-- Records and their transitions
+--------------------------------------------------------------------------------
 
 --- Called by Session.Close, host side. Builds the records the results view offers.
 function Award.Begin(session)
@@ -201,28 +288,6 @@ end
 function Award.Records(sessionId)
     return Award.bySession[sessionId]
 end
-
-local function labelFor(record)
-    local info = record.itemString and ns.ItemInfo.Get(record.itemString) or nil
-    return (info and (info.link or info.name)) or record.itemString or "the item"
-end
-
---- Is the item in the host's bags? First match by id.
-local function findInBags(itemString)
-    local _, wantedId = ns.ItemInfo.ParseLink(itemString)
-    if not wantedId then return nil end
-    for bag = 0, 4 do
-        for slot = 1, GetContainerNumSlots(bag) do
-            local link = GetContainerItemLink(bag, slot)
-            if link then
-                local _, id = ns.ItemInfo.ParseLink(link)
-                if id == wantedId then return bag, slot end
-            end
-        end
-    end
-    return nil
-end
-Award.FindInBags = findInBags
 
 --- A record's delivery changed. History (008) updates in place; the priority list
 -- (010) restores a position when a delivery moves away from DELIVERED.
@@ -281,7 +346,24 @@ end
 
 --- A pending delivery that will never happen (spec 007 section 5, spec 010 section 6).
 function Award.MarkFailed(record, code)
-    fail(record, code or C.AWARD_FAILURE.SLOT_NOT_CLEARED)
+    fail(record, code or C.AWARD_FAILURE.TRADE_EXPIRED)
+end
+
+--- The item is in the host's bags for this copy: record it, once.
+local function becomePending(record)
+    local previous = record.delivery
+    local existing = ns.Pending.Find(record)
+    if existing and existing.expired then
+        fail(record, C.AWARD_FAILURE.TRADE_EXPIRED)
+        return
+    end
+    record.delivery = C.DELIVERY.PENDING
+    record.deliveryPath = C.DELIVERY_PATH.TRADE
+    record.failure = nil
+    if not existing then ns.Pending.Add(record) end
+    ns.Print(string.format("%s is in your bags for %s. Deliver it within 2 hours: "
+        .. "the host panel's pending list, or /rls pending.", labelFor(record), record.char))
+    deliveryChanged(record, previous)
 end
 
 --------------------------------------------------------------------------------
@@ -297,8 +379,15 @@ local function candidateIndex(name)
     return nil
 end
 
+local OPEN_CORPSE = "Open the corpse to award from it, or loot the item yourself and award again."
+
 local function giveFromCorpse(record)
     local slot = record.lootSlot
+    if not ns.LootDetect.windowOpen then
+        -- The dialog can outlive the loot window. Nothing has changed; say what to do.
+        ns.Print(OPEN_CORPSE)
+        return
+    end
     if not ns.LootDetect.SlotHolds(slot, record.itemString) then
         markLost(record)
         return
@@ -312,7 +401,8 @@ local function giveFromCorpse(record)
     -- LootDetect must not read our own clear as the corpse being looted out from
     -- under a batch; the watch below turns the clear, or its absence, into a result.
     ns.LootDetect.ExpectClear(slot)
-    watching = { record = record, slot = slot, deadline = GetTime() + C.AWARD_CLEAR_TIMEOUT }
+    watching = { record = record, slot = slot, mode = "give",
+                 deadline = GetTime() + C.AWARD_CLEAR_TIMEOUT }
     GiveMasterLoot(slot, index)
     frame:Show()
 end
@@ -322,23 +412,29 @@ end
 --------------------------------------------------------------------------------
 
 local function takeIntoBags(record)
-    local previous = record.delivery
-    if record.lootSlot and not findInBags(record.itemString) then
-        if not ns.LootDetect.SlotHolds(record.lootSlot, record.itemString) then
-            markLost(record)
-            return
-        end
-        ns.LootDetect.ExpectClear(record.lootSlot)
-        confirmed[record.lootSlot] = nil
-        LootSlot(record.lootSlot)       -- LOOT_BIND_CONFIRM is answered below
+    local slot = record.lootSlot
+    if slot and ns.LootDetect.windowOpen and ns.LootDetect.SlotHolds(slot, record.itemString) then
+        -- Loot it ourselves. The record turns PENDING only once the slot clears, so a
+        -- cancelled bind confirmation or full bags never produce a phantom record.
+        -- The expectations are registered first: LOOT_BIND_CONFIRM fires from inside
+        -- LootSlot itself.
+        ns.LootDetect.ExpectClear(slot)
+        ns.Pending.ExpectSlot(slot)
+        watching = { record = record, slot = slot, mode = "take",
+                     deadline = GetTime() + C.AWARD_CLEAR_TIMEOUT }
+        LootSlot(slot)
+        frame:Show()
+        return
     end
-    record.delivery = C.DELIVERY.PENDING
-    record.deliveryPath = C.DELIVERY_PATH.TRADE
-    record.failure = nil
-    ns.Pending.Add(record)
-    ns.Print(string.format("%s is in your bags for %s. Deliver it within 2 hours: "
-        .. "the host panel's pending list, or /rls pending.", labelFor(record), record.char))
-    deliveryChanged(record, previous)
+    if spareUnits(record) > 0 then
+        becomePending(record)
+    elseif slot and ns.LootDetect.windowOpen then
+        markLost(record)
+    elseif slot then
+        ns.Print(OPEN_CORPSE)
+    else
+        ns.Print(labelFor(record) .. " is not in your bags.")
+    end
 end
 
 --------------------------------------------------------------------------------
@@ -367,13 +463,24 @@ function Award.Prompt(sessionId, itemIdx, copy, forceTrade)
         ns.Print("no award record for that item; was the batch resolved on this client?")
         return false
     end
+    if not Award.Retryable(record) then
+        ns.Print(labelFor(record) .. " for " .. record.char .. ": "
+            .. Award.StatusText(record) .. ".")
+        return false
+    end
+    local existing = ns.Pending.Find(record)
+    if existing then
+        ns.Print(string.format("%s is already in your bags for %s. Use Deliver, or /rls pending.",
+            labelFor(record), record.char))
+        return false
+    end
 
     local path, why = Award.PathFor(record, {
         forceTrade = forceTrade,
         lootMethod = (GetLootMethod()),
         windowOpen = ns.LootDetect.windowOpen,
         slotHolds = ns.LootDetect.SlotHolds(record.lootSlot, record.itemString),
-        inBags = findInBags(record.itemString) ~= nil,
+        inBags = spareUnits(record) > 0,
     })
     if not path then
         if why == C.AWARD_FAILURE.SOURCE_INVALID then
@@ -396,26 +503,40 @@ end
 -- Events and the clear watch
 --------------------------------------------------------------------------------
 
+local function settle(outcome)
+    local current = watching
+    watching = nil
+    if not current then return end
+    local record = current.record
+    if outcome == "cleared" then
+        if current.mode == "give" then
+            Award.MarkDelivered(record, C.DELIVERY_PATH.MASTER_LOOT)
+        else
+            becomePending(record)
+        end
+        return
+    end
+    ns.LootDetect.UnexpectClear(current.slot)
+    ns.Pending.ForgetSlot(current.slot)
+    if current.mode == "give" then
+        fail(record, outcome == "closed" and C.AWARD_FAILURE.SOURCE_INVALID
+            or C.AWARD_FAILURE.SLOT_NOT_CLEARED)
+    else
+        fail(record, C.AWARD_FAILURE.NOT_LOOTED)
+    end
+end
+
 local function onEvent(_, event, arg1)
     if event == "LOOT_SLOT_CLEARED" then
-        if watching and arg1 == watching.slot then
-            local record = watching.record
-            watching = nil
-            Award.MarkDelivered(record, C.DELIVERY_PATH.MASTER_LOOT)
-        end
+        ns.Pending.ForgetSlot(arg1)
+        if watching and arg1 == watching.slot then settle("cleared") end
     elseif event == "LOOT_BIND_CONFIRM" then
         -- Our own LootSlot on a bind-on-pickup item, for the trade path.
-        if arg1 and not confirmed[arg1] and ns.Pending.ExpectsSlot(arg1) then
-            confirmed[arg1] = true
-            ConfirmLootSlot(arg1)
-        end
+        if arg1 and ns.Pending.ExpectsSlot(arg1) then ConfirmLootSlot(arg1) end
     elseif event == "LOOT_CLOSED" then
-        if watching then
-            local record = watching.record
-            watching = nil
-            ns.LootDetect.UnexpectClear(record.lootSlot)
-            fail(record, C.AWARD_FAILURE.SOURCE_INVALID)
-        end
+        -- Slot indices belong to this corpse only; nothing expected survives it.
+        ns.Pending.ClearExpectations()
+        if watching then settle("closed") end
     end
 end
 
@@ -424,12 +545,7 @@ local function onUpdate()
         frame:Hide()
         return
     end
-    if GetTime() >= watching.deadline then
-        local record = watching.record
-        watching = nil
-        ns.LootDetect.UnexpectClear(record.lootSlot)
-        fail(record, C.AWARD_FAILURE.SLOT_NOT_CLEARED)
-    end
+    if GetTime() >= watching.deadline then settle("timeout") end
 end
 
 function Award.Init()
