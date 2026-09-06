@@ -42,6 +42,11 @@ end
 No mocking framework, no dependencies. If a `Core/` file needs a mock to load, it has violated
 the purity rule.
 
+**`Data/` loads the same way.** `Core/Eligibility.lua` reads `ns.Data`, so the runner must load
+`Data/ClassArmor.lua` and `Data/TierTokens.lua` through `loadCore` too, after the `Core/` files.
+They use the same vararg idiom and are pure data. Forgetting them makes the `eligibility` suite
+fail in a way that looks like a logic bug.
+
 ### Suites
 
 | Suite | Covers | Source of cases |

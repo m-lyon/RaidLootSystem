@@ -87,8 +87,13 @@ RaidLootSystem/
     fixtures/*.lua
 ```
 
-`.toc` load order: `Libs` → `Core` (Constants, Util, Serialize, Tiers, Eligibility, Resolve) →
-`Data` → `Modules` (Database first) → `UI` → `RaidLootSystem.lua` last.
+`.toc` load order: `Libs` → `Core` (Constants, Util, Serialize, Tiers, Eligibility, Resolve,
+PriorityList) → `Data` → `Modules` (Database first) → `UI` → `RaidLootSystem.lua` last.
+
+`Data/` loads **after** `Core/`, so any `Core/` file reading `ns.Data` must do so inside a
+function body, never at file scope. `Data/` files are plain Lua tables using the same
+`local ADDON, ns = ...` idiom and are pure — the fixture runner loads them exactly like `Core/`
+files (009 §2).
 
 ### Namespacing
 
