@@ -25,6 +25,13 @@ local CLOTH_CHEST = { equipLoc = "INVTYPE_CHEST", armorSubclass = "CLOTH", quali
 local CLOTH_CLOAK = { equipLoc = "INVTYPE_CLOAK", armorSubclass = "CLOTH", quality = 4 }
 local MISC_RING   = { equipLoc = "INVTYPE_FINGER", armorSubclass = "MISCELLANEOUS", quality = 4 }
 local SWORD_2H    = { equipLoc = "INVTYPE_2HWEAPON", weaponSubclass = "SWORD_2H", quality = 4 }
+local THROWN      = { equipLoc = "INVTYPE_THROWN", weaponSubclass = "THROWN", quality = 4 }
+local POLEARM     = { equipLoc = "INVTYPE_2HWEAPON", weaponSubclass = "POLEARM", quality = 4 }
+local DAGGER      = { equipLoc = "INVTYPE_WEAPON", weaponSubclass = "DAGGER", quality = 4 }
+local STAFF       = { equipLoc = "INVTYPE_2HWEAPON", weaponSubclass = "STAFF", quality = 4 }
+local FIST        = { equipLoc = "INVTYPE_WEAPON", weaponSubclass = "FIST", quality = 4 }
+local SHIELD      = { equipLoc = "INVTYPE_SHIELD", weaponSubclass = "SHIELD", quality = 4 }
+local BOW         = { equipLoc = "INVTYPE_RANGED", weaponSubclass = "BOW", quality = 4 }
 local CONQUEROR   = { equipLoc = "INVTYPE_CHEST",
                       tokenClasses = { PALADIN = true, PRIEST = true, WARLOCK = true },
                       quality = 4 }
@@ -182,5 +189,44 @@ return {
                       config = FILTER_ON },
             expected = PASS,
         },
+
+        ------------------------------------------------------------------------
+        -- The weapon rows checked in game on 2026-09-06 (Data/VERIFY.md). Each was
+        -- a doubtful entry; the Hunter thrown row was wrong and is the regression.
+        ------------------------------------------------------------------------
+        { name = "verified: a hunter can use thrown weapons",
+          input = { item = THROWN, char = char("HUNTER"), config = FILTER_ON }, expected = PASS },
+        { name = "verified: a paladin can use a polearm",
+          input = { item = POLEARM, char = char("PALADIN"), config = FILTER_ON }, expected = PASS },
+        { name = "verified: a druid can use a polearm",
+          input = { item = POLEARM, char = char("DRUID"), config = FILTER_ON }, expected = PASS },
+        { name = "verified: a shaman cannot use a polearm",
+          input = { item = POLEARM, char = char("SHAMAN"), config = FILTER_ON },
+          expected = { ok = false, reason = "WRONG_WEAPON" } },
+        { name = "verified: a warrior can use a staff, a shield and thrown weapons",
+          input = { item = STAFF, char = char("WARRIOR"), config = FILTER_ON }, expected = PASS },
+        { name = "verified: a warrior can use a shield",
+          input = { item = SHIELD, char = char("WARRIOR"), config = FILTER_ON }, expected = PASS },
+        { name = "verified: a warrior can use thrown weapons",
+          input = { item = THROWN, char = char("WARRIOR"), config = FILTER_ON }, expected = PASS },
+        { name = "verified: a warlock, a mage and a priest can use daggers",
+          input = { item = DAGGER, char = char("WARLOCK"), config = FILTER_ON }, expected = PASS },
+        { name = "verified: a mage can use a dagger",
+          input = { item = DAGGER, char = char("MAGE"), config = FILTER_ON }, expected = PASS },
+        { name = "verified: a priest can use a dagger",
+          input = { item = DAGGER, char = char("PRIEST"), config = FILTER_ON }, expected = PASS },
+        { name = "verified: a rogue can use bows and thrown weapons",
+          input = { item = BOW, char = char("ROGUE"), config = FILTER_ON }, expected = PASS },
+        { name = "verified: a rogue can use thrown weapons",
+          input = { item = THROWN, char = char("ROGUE"), config = FILTER_ON }, expected = PASS },
+        { name = "verified: a death knight cannot use a dagger",
+          input = { item = DAGGER, char = char("DEATHKNIGHT"), config = FILTER_ON },
+          expected = { ok = false, reason = "WRONG_WEAPON" } },
+        { name = "verified: a death knight cannot use a staff",
+          input = { item = STAFF, char = char("DEATHKNIGHT"), config = FILTER_ON },
+          expected = { ok = false, reason = "WRONG_WEAPON" } },
+        { name = "verified: a death knight cannot use a fist weapon",
+          input = { item = FIST, char = char("DEATHKNIGHT"), config = FILTER_ON },
+          expected = { ok = false, reason = "WRONG_WEAPON" } },
     },
 }

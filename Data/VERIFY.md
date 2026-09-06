@@ -4,8 +4,9 @@
 CLAUDE.md marks **verify, don't recall**. They were assembled from reference material and
 **have not been checked against a live 3.3.5a server.**
 
-Two flags stay `false` until someone works through this page and flips them:
-`Data.WEAPONS_VERIFIED` and `Data.SUBCLASS_ORDER_VERIFIED`.
+`Data.WEAPONS_VERIFIED` is now `true`: the weapon rows below were checked in game. One flag
+stays `false` until someone works through the last section and flips it:
+`Data.SUBCLASS_ORDER_VERIFIED`.
 
 ## Why this matters, and how much
 
@@ -32,23 +33,30 @@ slots and **nothing else**. Cloaks, rings, necks and trinkets report an armour s
 wearable by everyone, and including `INVTYPE_CLOAK` here would make every cloak in the game
 cloth-only.
 
-## The weapon table — check these first
+## The weapon table — verified
 
-Ordered by how likely I think they are to be wrong. Each is one in-game check: open the
-character sheet of a character of that class, or inspect an item of that type and read the red
-"cannot use" text.
+Checked in game on **2026-09-06** by Matt Lyon against the group's AzerothCore + mod-playerbots
+server (build not recorded). Each line below was confirmed by inspecting the item on a character
+of that class. The `eligibility` suite carries one fixture case per line, so a later edit that
+undoes any of them fails CI.
 
-| # | Check | Why it's doubtful |
+| Class | Confirmed | Table |
 |---|---|---|
-| 1 | **Hunter — thrown.** Currently **excluded**. | Hunters use the ranged slot for bows/guns/crossbows. Whether thrown is also permitted is the entry I am least sure of. |
-| 2 | **Paladin — polearm.** Currently **included**. | Reference material disagrees with itself here. If wrong, Paladins wrongly compete for polearms. |
-| 3 | **Druid — polearm.** Currently **included**. | Believed correct (feral), but shares the doubt above. |
-| 4 | **Shaman — polearm.** Currently **excluded**. | One search result claimed Shamans have polearms; a second source did not. Excluded on the balance of evidence. |
-| 5 | **Warrior — staff, thrown, shield.** All **included**. | A wiki fetch during authoring returned Warriors as unable to use shields, which is certainly wrong — that source was lossy, so everything it touched is suspect. |
-| 6 | **Priest / Mage / Warlock — dagger.** All **included**. | Same lossy source omitted these. Believed correct. |
-| 7 | **Rogue — bow, crossbow, gun, thrown.** All **included**. | Same. |
-| 8 | **Death Knight — no dagger, no fist, no staff.** | Believed correct; cheap to confirm. |
-| 9 | **Relic subclasses** — `LIBRAM` Paladin, `IDOL` Druid, `SIGIL` Death Knight, `TOTEM` Shaman. | Mapping is confident; the *subclass key names* produced by `Modules/ItemInfo.lua` are what to confirm. |
+| Hunter | can equip thrown | **was wrong** (excluded); fixed, `THROWN` added |
+| Paladin | can equip polearms | included, unchanged |
+| Druid | can use polearms | included, unchanged |
+| Shaman | cannot use polearms | excluded, unchanged |
+| Warrior | can use staves, shields and thrown | included, unchanged |
+| Warlock, Mage, Priest | can use daggers | included, unchanged |
+| Rogue | can use bows, crossbows, guns and thrown | included, unchanged |
+| Death Knight | cannot use daggers, staves or fist weapons | excluded, unchanged |
+
+Rows not in this list (the common one-handed and two-handed axes, maces and swords, wands for
+casters) were never in doubt and were not separately checked.
+
+The relic permissions — `LIBRAM` Paladin, `IDOL` Druid, `SIGIL` Death Knight, `TOTEM` Shaman —
+are not in doubt as a mapping. What still needs confirming is that those *key names* are what
+`Modules/ItemInfo.lua` produces; that is the subclass-order check below.
 
 ### Confirming the subclass keys
 
@@ -72,13 +80,12 @@ behind it, whereas a missing id just falls through to the name match.
 
 The three class groupings are stable across all of WotLK and are not in doubt.
 
-## When you're done
+## If a weapon row turns out wrong later
 
-1. Fix any wrong rows.
-2. Set `Data.WEAPONS_VERIFIED = true`.
-3. Add a fixture case to the `eligibility` suite (spec 009 §2) for every row you corrected —
-   CLAUDE.md's rule is a fixture per bug fixed in `Core/`, and this is the data `Core/` reads.
-4. Delete the doubt table above and replace it with the date and server build verified against.
+1. Fix the row.
+2. Add a fixture case to the `eligibility` suite (spec 009 §2) — CLAUDE.md's rule is a fixture
+   per bug fixed in `Core/`, and this is the data `Core/` reads.
+3. Add the line to the table above with the date.
 
 
 ## The subclass order — `Data/ItemClasses.lua`

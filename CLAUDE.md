@@ -70,10 +70,10 @@ Add a fixture case for every bug fixed in `Core/`.
 
 ## Verify, don't recall
 
-- **`Data/ClassArmor.lua` ships with `WEAPONS_VERIFIED = false`.** The weapon table was
-  assembled from reference material and has not been checked in game.
-  [`Data/VERIFY.md`](Data/VERIFY.md) lists the doubtful rows in priority order. Do not raise
-  that flag without doing the checks.
+- **`Data/ClassArmor.lua`'s weapon table was checked in game on 2026-09-06** and
+  `WEAPONS_VERIFIED` is `true`. [`Data/VERIFY.md`](Data/VERIFY.md) records what was confirmed,
+  and the `eligibility` suite pins each line. A row that a raid night contradicts gets a fix, a
+  fixture and a line in that table, in that order.
 - **`Data/ItemClasses.lua` ships with `SUBCLASS_ORDER_VERIFIED = false`.** The subclass
   *positions* were assembled from reference material. `/rls itemclasses` prints the live
   lists beside them; `Data/VERIFY.md` says what to read. `Modules/ItemInfo.lua` refuses to
