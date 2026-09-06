@@ -1,10 +1,11 @@
 # Verifying the data tables
 
-`Data/ClassArmor.lua` and `Data/TierTokens.lua` are the two files CLAUDE.md marks
-**verify, don't recall**. They were assembled from reference material and **have not been
-checked against a live 3.3.5a server.**
+`Data/ClassArmor.lua`, `Data/TierTokens.lua` and `Data/ItemClasses.lua` are the files
+CLAUDE.md marks **verify, don't recall**. They were assembled from reference material and
+**have not been checked against a live 3.3.5a server.**
 
-`Data.WEAPONS_VERIFIED` is `false` until someone works through this page and flips it.
+Two flags stay `false` until someone works through this page and flips them:
+`Data.WEAPONS_VERIFIED` and `Data.SUBCLASS_ORDER_VERIFIED`.
 
 ## Why this matters, and how much
 
@@ -78,3 +79,41 @@ The three class groupings are stable across all of WotLK and are not in doubt.
 3. Add a fixture case to the `eligibility` suite (spec 009 §2) for every row you corrected —
    CLAUDE.md's rule is a fixture per bug fixed in `Core/`, and this is the data `Core/` reads.
 4. Delete the doubt table above and replace it with the date and server build verified against.
+
+
+## The subclass order — `Data/ItemClasses.lua`
+
+`Data.WEAPON_SUBCLASSES` and `Data.ARMOR_SUBCLASSES` claim to be the order
+`GetAuctionItemSubClasses(1)` and `GetAuctionItemSubClasses(2)` return on a 3.3.5a client.
+Every armour and weapon permission in this addon is looked up through those positions, so an
+order that is off by one sends every plate item to the leather rule.
+
+**The check is one command in game:**
+
+```
+/rls itemclasses
+```
+
+It prints the live class list, then each live subclass beside our name for the same position.
+Read down the two columns. When they agree, set `Data.SUBCLASS_ORDER_VERIFIED = true`.
+
+Three things to look at while you are there:
+
+1. **The class list.** `Data.CLASS_INDEX` claims weapons are position 1 and armour position 2.
+   Both are read off the first list the command prints.
+2. **The obsolete entries.** These tables are the *auction house* order, which drops the
+   subclasses the item enum still carries — the armour "Buckler" and the two obsolete weapon
+   slots. If a live list is longer than ours, that is why.
+3. **The names in `Data.WEAPONS`.** `SHIELD`, `LIBRAM`, `IDOL`, `TOTEM` and `SIGIL` are armour
+   subclasses here but weapon *permissions* in `Data/ClassArmor.lua`. The two spellings must
+   match exactly.
+
+### What happens while it is unverified
+
+`Modules/ItemInfo.lua` compares the length of each live list against the length of our table at
+load. On a mismatch it prints a warning and stops mapping subclasses at all: items then carry
+no `armorSubclass` and no `weaponSubclass`, so checks 6 and 7 in `Core/Eligibility.lua` never
+fire and **nobody is wrongly excluded**. Filtering is lost, not correctness.
+
+A wrong order inside a list of the *right* length is the case that check cannot catch, and the
+reason this page exists.

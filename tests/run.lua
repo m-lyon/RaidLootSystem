@@ -28,16 +28,20 @@ local CORE_FILES = {
 local DATA_FILES = {
     "Data/TierTokens.lua",
     "Data/ClassArmor.lua",
+    "Data/ItemClasses.lua",
 }
 
 -- Modules that are pure at file scope and expose pure helpers worth testing.
 -- Anything here must create no frame and call no WoW API while loading.
 local MODULE_FILES = {
     "Modules/Roster.lua",
+    "Modules/ItemInfo.lua",
+    "Modules/LootDetect.lua",
     "Modules/Session.lua",
 }
 
-local SUITES = { "tiers", "serialize", "roster", "session", "eligibility", "resolve" }
+local SUITES = { "tiers", "serialize", "roster", "session", "eligibility", "resolve",
+                 "iteminfo", "lootdetect" }
 
 --------------------------------------------------------------------------------
 -- Comparison and reporting

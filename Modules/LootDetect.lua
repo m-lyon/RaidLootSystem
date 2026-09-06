@@ -1,0 +1,359 @@
+-- Modules/LootDetect.lua
+--
+-- Which items become a batch (spec 004 sections 2 and 3). Two ways in: scanning the loot
+-- window as master looter, and an item link handed to us directly.
+--
+-- Everything above the "WoW-facing" divider is pure and fixture-tested by the `lootdetect`
+-- suite; the file creates no frame and calls no WoW API while loading.
+
+local ADDON, ns = ...
+
+ns.LootDetect = {}
+local LootDetect = ns.LootDetect
+
+local C = ns.Constants
+
+-- Why a loot slot was not offered as a batch candidate. Shown by the host panel next to the
+-- manual-add control (spec 006), so "why is this not in the list" is never a mystery.
+LootDetect.SKIP = {
+    NO_LINK        = "NO_LINK",          -- a coin slot
+    BELOW_QUALITY  = "BELOW_QUALITY",
+    NOT_EQUIPPABLE = "NOT_EQUIPPABLE",
+}
+
+LootDetect.SKIP_TEXT = {
+    NO_LINK        = "not an item",
+    BELOW_QUALITY  = "below the quality threshold",
+    NOT_EQUIPPABLE = "not equippable and not a tier token",
+}
+
+--------------------------------------------------------------------------------
+-- Pure: the candidate rule (section 2)
+--------------------------------------------------------------------------------
+
+--- Should this loot slot be offered as a batch candidate?
+--
+-- @param info       an itemInfo from Modules/ItemInfo.lua
+-- @param quality    the loot slot's quality. Preferred over info.quality: the loot window
+--                   reports it without needing the item cached, and an item still being
+--                   fetched has no info.quality at all.
+-- @param threshold  host.qualityThreshold, 4 (epic) by default
+-- @return true, or false plus a LootDetect.SKIP code
+function LootDetect.IsCandidate(info, quality, threshold)
+    threshold = threshold or 4
+
+    if not info or not info.itemString then
+        return false, LootDetect.SKIP.NO_LINK
+    end
+
+    local q = quality or info.quality
+    if q and q < threshold then
+        return false, LootDetect.SKIP.BELOW_QUALITY
+    end
+
+    -- A tier token is not equippable by anyone and is the whole reason this test is not
+    -- simply "is it equippable" (spec 004 section 6).
+    if info.tokenGroup then return true end
+    if ns.ItemInfo.IsEquippable(info) then return true end
+
+    -- The client never resolved it. It passed the quality bar, so it is very likely worth
+    -- rolling for; it goes in as `special` rather than being quietly dropped.
+    if info.unresolved then return true end
+
+    -- Gold, emblems, mats, patterns, mounts. Excluded from the automatic list, still
+    -- addable by hand from the host panel (section 2).
+    return false, LootDetect.SKIP.NOT_EQUIPPABLE
+end
+
+--------------------------------------------------------------------------------
+-- Pure: duplicate stacks (section 2)
+--------------------------------------------------------------------------------
+
+--- Collapse rows that hold the same item into one batch item with a count.
+--
+-- Both loot slots are kept: the award step needs every slot it will have to call
+-- GiveMasterLoot on, and it needs them under one item so that resolution hands out two
+-- copies of one thing rather than treating them as two unrelated drops (spec 003 section 5).
+--
+-- @param rows array of { lootSlot, quantity, info }
+-- @return array of { idx, itemString, count, lootSlot, lootSlots, info } in slot order
+function LootDetect.Collapse(rows)
+    local items, byItem = {}, {}
+
+    for i = 1, #rows do
+        local row = rows[i]
+        local info = row.info or {}
+        -- Two copies of one drop can carry different suffix or enchant fields, so the id is
+        -- the grouping key and the item string is not.
+        local key = info.itemId or info.itemString
+        local quantity = row.quantity or 1
+        local existing = key ~= nil and byItem[key] or nil
+
+        if existing then
+            existing.count = existing.count + quantity
+            if row.lootSlot then
+                existing.lootSlots[#existing.lootSlots + 1] = row.lootSlot
+            end
+        else
+            local item = {
+                idx = #items + 1,
+                itemString = info.itemString,
+                count = quantity,
+                lootSlot = row.lootSlot,
+                lootSlots = row.lootSlot and { row.lootSlot } or {},
+                info = info,
+            }
+            items[#items + 1] = item
+            if key ~= nil then byItem[key] = item end
+        end
+    end
+
+    return items
+end
+
+--------------------------------------------------------------------------------
+-- Pure: losing loot mid-batch (section 3)
+--------------------------------------------------------------------------------
+
+--- Drop the loot slots `isGone(slot)` reports as no longer there.
+--
+-- An item with two slots keeps going on one copy rather than vanishing whole -- the count
+-- drops instead. A batch that loses every item is what makes the host abort with LOOT_GONE;
+-- this function reports that rather than deciding it.
+--
+-- @return kept array, lost array of { item, slots } (the items and the copies removed)
+function LootDetect.Prune(items, isGone)
+    local kept, lost = {}, {}
+
+    for i = 1, #items do
+        local item = items[i]
+        local slots = item.lootSlots or (item.lootSlot and { item.lootSlot }) or {}
+
+        if #slots == 0 then
+            kept[#kept + 1] = item             -- an item-link batch has no slot to lose
+        else
+            local live, gone = {}, {}
+            for j = 1, #slots do
+                if isGone(slots[j]) then gone[#gone + 1] = slots[j]
+                else live[#live + 1] = slots[j] end
+            end
+
+            if #gone > 0 then
+                lost[#lost + 1] = { item = item, slots = gone }
+            end
+            if #live > 0 then
+                item.lootSlots = live
+                item.lootSlot = live[1]
+                item.count = math.max(1, (item.count or 1) - #gone)
+                kept[#kept + 1] = item
+            end
+        end
+    end
+
+    return kept, lost
+end
+
+--- A short name for a message, without needing the item cached.
+function LootDetect.Label(item)
+    local info = item and item.info or {}
+    return info.link or info.name or info.itemString or "an item"
+end
+
+--------------------------------------------------------------------------------
+-- WoW-facing. Nothing below here runs at file scope.
+--------------------------------------------------------------------------------
+
+-- The candidates from the last corpse scan, waiting for the host to start a batch
+-- (spec 006 owns the panel; this owns the list).
+LootDetect.candidates = {}     -- from Collapse
+LootDetect.skipped = {}        -- { lootSlot, info, quality, reason } -- the manual-add list
+LootDetect.scanning = false
+LootDetect.windowOpen = false
+
+local listeners = {}
+local expectedClears = {}      -- loot slots our own award is about to empty
+local scanToken = 0            -- see LootDetect.Scan
+local frame
+
+function LootDetect.RegisterListener(fn)
+    listeners[#listeners + 1] = fn
+end
+
+local function fireChanged()
+    for _, fn in ipairs(listeners) do fn(LootDetect.candidates) end
+end
+
+--------------------------------------------------------------------------------
+-- The corpse path (section 2)
+--------------------------------------------------------------------------------
+
+local function threshold()
+    return ns.Database.Host().qualityThreshold or 4
+end
+
+--- Scan the open loot window. Asynchronous, because an uncached item takes up to five
+-- seconds to resolve and a batch must not open on a half-classified list.
+-- @param callback optional, called with the candidate array
+function LootDetect.Scan(callback)
+    local slots, links = {}, {}
+    for slot = 1, GetNumLootItems() do
+        local link = GetLootSlotLink(slot)
+        if link then
+            local _, _, quantity, quality = GetLootSlotInfo(slot)
+            slots[#slots + 1] = { lootSlot = slot, quantity = quantity or 1, quality = quality }
+            links[#links + 1] = link
+        end
+    end
+
+    -- A scan can still be waiting on the item cache when the host closes this corpse and
+    -- opens the next one. The older answer must not land on the newer corpse's list.
+    scanToken = scanToken + 1
+    local token = scanToken
+
+    LootDetect.scanning = true
+    ns.ItemInfo.RequestAll(links, function(infos)
+        if token ~= scanToken then return end
+        local rows, skipped = {}, {}
+        for i = 1, #slots do
+            local row = slots[i]
+            row.info = infos[i]
+            local ok, reason = LootDetect.IsCandidate(row.info, row.quality, threshold())
+            if ok then
+                rows[#rows + 1] = row
+            else
+                skipped[#skipped + 1] = {
+                    lootSlot = row.lootSlot,
+                    info = row.info,
+                    quality = row.quality,
+                    reason = reason,
+                }
+            end
+        end
+
+        LootDetect.candidates = LootDetect.Collapse(rows)
+        LootDetect.skipped = skipped
+        LootDetect.scanning = false
+        fireChanged()
+        if callback then callback(LootDetect.candidates) end
+    end)
+end
+
+--------------------------------------------------------------------------------
+-- The item-link path (section 2)
+--------------------------------------------------------------------------------
+
+--- Start a batch on one item link. No loot slot, so the award step goes to the trade
+-- path (spec 007 section 5) rather than GiveMasterLoot.
+-- @param callback optional, called with the single-item array
+function LootDetect.FromLink(link, callback)
+    local itemString = ns.ItemInfo.ParseLink(link)
+    if not itemString then
+        ns.Print("that is not an item link.")
+        if callback then callback(nil) end
+        return false
+    end
+
+    ns.ItemInfo.Request(link, function(info)
+        -- No quality bar and no equip test on this path. The host asked for this item by
+        -- name; second-guessing them is the one thing the manual path exists to avoid.
+        local items = LootDetect.Collapse({ { quantity = 1, info = info } })
+        if callback then callback(items) end
+    end)
+    return true
+end
+
+--------------------------------------------------------------------------------
+-- Loot source validity (section 3)
+--------------------------------------------------------------------------------
+
+--- Award tells us before it empties a slot, so that its own clear is not read as the
+-- corpse being looted out from under the batch.
+function LootDetect.ExpectClear(lootSlot)
+    if lootSlot then expectedClears[lootSlot] = true end
+end
+
+--- Does `lootSlot` still hold `itemString`? Checked at award time, when a despawned
+-- corpse or a shifted slot index would otherwise send an item to the wrong person.
+function LootDetect.SlotHolds(lootSlot, itemString)
+    if not lootSlot or not itemString then return false end
+    if lootSlot > GetNumLootItems() then return false end
+    local link = GetLootSlotLink(lootSlot)
+    if not link then return false end
+    local _, liveId = ns.ItemInfo.ParseLink(link)
+    local _, wantedId = ns.ItemInfo.ParseLink(itemString)
+    return wantedId ~= nil and wantedId == liveId
+end
+
+--- Items in the open batch that are still sitting on the corpse. Drives the host panel's
+-- "loot still on corpse" banner (section 3) -- three minutes is long enough to walk away.
+function LootDetect.UnresolvedItems()
+    local session = ns.Session.current
+    if not session or not session.items then return {} end
+
+    local out = {}
+    for i = 1, #session.items do
+        local item = session.items[i]
+        local slots = item.lootSlots or (item.lootSlot and { item.lootSlot }) or {}
+        for j = 1, #slots do
+            if LootDetect.SlotHolds(slots[j], item.itemString) then
+                out[#out + 1] = item
+                break
+            end
+        end
+    end
+    return out
+end
+
+local function onSlotCleared(lootSlot)
+    if expectedClears[lootSlot] then
+        expectedClears[lootSlot] = nil
+        return
+    end
+
+    -- Somebody else took it, or it was looted by hand. Whatever the batch thought it was
+    -- rolling for is not there any more, and a silently shrinking batch costs an item.
+    local session = ns.Session.current
+    if session and session.state == C.SESSION_STATE.OPEN and ns.Session.IsHost() then
+        ns.Session.DropSlots({ [lootSlot] = true })
+    end
+
+    if #LootDetect.candidates > 0 then
+        LootDetect.candidates = LootDetect.Prune(LootDetect.candidates,
+            function(slot) return slot == lootSlot end)
+        fireChanged()
+    end
+end
+
+local function onEvent(_, event, arg1)
+    if event == "LOOT_OPENED" then
+        LootDetect.windowOpen = true
+        -- Only the master looter builds a batch, and only they see the candidate list.
+        if not ns.Session.IsHost() then return end
+        LootDetect.Scan(function(items)
+            if #items == 0 then return end
+            if ns.HostPanel then
+                ns.HostPanel.Show()
+            else
+                -- Until spec 006's panel exists, the host is told rather than railroaded:
+                -- auto-opening on every corpse would fire on trash and on other people's kills.
+                ns.Print(string.format("%d item(s) here are worth rolling for. "
+                    .. "/rls loot to list them, /rls start to open a batch.", #items))
+            end
+        end)
+    elseif event == "LOOT_SLOT_CLEARED" then
+        onSlotCleared(arg1)
+    elseif event == "LOOT_CLOSED" then
+        -- Not fatal: the slot indices survive and the corpse can be reopened (section 3).
+        LootDetect.windowOpen = false
+        expectedClears = {}
+    end
+end
+
+function LootDetect.Init()
+    if frame then return end
+    frame = CreateFrame("Frame", "RaidLootSystemLootDetectFrame")
+    frame:RegisterEvent("LOOT_OPENED")
+    frame:RegisterEvent("LOOT_SLOT_CLEARED")
+    frame:RegisterEvent("LOOT_CLOSED")
+    frame:SetScript("OnEvent", onEvent)
+end

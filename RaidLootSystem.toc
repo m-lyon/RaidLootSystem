@@ -21,10 +21,13 @@ Core\Resolve.lua
 
 Data\TierTokens.lua
 Data\ClassArmor.lua
+Data\ItemClasses.lua
 
 Modules\Database.lua
 Modules\Comms.lua
 Modules\Roster.lua
+Modules\ItemInfo.lua
+Modules\LootDetect.lua
 Modules\Session.lua
 Modules\Client.lua
 

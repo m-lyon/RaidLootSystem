@@ -66,6 +66,75 @@ local function setTierCount(argument)
     ns.HierarchyEditor.Refresh()
 end
 
+--------------------------------------------------------------------------------
+-- Loot (spec 004). The host panel (spec 006) will own these; until it exists they are
+-- the seam that makes detection and batching usable and demonstrable.
+--------------------------------------------------------------------------------
+
+local function lootList()
+    local LootDetect = ns.LootDetect
+    if LootDetect.scanning then
+        ns.Print("still looking these items up; try again in a moment.")
+        return
+    end
+
+    local items = LootDetect.candidates
+    if #items == 0 then
+        ns.Print("nothing here is worth rolling for. Open the loot window as master looter, "
+            .. "or use /rls roll <item link> for one item.")
+    else
+        ns.Print(#items .. " candidate(s):")
+        for i = 1, #items do
+            local item = items[i]
+            local marker = item.info and item.info.special and "  [unclassified -- anyone may enter]" or ""
+            ns.Print(string.format("  %d. %s%s%s", i, ns.LootDetect.Label(item),
+                item.count > 1 and (" x" .. item.count) or "", marker))
+        end
+        ns.Print("/rls start opens a batch on all of them.")
+    end
+
+    for _, skip in ipairs(LootDetect.skipped) do
+        local why = ns.LootDetect.SKIP_TEXT[skip.reason] or skip.reason
+        ns.Print("  not offered (" .. why .. "): " .. ns.LootDetect.Label(skip)
+            .. " -- /rls roll <link> to roll for it anyway.")
+    end
+end
+
+local function startBatch()
+    local items = ns.LootDetect.candidates
+    if #items == 0 then
+        ns.Print("there are no candidates. /rls loot to see what was found.")
+        return
+    end
+    local ok, why = ns.Session.Open(items)
+    if not ok then ns.Print(why) end
+end
+
+local function rollFor(argument)
+    if argument == "" then
+        ns.Print("give an item link: /rls roll [Shadowmourne]")
+        return
+    end
+    ns.LootDetect.FromLink(argument, function(items)
+        if not items then return end
+        local ok, why = ns.Session.Open(items)
+        if not ok then ns.Print(why) end
+    end)
+end
+
+--- The quality bar the corpse scan applies (spec 004 section 2). The host panel (spec 006)
+-- owns this setting; this is here so the bar can be moved without one.
+local function setQuality(argument)
+    local quality = tonumber(argument)
+    if not quality or quality < 0 or quality > 5 then
+        ns.Print("quality must be between 0 and 5. 3 is rare, 4 is epic.")
+        return
+    end
+    ns.Database.Host().qualityThreshold = math.floor(quality)
+    ns.Print("only loot of quality " .. math.floor(quality)
+        .. " and above is offered. It applies to the next corpse.")
+end
+
 local function help()
     ns.Print("commands:")
     ns.Print("  /rls              open your hierarchy")
@@ -73,9 +142,14 @@ local function help()
     ns.Print("  /rls tiers <0-5>  set the tier count you host with")
     ns.Print("  /rls publish      resend your roster to the raid")
     ns.Print("  /rls request      ask everyone to resend theirs")
+    ns.Print("  /rls loot         list what the open corpse has worth rolling for")
+    ns.Print("  /rls start        open a batch on those items (host)")
+    ns.Print("  /rls quality <0-5> set the quality bar the corpse scan applies")
+    ns.Print("  /rls roll <link>  open a batch on one item link (host)")
     ns.Print("  /rls close        resolve the open batch now (host)")
     ns.Print("  /rls cancel       cancel the open batch (host)")
     ns.Print("  /rls sync         ask the host to resend the open batch")
+    ns.Print("  /rls itemclasses  print this client's item class order (verification)")
     ns.Print("  /rls debug        toggle debug messages")
 end
 
@@ -95,6 +169,16 @@ local function dispatch(input)
     elseif command == "request" then
         ns.Roster.RequestAll()
         ns.Print("asked everyone to resend their roster.")
+    elseif command == "loot" then
+        lootList()
+    elseif command == "start" then
+        startBatch()
+    elseif command == "quality" then
+        setQuality(argument)
+    elseif command == "roll" then
+        rollFor(argument)
+    elseif command == "itemclasses" then
+        ns.ItemInfo.DumpClasses()
     elseif command == "close" then
         if not ns.Session.Close() then
             ns.Print("there is no batch of yours to close.")
@@ -138,6 +222,8 @@ loader:SetScript("OnEvent", function(_, event, addonName)
     elseif event == "PLAYER_LOGIN" then
         ns.Comms.Init()
         ns.Roster.Init()
+        ns.ItemInfo.Init()
+        ns.LootDetect.Init()
         ns.Session.Init()
         ns.Client.Init()
         ns.Minimap.Init()
