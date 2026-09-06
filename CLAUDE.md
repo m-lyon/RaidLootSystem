@@ -79,10 +79,10 @@ Add a fixture case for every bug fixed in `Core/`.
   `WEAPONS_VERIFIED` is `true`. [`Data/VERIFY.md`](Data/VERIFY.md) records what was confirmed,
   and the `eligibility` suite pins each line. A row that a raid night contradicts gets a fix, a
   fixture and a line in that table, in that order.
-- **`Data/ItemClasses.lua` ships with `SUBCLASS_ORDER_VERIFIED = false`.** The subclass
-  *positions* were assembled from reference material. `/rls itemclasses` prints the live
-  lists beside them; `Data/VERIFY.md` says what to read. `Modules/ItemInfo.lua` refuses to
-  map subclasses at all when the list lengths disagree, so the failure is loud and open.
+- **`Data/ItemClasses.lua`'s subclass order was checked in game on 2026-09-06** and
+  `SUBCLASS_ORDER_VERIFIED` is `true`. `Data/VERIFY.md` records what was confirmed.
+  `Modules/ItemInfo.lua` still refuses to map subclasses at all when the live and table list
+  lengths disagree, so a future drift is loud and open, not silent.
 - **`Data/TierTokens.lua`'s `TOKEN_IDS` is intentionally empty.** Detection is by trailing word.
   Add an id only for a token observed to be misclassified in game, with the link in a comment —
   a fabricated id silently routes a token to the wrong classes with no fallback behind it.

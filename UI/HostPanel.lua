@@ -821,7 +821,7 @@ end
 
 local function build()
     frame = Widgets.Window("RaidLootSystemHostPanel", "host",
-        "Raid Loot System -- Host panel", WIDTH, 620)
+        "Raid Loot System - Host panel", WIDTH, 620)
 
     local scroll
     scroll, content = Widgets.ScrollArea(frame, "RaidLootSystemHostScroll",

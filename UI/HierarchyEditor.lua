@@ -435,7 +435,7 @@ local function build()
     rows, bands = {}, {}
 
     frame = Widgets.Window("RaidLootSystemHierarchyEditor", "hierarchy",
-        "Raid Loot System -- Your hierarchy", LIST_WIDTH + 40, START_HEIGHT)
+        "Raid Loot System - Your hierarchy", LIST_WIDTH + 40, START_HEIGHT)
 
     frame.tierText = Widgets.Label(frame, "", "GameFontNormalSmall")
     frame.tierText:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, -40)
