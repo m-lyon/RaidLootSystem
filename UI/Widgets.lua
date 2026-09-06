@@ -99,6 +99,59 @@ function Widgets.Button(parent, text, width, height, onClick)
     return b
 end
 
+--- The art for Widgets.IconButton. Text glyphs ("^", "v", "X") render at
+-- whatever weight the font gives them and never look like a matched set, so the
+-- row controls use the same Blizzard art the rest of the UI does. The
+-- scroll-arrow files carry a slice of the scroll-bar track around the arrow;
+-- the crop is the one FrameXML's UIPanelScrollUpButtonTemplate uses.
+local ICON_ART = {
+    up = {
+        normal    = "Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up",
+        pushed    = "Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Down",
+        disabled  = "Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Disabled",
+        highlight = "Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Highlight",
+        crop      = { 0.20, 0.80, 0.25, 0.75 },
+    },
+    down = {
+        normal    = "Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up",
+        pushed    = "Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Down",
+        disabled  = "Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Disabled",
+        highlight = "Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Highlight",
+        crop      = { 0.20, 0.80, 0.25, 0.75 },
+    },
+    -- Built from UIPanelCloseButton rather than named textures, so the row's
+    -- remove button is the same glyph as the window close button whatever art
+    -- the template happens to carry.
+    remove = { template = "UIPanelCloseButton" },
+}
+
+--- A textured button: `kind` is a key of ICON_ART ("up", "down", "remove").
+-- Enable/Disable swap in the disabled art where the set has one.
+function Widgets.IconButton(parent, kind, width, height, onClick)
+    local art = ICON_ART[kind]
+    local b = CreateFrame("Button", nil, parent, art.template)
+    b:SetWidth(width)
+    b:SetHeight(height or width)
+
+    local function skin(setter, getter, file, blend)
+        if not file then return end
+        b[setter](b, file, blend)
+        local t = b[getter](b)
+        if t and art.crop then
+            t:SetTexCoord(art.crop[1], art.crop[2], art.crop[3], art.crop[4])
+        end
+    end
+
+    skin("SetNormalTexture", "GetNormalTexture", art.normal)
+    skin("SetPushedTexture", "GetPushedTexture", art.pushed)
+    skin("SetDisabledTexture", "GetDisabledTexture", art.disabled)
+    skin("SetHighlightTexture", "GetHighlightTexture", art.highlight, "ADD")
+
+    -- UIPanelCloseButton ships an OnClick that hides the parent; ours replaces it.
+    b:SetScript("OnClick", onClick)
+    return b
+end
+
 function Widgets.Label(parent, text, template)
     local fs = parent:CreateFontString(nil, "OVERLAY", template or "GameFontHighlightSmall")
     fs:SetText(text or "")
@@ -209,6 +262,12 @@ function Widgets.Panel(parent, alpha)
     p:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.8)
     return p
 end
+
+--- How far a child of a Widgets.ScrollArea must stay clear of its right edge.
+-- UIPanelScrollFrameTemplate anchors its scroll bar to the scroll frame's
+-- TOPRIGHT at x = -6, so the bar sits *over* the last few pixels of the scroll
+-- area; anything drawn out to the full width ends up underneath it.
+Widgets.SCROLLBAR_GUTTER = 22
 
 --- A scrolling content area. Returns the scroll frame and the content frame to
 -- parent rows to.

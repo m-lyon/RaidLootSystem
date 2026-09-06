@@ -10,10 +10,10 @@ Tick a box when done. Where a check needs a code change afterwards, it says so.
 
 ## 1. Install and load
 
-- [ ] Copy the addon to `Interface/AddOns/RaidLootSystem` on each client. Log in. No Lua errors
+- [x] Copy the addon to `Interface/AddOns/RaidLootSystem` on each client. Log in. No Lua errors
       on load (`/console scriptErrors 1` to be sure).
-- [ ] `/rls status` prints the version, roster size and master looter.
-- [ ] `/rls` opens the hierarchy editor. Claim your character and your bots, drag them into order.
+- [x] `/rls status` prints the version, roster size and master looter.
+- [x] `/rls` opens the hierarchy editor. Claim your character and your bots, drag them into order.
 - [ ] `/reload`. The roster and order survive.
 
 ## 2. Data tables (`Data/VERIFY.md` has the detail)

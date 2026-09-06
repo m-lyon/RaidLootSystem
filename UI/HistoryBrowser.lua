@@ -17,6 +17,10 @@ local Widgets = ns.Widgets
 
 local WIDTH = 600
 local INNER = WIDTH - 60
+-- Rows stop short of the scroll frame's right edge; the bar the template builds
+-- overhangs it, and the batch badge is right-aligned into exactly that strip.
+local SCROLL_WIDTH = INNER - 30
+local ROW_WIDTH = SCROLL_WIDTH - Widgets.SCROLLBAR_GUTTER
 local ROW_H = 22
 local LIST_H = 300
 local ICON = 16
@@ -112,7 +116,7 @@ local function batchRow(i)
     local row = batchRows[i]
     if row then return row end
     row = CreateFrame("Button", nil, content)
-    row:SetWidth(INNER - 24)
+    row:SetWidth(ROW_WIDTH)
     row:SetHeight(ROW_H)
     row.highlight = row:CreateTexture(nil, "BACKGROUND")
     row.highlight:SetAllPoints()
@@ -171,7 +175,7 @@ end
 local function ensureDetail()
     if detail then return detail end
     detail = CreateFrame("Frame", nil, content)
-    detail:SetWidth(INNER - 24)
+    detail:SetWidth(ROW_WIDTH - 8)
     detail:SetHeight(1)
     return detail
 end
@@ -261,7 +265,7 @@ local function buildTextPanel(parent, title)
     box:SetMultiLine(true)
     box:SetAutoFocus(false)
     box:SetFontObject("ChatFontNormal")
-    box:SetWidth(INNER - 46)
+    box:SetWidth(INNER - 46 - Widgets.SCROLLBAR_GUTTER)
     box:SetHeight(120)
     box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     scroll:SetScrollChild(box)
@@ -331,7 +335,7 @@ local function build()
     listPanel:SetHeight(LIST_H + 12)
 
     local scroll
-    scroll, content = Widgets.ScrollArea(listPanel, "RaidLootSystemHistoryScroll", INNER - 30, LIST_H)
+    scroll, content = Widgets.ScrollArea(listPanel, "RaidLootSystemHistoryScroll", SCROLL_WIDTH, LIST_H)
     scroll:SetPoint("TOPLEFT", listPanel, "TOPLEFT", 6, -6)
 
     frame.empty = Widgets.Label(frame, "", "GameFontDisableSmall")

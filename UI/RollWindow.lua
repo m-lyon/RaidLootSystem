@@ -925,7 +925,7 @@ local function resultRow(pool, content, i)
     if row then return row end
     row = CreateFrame("Frame", nil, content)
     row:SetHeight(16)
-    row:SetWidth(content:GetWidth())
+    row:SetWidth(content:GetWidth() - Widgets.SCROLLBAR_GUTTER)
     row.left = Widgets.Label(row, "", "GameFontHighlightSmall")
     row.left:SetPoint("LEFT", row, "LEFT", 0, 0)
     row.left:SetJustifyH("LEFT")

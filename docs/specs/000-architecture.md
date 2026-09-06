@@ -248,7 +248,10 @@ Canonical throughout the codebase:
 a wrapper around `math.random`; tests pass a deterministic sequence. There is no `math.random`
 call anywhere in `Core/`.
 
-Seed `math.randomseed(time())` exactly once, in `RaidLootSystem.lua` at load.
+Seed `math.randomseed(time())` exactly once, in `RaidLootSystem.lua` at load, guarded by an
+existence check: the 3.3.5a client's Lua sandbox does not expose `math.randomseed` (it seeds
+its own RNG at startup), and an unguarded call errors out of `ADDON_LOADED` before the rest
+of the handler runs.
 
 ## 8. Conventions
 

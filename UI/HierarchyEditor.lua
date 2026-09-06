@@ -16,11 +16,23 @@ local Widgets = ns.Widgets
 local ROW_HEIGHT = 24
 local ROW_GAP = 2
 local BAND_HEIGHT = 14
-local LIST_WIDTH = 320
+local LIST_WIDTH = 340
+
+-- Rows live inside a Widgets.ScrollArea, and its scroll bar overhangs the right
+-- edge of that area. Rows stop a gutter short of it so the row controls -- the
+-- remove button most of all -- are never drawn underneath the bar.
+local SCROLL_WIDTH = LIST_WIDTH - 30
+local ROW_INSET = 4
+local ROW_WIDTH = SCROLL_WIDTH - ROW_INSET - Widgets.SCROLLBAR_GUTTER
+
+local PANEL_GAP = 6
+local BOTTOM_MARGIN = 16
+local START_HEIGHT = 470        -- provisional; layoutPanels measures the real one
 
 local frame, content, rows, bands
-local manualPanel, transferPanel
+local listPanel, manualPanel, transferPanel
 local dragIndex
+local layoutPanels
 
 local function Roster() return ns.Roster end
 
@@ -77,7 +89,7 @@ end
 
 local function createRow(index)
     local row = CreateFrame("Button", nil, content)
-    row:SetWidth(LIST_WIDTH - 24)
+    row:SetWidth(ROW_WIDTH)
     row:SetHeight(ROW_HEIGHT)
     row:RegisterForDrag("LeftButton")
     row:EnableMouse(true)
@@ -97,13 +109,13 @@ local function createRow(index)
     row.name = Widgets.Label(row, "", "GameFontNormal")
     row.name:SetPoint("LEFT", row, "LEFT", 44, 0)
     row.name:SetJustifyH("LEFT")
-    row.name:SetWidth(140)
+    row.name:SetWidth(130)
 
     row.badge = Widgets.Label(row, "", "GameFontNormalSmall")
     row.badge:SetPoint("LEFT", row.name, "RIGHT", 4, 0)
     row.badge:SetWidth(34)
 
-    row.remove = Widgets.Button(row, "X", 20, 18, function()
+    row.remove = Widgets.IconButton(row, "remove", 20, 20, function()
         local name = row.charName
         local ok, why = Roster().Remove(name)
         if not ok then ns.Print(why) end
@@ -112,15 +124,17 @@ local function createRow(index)
     row.remove:SetPoint("RIGHT", row, "RIGHT", -4, 0)
     Widgets.Tooltip(row.remove, "Remove", "Take this character out of your roster.")
 
-    row.down = Widgets.Button(row, "v", 20, 18, function()
+    row.down = Widgets.IconButton(row, "down", 18, 16, function()
         moveRow(row.index, row.index + 1)
     end)
     row.down:SetPoint("RIGHT", row.remove, "LEFT", -2, 0)
+    Widgets.Tooltip(row.down, "Move down", "Rank this character one place lower.")
 
-    row.up = Widgets.Button(row, "^", 20, 18, function()
+    row.up = Widgets.IconButton(row, "up", 18, 16, function()
         moveRow(row.index, row.index - 1)
     end)
     row.up:SetPoint("RIGHT", row.down, "LEFT", -2, 0)
+    Widgets.Tooltip(row.up, "Move up", "Rank this character one place higher.")
 
     row:SetScript("OnDragStart", function(self)
         dragIndex = self.index
@@ -142,7 +156,7 @@ end
 
 local function createBand()
     local band = CreateFrame("Frame", nil, content)
-    band:SetWidth(LIST_WIDTH - 24)
+    band:SetWidth(ROW_WIDTH)
     band:SetHeight(BAND_HEIGHT)
     band.line, band.text = Widgets.Separator(band, "", false)
     band.line:SetPoint("LEFT", band, "LEFT", 0, 0)
@@ -183,7 +197,7 @@ function Editor.Refresh()
         row.index = i
         row.charName = name
         row:ClearAllPoints()
-        row:SetPoint("TOPLEFT", content, "TOPLEFT", 4, -y)
+        row:SetPoint("TOPLEFT", content, "TOPLEFT", ROW_INSET, -y)
         row.position:SetText(tostring(i))
 
         local label = Widgets.ColorName(name, entry.class)
@@ -229,7 +243,7 @@ function Editor.Refresh()
                 band.text:SetText("|cff888888" .. Tiers.label(tier, tierCount) .. "|r")
             end
             band:ClearAllPoints()
-            band:SetPoint("TOPLEFT", content, "TOPLEFT", 4, -y)
+            band:SetPoint("TOPLEFT", content, "TOPLEFT", ROW_INSET, -y)
             band:Show()
             y = y + BAND_HEIGHT
         end
@@ -242,6 +256,43 @@ function Editor.Refresh()
     end
 
     content:SetHeight(math.max(y, 1))
+    layoutPanels()
+end
+
+--------------------------------------------------------------------------------
+-- Panels
+--
+-- The manual-entry and export/import panels hang in one slot below the list, so
+-- the Export and Import buttons sit under whichever is open, and the window is
+-- sized to end just below them. Guessing a fixed height instead leaves a gap
+-- when the slot is empty and runs the panel through the frame when it is not --
+-- and the height is not a constant anyway, since the roll-open warning above
+-- the list wraps to a second line and pushes everything down.
+--------------------------------------------------------------------------------
+
+function layoutPanels()
+    if not frame or not listPanel or not frame.exportButton then return end
+
+    local anchor = listPanel
+    if manualPanel and manualPanel:IsShown() then anchor = manualPanel end
+    if transferPanel and transferPanel:IsShown() then anchor = transferPanel end
+    frame.exportButton:ClearAllPoints()
+    frame.exportButton:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -PANEL_GAP)
+
+    -- Everything down to the buttons hangs off the frame's top edge, so this
+    -- distance holds however the window is anchored on screen.
+    local top, bottom = frame:GetTop(), frame.exportButton:GetBottom()
+    if top and bottom then
+        frame:SetHeight(top - bottom + BOTTOM_MARGIN)
+    end
+end
+
+--- Only one panel occupies the slot below the list, so they resize the window
+-- between them; hooking Show/Hide catches every caller, dialogs included.
+local function trackPanel(panel)
+    panel:SetScript("OnShow", layoutPanels)
+    panel:SetScript("OnHide", layoutPanels)
+    return panel
 end
 
 --------------------------------------------------------------------------------
@@ -298,7 +349,7 @@ local function buildManualPanel(parent)
     cancel:SetPoint("LEFT", add, "RIGHT", 6, 0)
 
     nameBox:SetScript("OnEnterPressed", function() add:Click() end)
-    return panel
+    return trackPanel(panel)
 end
 
 --------------------------------------------------------------------------------
@@ -349,7 +400,7 @@ local function buildTransferPanel(parent)
     box:SetMultiLine(true)
     box:SetAutoFocus(false)
     box:SetFontObject("ChatFontNormal")
-    box:SetWidth(LIST_WIDTH - 46)
+    box:SetWidth(LIST_WIDTH - 46 - Widgets.SCROLLBAR_GUTTER)
     box:SetHeight(58)
     box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     scroll:SetScrollChild(box)
@@ -373,7 +424,7 @@ local function buildTransferPanel(parent)
     local close = Widgets.Button(panel, "Close", 80, 20, function() panel:Hide() end)
     close:SetPoint("LEFT", importButton, "RIGHT", 6, 0)
 
-    return panel
+    return trackPanel(panel)
 end
 
 --------------------------------------------------------------------------------
@@ -384,7 +435,7 @@ local function build()
     rows, bands = {}, {}
 
     frame = Widgets.Window("RaidLootSystemHierarchyEditor", "hierarchy",
-        "Raid Loot System -- Your hierarchy", LIST_WIDTH + 40, 470)
+        "Raid Loot System -- Your hierarchy", LIST_WIDTH + 40, START_HEIGHT)
 
     frame.tierText = Widgets.Label(frame, "", "GameFontNormalSmall")
     frame.tierText:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, -40)
@@ -422,14 +473,14 @@ local function build()
     frame.warning:SetWidth(LIST_WIDTH)
     frame.warning:SetJustifyH("LEFT")
 
-    local listPanel = Widgets.Panel(frame, 0.35)
+    listPanel = Widgets.Panel(frame, 0.35)
     listPanel:SetPoint("TOPLEFT", frame.warning, "BOTTOMLEFT", 0, -6)
     listPanel:SetWidth(LIST_WIDTH)
     listPanel:SetHeight(250)
 
     local scroll
     scroll, content = Widgets.ScrollArea(listPanel, "RaidLootSystemHierarchyScroll",
-        LIST_WIDTH - 30, 240)
+        SCROLL_WIDTH, 240)
     scroll:SetPoint("TOPLEFT", listPanel, "TOPLEFT", 6, -6)
 
     frame.empty = Widgets.Label(frame,
@@ -455,7 +506,7 @@ local function build()
         transferPanel.box:SetFocus()
         transferPanel:Show()
     end)
-    exportButton:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 20, 16)
+    frame.exportButton = exportButton
 
     local importButton = Widgets.Button(frame, "Import", 80, 22, function()
         manualPanel:Hide()

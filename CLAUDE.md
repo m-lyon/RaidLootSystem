@@ -22,6 +22,11 @@ with the reasoning.
   names in 3.3.5a with no numeric ids; build the index map from `GetAuctionItemClasses()`.
   CI greps for this too.
 - **`RegisterAddonMessagePrefix` does not exist** in 3.3.5a. Don't add it.
+- **`Modules/` load before `UI/`**, so a module must not capture `ns.Widgets` (or any other UI
+  table) at file scope -- it is still nil there. `Modules/PriorityList.lua` draws the host
+  panel's priority section and resolves it in `Init` instead.
+- **`math.randomseed` does not exist** in 3.3.5a either -- the client seeds its own RNG at
+  startup. `math.random` is fine; guard any seeding call. Spec 000 §7.
 - **`GetMasterLootCandidate(index)` takes one argument** in 3.3.5a, not two.
 - **A tier token is equippable by nobody.** Any candidate or eligibility test that leads with
   "is it equippable" filters the whole raid off the most contested drop in the game. The token

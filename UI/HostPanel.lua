@@ -740,7 +740,8 @@ local function build()
         "Raid Loot System -- Host panel", WIDTH, 620)
 
     local scroll
-    scroll, content = Widgets.ScrollArea(frame, "RaidLootSystemHostScroll", INNER + 4, 560)
+    scroll, content = Widgets.ScrollArea(frame, "RaidLootSystemHostScroll",
+        INNER + Widgets.SCROLLBAR_GUTTER, 560)
     scroll:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, -40)
 
     StaticPopupDialogs["RLS_CONFIRM_ABANDON"] = {
