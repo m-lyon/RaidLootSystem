@@ -27,7 +27,7 @@ session = {
   id         = "<hostName>-<timestamp>",  -- globally unique, human-debuggable
   host       = "Steve",
   tierCount  = 3,                          -- frozen at open
-  endsAt     = <GetTime() + timerSeconds>,
+  endsAt     = <GetTime() + timerSeconds>,  -- local; the wire carries seconds left
   items      = { { idx = 1, itemString = "item:49623:...", count = 1, lootSlot = 3 }, ... },
   entries    = { [itemIdx] = { { char, owner, tier, override, submittedAt, revisedAt } } },
   submitted  = { [playerName] = true },
@@ -86,9 +86,10 @@ Host-side validation, applied to every entry in a `SUBMIT`:
 The host computes the **tier** for each accepted entry itself, from the sender's published
 roster order and the frozen tier count. It never trusts a client-supplied tier.
 
-Rejected entries are not silently swallowed: the host includes an accepted-entry count in the
-next `STATE`, and the submitting client compares it to what it sent and warns the player if
-they differ. Losing an entry to a validation quirk and finding out after the roll is exactly
+Rejected entries are not silently swallowed: the accepted-entry count is readable in the next
+`STATE`, and the submitting client compares it to what it sent and warns the player if they
+differ. The count is **derived, not a new field** — every accepted entry in `STATE` carries its
+owner, so a client counts its own and no protocol change is needed. Losing an entry to a validation quirk and finding out after the roll is exactly
 the failure mode that destroys trust in a loot addon.
 
 ## 6. Timestamps and revision
@@ -143,6 +144,12 @@ compatible version. Players without the addon are not expected and never block a
 | `LOOT_GONE` | The loot source became invalid before resolution (004) |
 | `EXPIRED` | Unresolved for 15 minutes |
 | `MANUAL` | Host cancelled deliberately |
+
+`ML_CHANGED` is the one reason that is **not broadcast**. A host that has just lost master
+looter is no longer authoritative, and every client hard-rejects ops from a non-ML sender (§3),
+so its `ABORT` would be dropped by the very clients that need it. Instead each client sees the
+same `PARTY_LOOT_METHOD_CHANGED` event and ends its own mirror. That needs no message to
+arrive, which is also what makes it correct when the old host has already disconnected.
 
 **Aborted batches are never migrated to a new host.** A new host would have to reconstruct
 entries it never received, and state-recovery bugs in a loot addon cost people items at the

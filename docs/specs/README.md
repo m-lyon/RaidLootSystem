@@ -10,7 +10,7 @@ layout, pure-core boundary, saved-variable schema and comms protocol.
 |---|---|---|---|---|
 | [000](000-architecture.md) | Architecture | *(all)* | — | — |
 | [001](001-roster-and-hierarchy.md) | Roster and hierarchy | `Roster`, `Core/Tiers`, `UI/HierarchyEditor` | 000 | **Built** |
-| [002](002-session-protocol.md) | Session protocol | `Session`, `Client`, `Comms` | 000, 001 | Not started |
+| [002](002-session-protocol.md) | Session protocol | `Session`, `Client`, `Comms` | 000, 001 | **Built** |
 | [003](003-resolution-engine.md) | Resolution engine | `Core/Resolve`, `Core/Eligibility` | 000, 001 | **Built** |
 | [004](004-loot-detection-and-batching.md) | Loot detection and item classification | `LootDetect`, `ItemInfo`, `Data/*` | 000 | Not started |
 | [005](005-roll-window.md) | Roll window | `UI/RollWindow` | 000–004 | Not started |

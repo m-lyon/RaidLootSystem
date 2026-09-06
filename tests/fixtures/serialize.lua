@@ -79,6 +79,58 @@ local function run(input, ns)
     elseif input.kind == "unsafe" then
         local element, err = S.encodeElement(input.fields)
         return { ok = element ~= nil, err = err ~= nil }
+
+    -- Session payloads, spec 002. Each case encodes, asserts the exact body, then
+    -- decodes it back: a change to either side alone fails the case.
+    elseif input.kind == "open" then
+        local body = S.encodeOpen(input.sessionId, input.tierCount, input.secondsLeft,
+            input.items)
+        local msg, why = S.decodeOpen(body)
+        if not msg then return { ok = false, body = body, why = why } end
+        return { ok = true, body = body, sessionId = msg.sessionId,
+                 tierCount = msg.tierCount, secondsLeft = msg.secondsLeft,
+                 items = msg.items }
+
+    elseif input.kind == "submit" then
+        local body = S.encodeSubmit(input.sessionId, input.entries)
+        local msg, why = S.decodeSubmit(body)
+        if not msg then return { ok = false, body = body, why = why } end
+        return { ok = true, body = body, sessionId = msg.sessionId, entries = msg.entries }
+
+    elseif input.kind == "state" then
+        local body = S.encodeState(input.sessionId, input.submitted, input.entries)
+        local msg, why = S.decodeState(body)
+        if not msg then return { ok = false, body = body, why = why } end
+        return { ok = true, body = body, submitted = msg.submitted, entries = msg.entries }
+
+    elseif input.kind == "result" then
+        local body = S.encodeResult(input.sessionId, input.results)
+        local msg, why = S.decodeResult(body)
+        if not msg then return { ok = false, body = body, why = why } end
+        return { ok = true, body = body, results = msg.results }
+
+    elseif input.kind == "rolls" then
+        local body = S.encodeRolls(input.sessionId, input.rolls)
+        local msg, why = S.decodeRolls(body)
+        if not msg then return { ok = false, body = body, why = why } end
+        return { ok = true, body = body, rolls = msg.rolls }
+
+    elseif input.kind == "abort" then
+        local body = S.encodeAbort(input.sessionId, input.reason)
+        local msg, why = S.decodeAbort(body)
+        if not msg then return { ok = false, body = body, why = why } end
+        return { ok = true, body = body, sessionId = msg.sessionId, reason = msg.reason }
+
+    elseif input.kind == "config" then
+        local body = S.encodeConfig(input.tierCount, input.timerSeconds, input.lootMode)
+        local msg, why = S.decodeConfig(body)
+        if not msg then return { ok = false, body = body, why = why } end
+        return { ok = true, body = body, tierCount = msg.tierCount,
+                 timerSeconds = msg.timerSeconds, lootMode = msg.lootMode }
+
+    elseif input.kind == "decodeOnly" then
+        local msg, why = S[input.decoder](input.body)
+        return { ok = msg ~= nil, why = why }
     end
     return nil
 end
@@ -210,6 +262,136 @@ return {
             name = "a pipe in a field is refused",
             input = { kind = "unsafe", fields = { "Steve", "|cff00ff00" } },
             expected = { ok = false, err = true },
+        },
+
+        --------------------------------------------------------------------------
+        -- Session payloads, spec 002.
+        --------------------------------------------------------------------------
+        {
+            name = "OPEN round-trips its items and its remaining seconds",
+            input = {
+                kind = "open", sessionId = "Steve-100", tierCount = 3, secondsLeft = 180,
+                items = { { idx = 1, itemString = "item:40395", count = 1 },
+                          { idx = 2, itemString = "item:40474", count = 2 } },
+            },
+            expected = {
+                ok = true,
+                body = "Steve-100^3^180^1=item:40395=1~2=item:40474=2",
+                sessionId = "Steve-100", tierCount = 3, secondsLeft = 180,
+                items = { { idx = 1, itemString = "item:40395", count = 1 },
+                          { idx = 2, itemString = "item:40474", count = 2 } },
+            },
+        },
+        {
+            name = "an OPEN carrying no items is rejected rather than shown empty",
+            input = { kind = "decodeOnly", decoder = "decodeOpen", body = "Steve-100^3^180^" },
+            expected = { ok = false, why = "OPEN carries no items" },
+        },
+        {
+            name = "an OPEN with no session id is rejected",
+            input = { kind = "decodeOnly", decoder = "decodeOpen", body = "^3^180^1=item:1=1" },
+            expected = { ok = false, why = "OPEN has no session id" },
+        },
+        {
+            name = "SUBMIT round-trips the override and the star flags",
+            input = {
+                kind = "submit", sessionId = "Steve-100",
+                entries = { { itemIdx = 1, char = "Sneaky", override = true, star = false },
+                            { itemIdx = 2, char = "Smash", override = false, star = true } },
+            },
+            expected = {
+                ok = true,
+                body = "Steve-100^1=Sneaky=1=0~2=Smash=0=1",
+                sessionId = "Steve-100",
+                entries = { { itemIdx = 1, char = "Sneaky", override = true, star = false },
+                            { itemIdx = 2, char = "Smash", override = false, star = true } },
+            },
+        },
+        {
+            name = "an empty SUBMIT is valid and means a full withdrawal",
+            input = { kind = "submit", sessionId = "Steve-100", entries = {} },
+            expected = { ok = true, body = "Steve-100^", sessionId = "Steve-100",
+                         entries = {} },
+        },
+        {
+            name = "STATE round-trips who submitted and every accepted entry",
+            input = {
+                kind = "state", sessionId = "Steve-100",
+                submitted = { "Dave", "Steve" },
+                entries = { { itemIdx = 1, char = "Sneaky", owner = "Steve", tier = 2 },
+                            { itemIdx = 1, char = "Bonk", owner = "Dave", tier = 1 } },
+            },
+            expected = {
+                ok = true,
+                body = "Steve-100^Dave~Steve^1=Sneaky=Steve=2~1=Bonk=Dave=1",
+                submitted = { "Dave", "Steve" },
+                entries = { { itemIdx = 1, char = "Sneaky", owner = "Steve", tier = 2 },
+                            { itemIdx = 1, char = "Bonk", owner = "Dave", tier = 1 } },
+            },
+        },
+        {
+            name = "a STATE with nobody submitted yet round-trips",
+            input = { kind = "state", sessionId = "Steve-100", submitted = {}, entries = {} },
+            expected = { ok = true, body = "Steve-100^^", submitted = {}, entries = {} },
+        },
+        {
+            name = "RESULT round-trips a win and an unclaimed item",
+            input = {
+                kind = "result", sessionId = "Steve-100",
+                results = { { itemIdx = 1, winner = "Sneaky", tier = 2, roll = 87,
+                              outcome = "WON" },
+                            { itemIdx = 2, winner = "", tier = 0, roll = 0,
+                              outcome = "UNCLAIMED" } },
+            },
+            expected = {
+                ok = true,
+                body = "Steve-100^1=Sneaky=2=87=WON~2==0=0=UNCLAIMED",
+                results = { { itemIdx = 1, winner = "Sneaky", tier = 2, roll = 87,
+                              outcome = "WON" },
+                            { itemIdx = 2, tier = 0, roll = 0, outcome = "UNCLAIMED" } },
+            },
+        },
+        {
+            name = "a RESULT with no outcome is rejected",
+            input = { kind = "decodeOnly", decoder = "decodeResult",
+                      body = "Steve-100^1=Sneaky=2=87=" },
+            expected = { ok = false, why = "RESULT for item 1 has no outcome" },
+        },
+        {
+            name = "ROLLS round-trips an entry that never rolled",
+            input = {
+                kind = "rolls", sessionId = "Steve-100",
+                rolls = { { itemIdx = 1, char = "Sneaky", tier = 2, roll = 87, listIdx = 0 },
+                          { itemIdx = 1, char = "Smash", tier = 3, roll = 0, listIdx = 0 } },
+            },
+            expected = {
+                ok = true,
+                body = "Steve-100^1=Sneaky=2=87=0~1=Smash=3=0=0",
+                rolls = { { itemIdx = 1, char = "Sneaky", tier = 2, roll = 87, listIdx = 0 },
+                          { itemIdx = 1, char = "Smash", tier = 3, roll = 0, listIdx = 0 } },
+            },
+        },
+        {
+            name = "ABORT round-trips its reason code",
+            input = { kind = "abort", sessionId = "Steve-100", reason = "ML_CHANGED" },
+            expected = { ok = true, body = "Steve-100^ML_CHANGED",
+                         sessionId = "Steve-100", reason = "ML_CHANGED" },
+        },
+        {
+            name = "an ABORT with no reason is rejected",
+            input = { kind = "decodeOnly", decoder = "decodeAbort", body = "Steve-100^" },
+            expected = { ok = false, why = "ABORT has no reason code" },
+        },
+        {
+            name = "CFG round-trips the tier count, the timer and the loot mode",
+            input = { kind = "config", tierCount = 3, timerSeconds = 180, lootMode = "ROLL" },
+            expected = { ok = true, body = "3^180^ROLL", tierCount = 3,
+                         timerSeconds = 180, lootMode = "ROLL" },
+        },
+        {
+            name = "a CFG with a non-numeric timer is rejected",
+            input = { kind = "decodeOnly", decoder = "decodeConfig", body = "3^soon^ROLL" },
+            expected = { ok = false, why = "CFG has a non-numeric field" },
         },
     },
 }

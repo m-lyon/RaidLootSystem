@@ -42,6 +42,16 @@ local function status()
     if #unclaimed > 0 then
         ns.Print("in the group but in nobody's roster: " .. table.concat(unclaimed, ", "))
     end
+
+    local host = ns.Session.HostName()
+    ns.Print("master looter: " .. (host or "nobody -- the group is not on master loot")
+        .. (ns.Session.IsHost() and " (you host)" or ""))
+
+    local session = ns.Client.session
+    if session then
+        ns.Print(string.format("batch %s: %d item(s), %s.",
+            session.id, #session.items, session.state:lower()))
+    end
 end
 
 local function setTierCount(argument)
@@ -63,6 +73,9 @@ local function help()
     ns.Print("  /rls tiers <0-5>  set the tier count you host with")
     ns.Print("  /rls publish      resend your roster to the raid")
     ns.Print("  /rls request      ask everyone to resend theirs")
+    ns.Print("  /rls close        resolve the open batch now (host)")
+    ns.Print("  /rls cancel       cancel the open batch (host)")
+    ns.Print("  /rls sync         ask the host to resend the open batch")
     ns.Print("  /rls debug        toggle debug messages")
 end
 
@@ -82,6 +95,20 @@ local function dispatch(input)
     elseif command == "request" then
         ns.Roster.RequestAll()
         ns.Print("asked everyone to resend their roster.")
+    elseif command == "close" then
+        if not ns.Session.Close() then
+            ns.Print("there is no batch of yours to close.")
+        end
+    elseif command == "cancel" then
+        if not ns.Session.Abort(C.ABORT_REASON.MANUAL) then
+            ns.Print("there is no batch of yours to cancel.")
+        end
+    elseif command == "sync" then
+        if ns.Client.RequestSync() then
+            ns.Print("asked the host to resend the open batch.")
+        else
+            ns.Print("you asked less than " .. C.SYNC_INTERVAL .. " seconds ago; wait a moment.")
+        end
     elseif command == "debug" then
         ns.debugEnabled = not ns.debugEnabled
         ns.Print("debug messages " .. (ns.debugEnabled and "on" or "off") .. ".")
@@ -111,6 +138,8 @@ loader:SetScript("OnEvent", function(_, event, addonName)
     elseif event == "PLAYER_LOGIN" then
         ns.Comms.Init()
         ns.Roster.Init()
+        ns.Session.Init()
+        ns.Client.Init()
         ns.Minimap.Init()
         ns.Comms.Send(C.OPS.HI, C.VERSION)
     end

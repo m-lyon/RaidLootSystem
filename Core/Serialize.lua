@@ -197,3 +197,280 @@ function Serialize.decodeRoster(body)
     end
     return order, chars
 end
+
+--------------------------------------------------------------------------------
+-- Session payloads (spec 000 section 5, spec 002)
+--
+-- One encoder and one decoder per op. Nothing outside this file builds or parses
+-- a session wire string. Decoders return nil plus a reason on anything malformed:
+-- a half-read batch is worse than no batch.
+--------------------------------------------------------------------------------
+
+local function flag(value)
+    return value and "1" or "0"
+end
+
+local function isFlag(field)
+    return field == "1"
+end
+
+local function number(field, default)
+    local n = tonumber(field)
+    if n == nil then return default end
+    return n
+end
+
+--- Encode a list of elements, each an array of sub-fields.
+-- @return body, or nil plus the offending value
+local function encodeElements(rows)
+    local elements = {}
+    for i = 1, #rows do
+        local element, err = Serialize.encodeElement(rows[i])
+        if not element then return nil, err end
+        elements[i] = element
+    end
+    return Serialize.encodeList(elements)
+end
+
+--------------------------------------------------------------------------------
+-- OPEN: sessionId^tierCount^secondsLeft^idx=itemString=count~...
+--
+-- The third field is the batch's REMAINING SECONDS, not the host's absolute
+-- `endsAt`. The client clock the host reads is time since that client started, so
+-- an absolute deadline is meaningless on any other machine; each client adds the
+-- remainder to its own clock. Resyncing mid-batch (spec 002 section 10) sends what is left, so a late
+-- arrival lands on the same wall-clock deadline as everyone else.
+--------------------------------------------------------------------------------
+
+function Serialize.encodeOpen(sessionId, tierCount, secondsLeft, items)
+    local rows = {}
+    for i = 1, #items do
+        local item = items[i]
+        rows[i] = { item.idx, item.itemString, item.count or 1 }
+    end
+    local body, err = encodeElements(rows)
+    if not body then return nil, err end
+    return Serialize.encodeFields({ sessionId, tierCount, secondsLeft, body })
+end
+
+function Serialize.decodeOpen(body)
+    local fields = Serialize.decodeFields(body)
+    local sessionId = fields[1]
+    if not sessionId or sessionId == "" then return nil, "OPEN has no session id" end
+
+    local tierCount = tonumber(fields[2])
+    local secondsLeft = tonumber(fields[3])
+    if not tierCount or not secondsLeft then return nil, "OPEN has a non-numeric field" end
+
+    local items = {}
+    for _, element in ipairs(Serialize.decodeList(fields[4])) do
+        local sub = Serialize.decodeElement(element)
+        local idx, itemString = tonumber(sub[1]), sub[2]
+        if not idx then return nil, "OPEN has a non-numeric item index" end
+        if not itemString or itemString == "" then
+            return nil, "OPEN item " .. idx .. " has no item string"
+        end
+        items[#items + 1] = { idx = idx, itemString = itemString,
+                              count = number(sub[3], 1) }
+    end
+    if #items == 0 then return nil, "OPEN carries no items" end
+
+    return { sessionId = sessionId, tierCount = tierCount,
+             secondsLeft = secondsLeft, items = items }
+end
+
+--------------------------------------------------------------------------------
+-- SUBMIT: sessionId^itemIdx=charName=override=star~...
+--
+-- Always the sender's COMPLETE entry set for the batch (spec 002 section 5), so
+-- an empty entry list is a valid message meaning "I withdraw everything".
+--------------------------------------------------------------------------------
+
+function Serialize.encodeSubmit(sessionId, entries)
+    local rows = {}
+    for i = 1, #entries do
+        local e = entries[i]
+        rows[i] = { e.itemIdx, e.char, flag(e.override), flag(e.star) }
+    end
+    local body, err = encodeElements(rows)
+    if not body then return nil, err end
+    return Serialize.encodeFields({ sessionId, body })
+end
+
+function Serialize.decodeSubmit(body)
+    local fields = Serialize.decodeFields(body)
+    local sessionId = fields[1]
+    if not sessionId or sessionId == "" then return nil, "SUBMIT has no session id" end
+
+    local entries = {}
+    for _, element in ipairs(Serialize.decodeList(fields[2])) do
+        local sub = Serialize.decodeElement(element)
+        local itemIdx, char = tonumber(sub[1]), sub[2]
+        if not itemIdx then return nil, "SUBMIT has a non-numeric item index" end
+        if not char or char == "" then return nil, "SUBMIT entry has no character" end
+        entries[#entries + 1] = { itemIdx = itemIdx, char = char,
+                                  override = isFlag(sub[3]), star = isFlag(sub[4]) }
+    end
+    return { sessionId = sessionId, entries = entries }
+end
+
+--------------------------------------------------------------------------------
+-- STATE: sessionId^name~name...^itemIdx=charName=owner=tier~...
+--
+-- The authoritative aggregate and the only source for the live open view.
+--------------------------------------------------------------------------------
+
+function Serialize.encodeState(sessionId, submitted, entries)
+    local names = {}
+    for i = 1, #submitted do
+        local element, err = Serialize.encodeElement({ submitted[i] })
+        if not element then return nil, err end
+        names[i] = element
+    end
+
+    local rows = {}
+    for i = 1, #entries do
+        local e = entries[i]
+        rows[i] = { e.itemIdx, e.char, e.owner, e.tier }
+    end
+    local body, err = encodeElements(rows)
+    if not body then return nil, err end
+
+    return Serialize.encodeFields({ sessionId, Serialize.encodeList(names), body })
+end
+
+function Serialize.decodeState(body)
+    local fields = Serialize.decodeFields(body)
+    local sessionId = fields[1]
+    if not sessionId or sessionId == "" then return nil, "STATE has no session id" end
+
+    local submitted = {}
+    for _, name in ipairs(Serialize.decodeList(fields[2])) do
+        if name ~= "" then submitted[#submitted + 1] = name end
+    end
+
+    local entries = {}
+    for _, element in ipairs(Serialize.decodeList(fields[3])) do
+        local sub = Serialize.decodeElement(element)
+        local itemIdx, char, owner, tier = tonumber(sub[1]), sub[2], sub[3], tonumber(sub[4])
+        if not itemIdx then return nil, "STATE has a non-numeric item index" end
+        if not char or char == "" then return nil, "STATE entry has no character" end
+        if not tier then return nil, "STATE entry for " .. char .. " has no tier" end
+        entries[#entries + 1] = { itemIdx = itemIdx, char = char,
+                                  owner = (owner ~= "" and owner or nil), tier = tier }
+    end
+
+    return { sessionId = sessionId, submitted = submitted, entries = entries }
+end
+
+--------------------------------------------------------------------------------
+-- RESULT: sessionId^itemIdx=winner=tier=roll=outcome~...
+--
+-- One element per awarded copy. An item nobody entered gets one element with an
+-- empty winner and the UNCLAIMED outcome, so a client can tell "nobody wanted it"
+-- apart from "the message about that item never arrived".
+--------------------------------------------------------------------------------
+
+function Serialize.encodeResult(sessionId, results)
+    local rows = {}
+    for i = 1, #results do
+        local r = results[i]
+        rows[i] = { r.itemIdx, r.winner or "", r.tier or 0, r.roll or 0, r.outcome }
+    end
+    local body, err = encodeElements(rows)
+    if not body then return nil, err end
+    return Serialize.encodeFields({ sessionId, body })
+end
+
+function Serialize.decodeResult(body)
+    local fields = Serialize.decodeFields(body)
+    local sessionId = fields[1]
+    if not sessionId or sessionId == "" then return nil, "RESULT has no session id" end
+
+    local results = {}
+    for _, element in ipairs(Serialize.decodeList(fields[2])) do
+        local sub = Serialize.decodeElement(element)
+        local itemIdx = tonumber(sub[1])
+        if not itemIdx then return nil, "RESULT has a non-numeric item index" end
+        local outcome = sub[5]
+        if not outcome or outcome == "" then
+            return nil, "RESULT for item " .. itemIdx .. " has no outcome"
+        end
+        results[#results + 1] = {
+            itemIdx = itemIdx,
+            winner  = (sub[2] ~= "" and sub[2] or nil),
+            tier    = number(sub[3], 0),
+            roll    = number(sub[4], 0),
+            outcome = outcome,
+        }
+    end
+
+    return { sessionId = sessionId, results = results }
+end
+
+--------------------------------------------------------------------------------
+-- ROLLS: sessionId^itemIdx=charName=tier=roll=listIdx~...
+--
+-- The full record behind the results table. `roll` is 0 under SK and `listIdx`
+-- is 0 under ROLL (spec 010 section 8).
+--------------------------------------------------------------------------------
+
+function Serialize.encodeRolls(sessionId, rolls)
+    local rows = {}
+    for i = 1, #rolls do
+        local r = rolls[i]
+        rows[i] = { r.itemIdx, r.char, r.tier or 0, r.roll or 0, r.listIdx or 0 }
+    end
+    local body, err = encodeElements(rows)
+    if not body then return nil, err end
+    return Serialize.encodeFields({ sessionId, body })
+end
+
+function Serialize.decodeRolls(body)
+    local fields = Serialize.decodeFields(body)
+    local sessionId = fields[1]
+    if not sessionId or sessionId == "" then return nil, "ROLLS has no session id" end
+
+    local rolls = {}
+    for _, element in ipairs(Serialize.decodeList(fields[2])) do
+        local sub = Serialize.decodeElement(element)
+        local itemIdx, char = tonumber(sub[1]), sub[2]
+        if not itemIdx then return nil, "ROLLS has a non-numeric item index" end
+        if not char or char == "" then return nil, "ROLLS entry has no character" end
+        rolls[#rolls + 1] = { itemIdx = itemIdx, char = char,
+                              tier = number(sub[3], 0), roll = number(sub[4], 0),
+                              listIdx = number(sub[5], 0) }
+    end
+
+    return { sessionId = sessionId, rolls = rolls }
+end
+
+--------------------------------------------------------------------------------
+-- ABORT: sessionId^reasonCode        CFG: tierCount^timerSeconds^lootMode
+--------------------------------------------------------------------------------
+
+function Serialize.encodeAbort(sessionId, reason)
+    return Serialize.encodeFields({ sessionId, reason })
+end
+
+function Serialize.decodeAbort(body)
+    local fields = Serialize.decodeFields(body)
+    if not fields[1] or fields[1] == "" then return nil, "ABORT has no session id" end
+    if not fields[2] or fields[2] == "" then return nil, "ABORT has no reason code" end
+    return { sessionId = fields[1], reason = fields[2] }
+end
+
+function Serialize.encodeConfig(tierCount, timerSeconds, lootMode)
+    return Serialize.encodeFields({ tierCount, timerSeconds, lootMode })
+end
+
+function Serialize.decodeConfig(body)
+    local fields = Serialize.decodeFields(body)
+    local tierCount, timerSeconds = tonumber(fields[1]), tonumber(fields[2])
+    if not tierCount or not timerSeconds then
+        return nil, "CFG has a non-numeric field"
+    end
+    local lootMode = fields[3]
+    if not lootMode or lootMode == "" then return nil, "CFG has no loot mode" end
+    return { tierCount = tierCount, timerSeconds = timerSeconds, lootMode = lootMode }
+end

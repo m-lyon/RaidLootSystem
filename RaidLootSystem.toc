@@ -25,6 +25,8 @@ Data\ClassArmor.lua
 Modules\Database.lua
 Modules\Comms.lua
 Modules\Roster.lua
+Modules\Session.lua
+Modules\Client.lua
 
 UI\Widgets.lua
 UI\HierarchyEditor.lua
