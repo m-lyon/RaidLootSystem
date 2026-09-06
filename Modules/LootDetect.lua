@@ -77,21 +77,30 @@ end
 -- @param manualIds  set of item ids the host added by hand from the skipped list
 -- @param manualRows item-link additions with no loot slot: { quantity, info }
 -- @param threshold  host.qualityThreshold
+-- @param removedIds set of item ids withdrawn from the list: taken out by hand, or
+--                   already rolled by a batch that closed. They are not offered back
+--                   under `skipped` either -- the host said no, or the question has
+--                   been answered. "Add item" on the link puts one back.
 -- @return rows for Collapse, skipped array of { lootSlot, info, quality, reason }
-function LootDetect.Partition(scanRows, manualIds, manualRows, threshold)
+function LootDetect.Partition(scanRows, manualIds, manualRows, threshold, removedIds)
     local rows, skipped = {}, {}
     manualIds = manualIds or {}
+    removedIds = removedIds or {}
     for _, row in ipairs(scanRows or {}) do
         local id = row.info and row.info.itemId
         local ok, reason = LootDetect.IsCandidate(row.info, row.quality, threshold)
-        if ok or (id and manualIds[id]) then
+        if id and removedIds[id] then                    -- withdrawn: neither list
+        elseif ok or (id and manualIds[id]) then
             rows[#rows + 1] = row
         else
             skipped[#skipped + 1] = { lootSlot = row.lootSlot, info = row.info,
                                       quality = row.quality, reason = reason }
         end
     end
-    for _, row in ipairs(manualRows or {}) do rows[#rows + 1] = row end
+    for _, row in ipairs(manualRows or {}) do
+        local id = row.info and row.info.itemId
+        if not (id and removedIds[id]) then rows[#rows + 1] = row end
+    end
     return rows, skipped
 end
 
@@ -218,6 +227,7 @@ LootDetect.sourceName = nil    -- the looted creature, as far as 3.3.5a lets us 
 local scanRows = {}            -- every slot of the last scan: { lootSlot, quantity, quality, info }
 local manualIds = {}           -- item ids the host added by hand from the skipped list
 local manualRows = {}          -- item-link additions with no loot slot: { quantity, info }
+local removedIds = {}          -- ids withdrawn by hand or consumed by a closed batch
 
 local listeners = {}
 local expectedClears = {}      -- loot slots our own award is about to empty
@@ -243,7 +253,8 @@ end
 
 --- Recompute the candidate and skipped lists from the retained scan (Partition).
 local function rebuild(newScan)
-    local rows, skipped = LootDetect.Partition(scanRows, manualIds, manualRows, threshold())
+    local rows, skipped = LootDetect.Partition(scanRows, manualIds, manualRows, threshold(),
+        removedIds)
     LootDetect.candidates = LootDetect.Collapse(rows)
     LootDetect.skipped = skipped
     fireChanged(newScan)
@@ -272,8 +283,9 @@ function LootDetect.Scan(callback)
     ns.ItemInfo.RequestAll(links, function(infos)
         if token ~= scanToken then return end
         for i = 1, #slots do slots[i].info = infos[i] end
-        -- A new corpse: whatever the host added by hand was for the last one.
-        scanRows, manualIds, manualRows = slots, {}, {}
+        -- A new corpse: whatever the host added by hand, or took out, was for the
+        -- last one.
+        scanRows, manualIds, manualRows, removedIds = slots, {}, {}, {}
         LootDetect.scanning = false
         rebuild(true)
         if callback then callback(LootDetect.candidates) end
@@ -296,6 +308,7 @@ function LootDetect.AddCandidate(link, callback)
         if callback then callback(false) end
         return false
     end
+    removedIds[itemId] = nil            -- adding it back undoes a withdrawal
 
     for _, row in ipairs(scanRows) do
         if row.info and row.info.itemId == itemId then
@@ -322,12 +335,33 @@ function LootDetect.AddCandidate(link, callback)
     return true
 end
 
---- Drop a manual item-link row again.
-function LootDetect.RemoveManual(itemId)
+--- Take one item out of the candidate list, whatever put it there: an item-link
+-- addition, a skipped row the host promoted, or a plain corpse row. It stays out
+-- until the next corpse scan or an explicit "Add item" on the same link.
+function LootDetect.RemoveCandidate(itemId)
+    if not itemId then return end
     for i = #manualRows, 1, -1 do
         if manualRows[i].info.itemId == itemId then table.remove(manualRows, i) end
     end
     manualIds[itemId] = nil
+    removedIds[itemId] = true
+    rebuild()
+end
+
+--- The items a batch closed on stop being candidates for the next one (spec 006
+-- section 3). Called on close, not on open: an aborted batch leaves its items in
+-- place so the host can start it again.
+function LootDetect.Consume(items)
+    for _, item in ipairs(items or {}) do
+        local _, id = ns.ItemInfo.ParseLink(item.itemString)
+        if id then
+            for i = #manualRows, 1, -1 do
+                if manualRows[i].info.itemId == id then table.remove(manualRows, i) end
+            end
+            manualIds[id] = nil
+            removedIds[id] = true
+        end
+    end
     rebuild()
 end
 

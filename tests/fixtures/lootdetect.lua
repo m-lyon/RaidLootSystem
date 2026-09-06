@@ -46,7 +46,7 @@ local function run(input, ns)
 
     elseif input.op == "partition" then
         local rows, skipped = LootDetect.Partition(input.scanRows, input.manualIds,
-            input.manualRows, input.threshold)
+            input.manualRows, input.threshold, input.removedIds)
         local candidates = project(LootDetect.Collapse(rows))
         local out = {}
         for i, skip in ipairs(skipped) do
@@ -302,6 +302,42 @@ return {
                                  count = 1, slots = "", units = "" } },
                 skipped = {},
             },
+        },
+
+        ----------------------------------------------------------------------
+        -- Withdrawn items (spec 006 section 3): taken out by hand, or already
+        -- rolled by a batch that closed. Unlike a filtered row these are not
+        -- offered back under `skipped` -- the question has been answered.
+        ----------------------------------------------------------------------
+        {
+            name = "a withdrawn corpse row is neither a candidate nor skipped",
+            input = { op = "partition", threshold = 4, removedIds = { [40000] = true },
+                      scanRows = {
+                          { lootSlot = 1, quantity = 1, quality = 4, info = EPIC_CHEST },
+                          { lootSlot = 2, quantity = 1, quality = 4, info = MOUNT },
+                      } },
+            expected = { candidates = {}, skipped = { "2:NOT_EQUIPPABLE" } },
+        },
+        {
+            name = "a withdrawn item-link addition is dropped, the corpse rows stay",
+            input = { op = "partition", threshold = 4, removedIds = { [50001] = true },
+                      manualRows = { { quantity = 1, info = info(50001) } },
+                      scanRows = {
+                          { lootSlot = 1, quantity = 1, quality = 4, info = EPIC_CHEST },
+                      } },
+            expected = {
+                candidates = { { idx = 1, itemString = "item:40000:0:0:0:0:0:0:0:0",
+                                 count = 1, slots = "1", units = "1=1" } },
+                skipped = {},
+            },
+        },
+        {
+            name = "a withdrawal outranks a manual promotion of the same row",
+            input = { op = "partition", threshold = 4, manualIds = { [44083] = true },
+                      removedIds = { [44083] = true }, scanRows = {
+                          { lootSlot = 2, quantity = 1, quality = 4, info = MOUNT },
+                      } },
+            expected = { candidates = {}, skipped = {} },
         },
 
         ----------------------------------------------------------------------

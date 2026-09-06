@@ -671,6 +671,9 @@ function Session.Close()
     if ns.Award then ns.Award.Begin(session) end
     if ns.Priority then ns.Priority.ApplyAwards(session) end
     if ns.History then ns.History.Record(session) end
+    -- These items have been rolled for; they stop being candidates for the next
+    -- batch (spec 006 section 3). Abort does not do this, so a retry still has them.
+    if ns.LootDetect then ns.LootDetect.Consume(session.items) end
 
     fireChanged()
     return true

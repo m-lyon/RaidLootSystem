@@ -54,8 +54,17 @@ Populated on `LOOT_OPENED` (004 §2). Lists each candidate item with icon, link,
 `x2` badge for duplicates. Each has a checkbox, default ticked.
 
 - **Add item** — accepts a dropped item link or a bag item, for anything the filter excluded.
+- **Remove** — takes one item out of the list, whatever put it there: an item-link addition, a
+  promoted skipped row, or a plain corpse row. Unticking excludes an item from the next batch
+  but leaves the row; removing is for a row that should not be on offer at all. It stays out
+  until the next corpse scan or an **Add item** on the same link.
 - **Start roll** — opens the batch with the ticked items. Disabled with a reason when
   preconditions fail (not master loot, no items, batch already open).
+
+**After a batch closes** its items are withdrawn from the list — they have been rolled for, and
+leaving them there invites a second batch on loot already awarded. Anything the host left
+unticked stays, so the section reads as what is still outstanding. An **abort** withdraws
+nothing: the batch did not happen, and the host will want to start it again.
 
 Nothing opens automatically. Auto-opening would fire on trash pulls and on other people's
 kills.

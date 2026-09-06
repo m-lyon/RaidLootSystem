@@ -351,7 +351,7 @@ local function candidateRow(i)
 
     row.label = CreateFrame("Button", nil, row)
     row.label:SetPoint("LEFT", row.icon, "RIGHT", 4, 0)
-    row.label:SetWidth(INNER - 130)
+    row.label:SetWidth(INNER - 150)
     row.label:SetHeight(ROW_H)
     row.label.text = Widgets.Label(row.label, "", "GameFontHighlightSmall")
     row.label.text:SetAllPoints()
@@ -367,8 +367,15 @@ local function candidateRow(i)
         if row.link and IsShiftKeyDown() then ChatEdit_InsertLink(row.link) end
     end)
 
+    row.remove = Widgets.IconButton(row, "remove", 16, 16, function()
+        ns.LootDetect.RemoveCandidate(row.itemId)
+    end)
+    row.remove:SetPoint("RIGHT", row, "RIGHT", -2, 0)
+    Widgets.Tooltip(row.remove, "Remove",
+        "Take this item out of the batch. Add it again by link if you change your mind.")
+
     row.right = Widgets.Label(row, "", "GameFontHighlightSmall")
-    row.right:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+    row.right:SetPoint("RIGHT", row.remove, "LEFT", -4, 0)
     row.right:SetJustifyH("RIGHT")
     candidateRows[i] = row
     return row
@@ -387,6 +394,7 @@ local function refreshCandidates()
         row.itemIdx = item.idx
         row.tickKey = tickKey(item)
         row.itemString = item.itemString
+        row.itemId = item.info and item.info.itemId
         row.link = item.info and item.info.link
         row:ClearAllPoints()
         row:SetPoint("TOPLEFT", candidates.list, "TOPLEFT", 0, -(n - 1) * ROW_H)
