@@ -23,6 +23,10 @@ with the reasoning.
   CI greps for this too.
 - **`RegisterAddonMessagePrefix` does not exist** in 3.3.5a. Don't add it.
 - **`GetMasterLootCandidate(index)` takes one argument** in 3.3.5a, not two.
+- **A tier token is equippable by nobody.** Any candidate or eligibility test that leads with
+  "is it equippable" filters the whole raid off the most contested drop in the game. The token
+  check runs first, and it runs on the *name*, so a cold item cache does not lose it. Spec 004
+  §6.
 - **Roster events are `RAID_ROSTER_UPDATE` / `PARTY_MEMBERS_CHANGED`**, not
   `GROUP_ROSTER_UPDATE`.
 - **`OPEN` carries seconds remaining, not an absolute `endsAt`.** The client clock is per
@@ -70,6 +74,10 @@ Add a fixture case for every bug fixed in `Core/`.
   assembled from reference material and has not been checked in game.
   [`Data/VERIFY.md`](Data/VERIFY.md) lists the doubtful rows in priority order. Do not raise
   that flag without doing the checks.
+- **`Data/ItemClasses.lua` ships with `SUBCLASS_ORDER_VERIFIED = false`.** The subclass
+  *positions* were assembled from reference material. `/rls itemclasses` prints the live
+  lists beside them; `Data/VERIFY.md` says what to read. `Modules/ItemInfo.lua` refuses to
+  map subclasses at all when the list lengths disagree, so the failure is loud and open.
 - **`Data/TierTokens.lua`'s `TOKEN_IDS` is intentionally empty.** Detection is by trailing word.
   Add an id only for a token observed to be misclassified in game, with the link in a comment —
   a fabricated id silently routes a token to the wrong classes with no fallback behind it.
@@ -78,17 +86,18 @@ Add a fixture case for every bug fixed in `Core/`.
 
 ## What is and isn't in the tree
 
-Specs 001, 002 and 003 are built. In the tree: `RaidLootSystem.toc`, `RaidLootSystem.lua`,
+Specs 001, 002, 003 and 004 are built. In the tree: `RaidLootSystem.toc`, `RaidLootSystem.lua`,
 `Core/{Constants,Util,Serialize,Tiers,Eligibility,Resolve}.lua`,
-`Modules/{Database,Comms,Roster,Session,Client}.lua`,
+`Modules/{Database,Comms,Roster,ItemInfo,LootDetect,Session,Client}.lua`,
 `UI/{Widgets,HierarchyEditor,Minimap}.lua`, `Libs/`, `Data/`, and `tests/` with the `tiers`,
-`serialize`, `roster`, `session`, `eligibility` and `resolve` suites plus `tests/purity.sh`.
+`serialize`, `roster`, `session`, `eligibility`, `resolve`, `iteminfo` and `lootdetect` suites
+plus `tests/purity.sh`.
 
-`Modules/Session.lua` has a pure half above its "WoW-facing" divider, like `Roster.lua`; the
-fixture runner loads both. Keep new pure logic above that line.
+`Modules/{Session,Roster,ItemInfo,LootDetect}.lua` each have a pure half above a "WoW-facing"
+divider; the fixture runner loads all four. Keep new pure logic above that line.
 
-Spec 002 waits on 004 for its input: nothing calls `Session.Open` yet, because nothing builds
-the item list.
+`Session.Open` is reachable now. Until the host panel (006) exists, `/rls loot`, `/rls start`
+and `/rls roll <link>` are the seam that drives it.
 
 `Core/Resolve.lua` carries spec 010's SK resolution path (010 §7) because it is the same code
 path. The rest of 010 — `Core/PriorityList`, storage, sync, restore-on-failure — is not written.

@@ -12,7 +12,7 @@ layout, pure-core boundary, saved-variable schema and comms protocol.
 | [001](001-roster-and-hierarchy.md) | Roster and hierarchy | `Roster`, `Core/Tiers`, `UI/HierarchyEditor` | 000 | **Built** |
 | [002](002-session-protocol.md) | Session protocol | `Session`, `Client`, `Comms` | 000, 001 | **Built** |
 | [003](003-resolution-engine.md) | Resolution engine | `Core/Resolve`, `Core/Eligibility` | 000, 001 | **Built** |
-| [004](004-loot-detection-and-batching.md) | Loot detection and item classification | `LootDetect`, `ItemInfo`, `Data/*` | 000 | Not started |
+| [004](004-loot-detection-and-batching.md) | Loot detection and item classification | `LootDetect`, `ItemInfo`, `Data/*` | 000 | **Built** |
 | [005](005-roll-window.md) | Roll window | `UI/RollWindow` | 000–004 | Not started |
 | [006](006-host-panel.md) | Host panel | `UI/HostPanel`, `Announce` | 000, 001, 002, 004 | Not started |
 | [007](007-award-and-delivery.md) | Award and delivery | `Award`, `Pending` | 000, 002, 003, 004 | Not started |
