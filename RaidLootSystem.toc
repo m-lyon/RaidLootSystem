@@ -36,6 +36,7 @@ Modules\Pending.lua
 Modules\History.lua
 Modules\PriorityList.lua
 Modules\Announce.lua
+Modules\Simulate.lua
 
 UI\Widgets.lua
 UI\RollWindow.lua

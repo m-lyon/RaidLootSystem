@@ -356,7 +356,8 @@ local function onUpdate()
     end
 end
 
-local function onGroupEvent(_, event)
+--- Re-derive the host. Public so /rls simulate can change hands without an event.
+function Client.CheckHost()
     local host = ns.Session.HostName()
     if host ~= lastHost then
         lastHost = host
@@ -364,6 +365,10 @@ local function onGroupEvent(_, event)
         -- can no longer send an ABORT anyone would accept (section 3).
         abortLocally(C.ABORT_REASON.ML_CHANGED)
     end
+end
+
+local function onGroupEvent(_, event)
+    Client.CheckHost()
     if event == "PLAYER_ENTERING_WORLD" and ns.Comms.Channel() then
         -- A /reload mid-batch: the host is the only one who knows what is open.
         Client.RequestSync()

@@ -44,13 +44,14 @@ local MODULE_FILES = {
     "Modules/History.lua",
     "Modules/PriorityList.lua",
     "Modules/Announce.lua",
+    "Modules/Simulate.lua",
     "UI/RollWindow.lua",
     "UI/HostPanel.lua",
 }
 
 local SUITES = { "tiers", "serialize", "roster", "session", "eligibility", "resolve",
                  "iteminfo", "lootdetect", "rollwindow", "announce", "hostpanel",
-                 "award", "pending", "history", "priority", "sk" }
+                 "award", "pending", "history", "priority", "sk", "simulate" }
 
 --------------------------------------------------------------------------------
 -- Comparison and reporting

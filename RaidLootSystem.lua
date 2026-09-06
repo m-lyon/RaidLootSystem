@@ -145,6 +145,7 @@ local function help()
     ns.Print("  /rls history      open the history browser")
     ns.Print("  /rls sk list      print the priority list")
     ns.Print("  /rls sk verify    replay the priority list from its seed and report drift")
+    ns.Print("  /rls simulate [items=N] [players=N] [scenario=name]  run the pipeline solo")
     ns.Print("  /rls pending      list items you hold for other characters")
     ns.Print("  /rls deliver <n>  open a trade for pending item n")
     ns.Print("  /rls abandon <n>  give up on pending item n (confirmed)")
@@ -181,6 +182,12 @@ local function dispatch(input)
         ns.HostPanel.Toggle()
     elseif command == "history" then
         ns.HistoryBrowser.Toggle()
+    elseif command == "simulate" then
+        if argument:lower() == "list" then
+            ns.Print("scenarios: " .. ns.Simulate.ListScenarios())
+        else
+            ns.Simulate.Run(argument)
+        end
     elseif command == "sk" then
         local sub = argument:lower()
         if sub == "verify" then
