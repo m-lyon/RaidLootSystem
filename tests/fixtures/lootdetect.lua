@@ -12,6 +12,14 @@ local function slotList(item)
     return table.concat(out, ",")
 end
 
+local function unitList(item)
+    local slots = item.lootSlots or {}
+    local q = item.slotQuantities or {}
+    local out = {}
+    for i = 1, #slots do out[i] = slots[i] .. "=" .. tostring(q[slots[i]]) end
+    return table.concat(out, ",")
+end
+
 local function project(items)
     local out = {}
     for i = 1, #items do
@@ -20,6 +28,7 @@ local function project(items)
             itemString = items[i].itemString or "",
             count = items[i].count,
             slots = slotList(items[i]),
+            units = unitList(items[i]),
         }
     end
     return out
@@ -42,7 +51,8 @@ local function run(input, ns)
         end)
         local lostSlots = {}
         for i = 1, #lost do
-            lostSlots[i] = { idx = lost[i].item.idx, slots = table.concat(lost[i].slots, ",") }
+            lostSlots[i] = { idx = lost[i].item.idx, slots = table.concat(lost[i].slots, ","),
+                             quantity = lost[i].quantity }
         end
         return { kept = project(kept), lost = lostSlots }
     end
@@ -69,13 +79,18 @@ local COLD = info(50000, { quality = nil, special = true, unresolved = true })
 local GREEN = info(41000, { equipLoc = "INVTYPE_CHEST", quality = 2 })
 
 --- A batch item as LootDetect.Collapse would produce it.
-local function batchItem(idx, id, count, slots)
+local function batchItem(idx, id, count, slots, slotQuantities)
+    if not slotQuantities then
+        slotQuantities = {}
+        for i = 1, #slots do slotQuantities[slots[i]] = 1 end
+    end
     return {
         idx = idx,
         itemString = "item:" .. id .. ":0:0:0:0:0:0:0:0",
         count = count,
         lootSlot = slots[1],
         lootSlots = slots,
+        slotQuantities = slotQuantities,
         info = info(id),
     }
 end
@@ -147,7 +162,7 @@ return {
             } },
             expected = { items = {
                 { idx = 1, itemString = "item:40000:0:0:0:0:0:0:0:0",
-                  count = 2, slots = "1,3" },
+                  count = 2, slots = "1,3", units = "1=1,3=1" },
             } },
         },
         {
@@ -159,9 +174,9 @@ return {
             } },
             expected = { items = {
                 { idx = 1, itemString = "item:40000:0:0:0:0:0:0:0:0",
-                  count = 2, slots = "1,4" },
+                  count = 2, slots = "1,4", units = "1=1,4=1" },
                 { idx = 2, itemString = "item:40001:0:0:0:0:0:0:0:0",
-                  count = 1, slots = "2" },
+                  count = 1, slots = "2", units = "2=1" },
             } },
         },
         {
@@ -176,7 +191,7 @@ return {
             } },
             expected = { items = {
                 { idx = 1, itemString = "item:40000:0:0:0:0:0:0:0:80",
-                  count = 2, slots = "1,2" },
+                  count = 2, slots = "1,2", units = "1=1,2=1" },
             } },
         },
         {
@@ -186,7 +201,7 @@ return {
             } },
             expected = { items = {
                 { idx = 1, itemString = "item:40000:0:0:0:0:0:0:0:0",
-                  count = 3, slots = "1" },
+                  count = 3, slots = "1", units = "1=3" },
             } },
         },
         {
@@ -196,7 +211,7 @@ return {
             } },
             expected = { items = {
                 { idx = 1, itemString = "item:40000:0:0:0:0:0:0:0:0",
-                  count = 1, slots = "" },
+                  count = 1, slots = "", units = "" },
             } },
         },
 
@@ -212,9 +227,9 @@ return {
             expected = {
                 kept = {
                     { idx = 1, itemString = "item:40000:0:0:0:0:0:0:0:0",
-                      count = 1, slots = "1" },
+                      count = 1, slots = "1", units = "1=1" },
                     { idx = 2, itemString = "item:40001:0:0:0:0:0:0:0:0",
-                      count = 1, slots = "2" },
+                      count = 1, slots = "2", units = "2=1" },
                 },
                 lost = {},
             },
@@ -230,9 +245,9 @@ return {
             expected = {
                 kept = {
                     { idx = 2, itemString = "item:40001:0:0:0:0:0:0:0:0",
-                      count = 1, slots = "2" },
+                      count = 1, slots = "2", units = "2=1" },
                 },
-                lost = { { idx = 1, slots = "1" } },
+                lost = { { idx = 1, slots = "1", quantity = 1 } },
             },
         },
         {
@@ -243,9 +258,9 @@ return {
             expected = {
                 kept = {
                     { idx = 1, itemString = "item:40000:0:0:0:0:0:0:0:0",
-                      count = 1, slots = "1" },
+                      count = 1, slots = "1", units = "1=1" },
                 },
-                lost = { { idx = 1, slots = "3" } },
+                lost = { { idx = 1, slots = "3", quantity = 1 } },
             },
         },
         {
@@ -257,7 +272,7 @@ return {
             } },
             expected = {
                 kept = {},
-                lost = { { idx = 1, slots = "1" }, { idx = 2, slots = "2" } },
+                lost = { { idx = 1, slots = "1", quantity = 1 }, { idx = 2, slots = "2", quantity = 1 } },
             },
         },
         {
@@ -268,8 +283,51 @@ return {
             } },
             expected = {
                 kept = { { idx = 1, itemString = "item:40000:0:0:0:0:0:0:0:0",
-                           count = 1, slots = "" } },
+                           count = 1, slots = "", units = "" } },
                 lost = {},
+            },
+        },
+        {
+            -- The review case: one slot that holds a stack counts as its quantity, and
+            -- losing that slot loses the whole stack, not one unit of it.
+            name = "losing a stacked slot subtracts the stack, not one unit",
+            input = { op = "prune", gone = { [2] = true }, items = {
+                batchItem(1, 40000, 4, { 1, 2 }, { [1] = 1, [2] = 3 }),
+            } },
+            expected = {
+                kept = {
+                    { idx = 1, itemString = "item:40000:0:0:0:0:0:0:0:0",
+                      count = 1, slots = "1", units = "1=1" },
+                },
+                lost = { { idx = 1, slots = "2", quantity = 3 } },
+            },
+        },
+        {
+            name = "losing the single unit next to a stack keeps the stack's count",
+            input = { op = "prune", gone = { [1] = true }, items = {
+                batchItem(1, 40000, 4, { 1, 2 }, { [1] = 1, [2] = 3 }),
+            } },
+            expected = {
+                kept = {
+                    { idx = 1, itemString = "item:40000:0:0:0:0:0:0:0:0",
+                      count = 3, slots = "2", units = "2=3" },
+                },
+                lost = { { idx = 1, slots = "1", quantity = 1 } },
+            },
+        },
+        {
+            -- A batch record from before slotQuantities existed still prunes sanely.
+            name = "a slot with no recorded quantity counts as one unit",
+            input = { op = "prune", gone = { [3] = true }, items = {
+                { idx = 1, itemString = "item:40000:0:0:0:0:0:0:0:0", count = 2,
+                  lootSlot = 1, lootSlots = { 1, 3 }, info = info(40000) },
+            } },
+            expected = {
+                kept = {
+                    { idx = 1, itemString = "item:40000:0:0:0:0:0:0:0:0",
+                      count = 1, slots = "1", units = "1=nil" },
+                },
+                lost = { { idx = 1, slots = "3", quantity = 1 } },
             },
         },
     },

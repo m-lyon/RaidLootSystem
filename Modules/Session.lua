@@ -49,6 +49,7 @@ function Session.New(id, host, tierCount, endsAt, items)
             -- Every slot this item occupies. Two loot slots of one drop collapse into one
             -- batch item (spec 004 section 2) and the award step needs both of them.
             lootSlots = item.lootSlots,
+            slotQuantities = item.slotQuantities,
             info = item.info,
         }
         session.entries[session.items[i].idx] = {}
@@ -405,20 +406,26 @@ function Session.DropSlots(goneSlots)
     if #lost == 0 then return false end
 
     session.items = kept
+
+    -- A batch that lost everything at once gets one abort message, not one line per item
+    -- followed by the abort. The entries are dropped either way.
+    if #kept == 0 then
+        for _, entry in ipairs(lost) do
+            session.entries[entry.item.idx] = nil
+        end
+        Session.Abort(C.ABORT_REASON.LOOT_GONE)
+        return true
+    end
+
     for _, entry in ipairs(lost) do
         local label = ns.LootDetect.Label(entry.item)
         if Session.ItemByIdx(session, entry.item.idx) then
             announce(string.format("%s: %d copy(s) are no longer on the corpse; "
-                .. "the roll continues on what is left.", label, #entry.slots))
+                .. "the roll continues on what is left.", label, entry.quantity or #entry.slots))
         else
             session.entries[entry.item.idx] = nil
             announce(label .. " is no longer on the corpse and has left the batch.")
         end
-    end
-
-    if #kept == 0 then
-        Session.Abort(C.ABORT_REASON.LOOT_GONE)
-        return true
     end
 
     -- Clients replace their item list on a same-id OPEN (spec 002 section 3), so the

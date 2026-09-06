@@ -76,7 +76,9 @@ end
 -- copies of one thing rather than treating them as two unrelated drops (spec 003 section 5).
 --
 -- @param rows array of { lootSlot, quantity, info }
--- @return array of { idx, itemString, count, lootSlot, lootSlots, info } in slot order
+-- @return array of { idx, itemString, count, lootSlot, lootSlots, slotQuantities, info } in
+--         slot order. `slotQuantities` maps each loot slot to the units it holds, so that
+--         losing a slot that carried a stack subtracts the stack and not a single unit.
 function LootDetect.Collapse(rows)
     local items, byItem = {}, {}
 
@@ -93,6 +95,7 @@ function LootDetect.Collapse(rows)
             existing.count = existing.count + quantity
             if row.lootSlot then
                 existing.lootSlots[#existing.lootSlots + 1] = row.lootSlot
+                existing.slotQuantities[row.lootSlot] = quantity
             end
         else
             local item = {
@@ -101,6 +104,7 @@ function LootDetect.Collapse(rows)
                 count = quantity,
                 lootSlot = row.lootSlot,
                 lootSlots = row.lootSlot and { row.lootSlot } or {},
+                slotQuantities = row.lootSlot and { [row.lootSlot] = quantity } or {},
                 info = info,
             }
             items[#items + 1] = item
@@ -121,30 +125,40 @@ end
 -- drops instead. A batch that loses every item is what makes the host abort with LOOT_GONE;
 -- this function reports that rather than deciding it.
 --
--- @return kept array, lost array of { item, slots } (the items and the copies removed)
+-- @return kept array, lost array of { item, slots, quantity } (the items, the slots removed,
+--         and the units those slots held)
 function LootDetect.Prune(items, isGone)
     local kept, lost = {}, {}
 
     for i = 1, #items do
         local item = items[i]
         local slots = item.lootSlots or (item.lootSlot and { item.lootSlot }) or {}
+        local quantities = item.slotQuantities or {}
 
         if #slots == 0 then
             kept[#kept + 1] = item             -- an item-link batch has no slot to lose
         else
-            local live, gone = {}, {}
+            local live, gone, goneUnits = {}, {}, 0
             for j = 1, #slots do
-                if isGone(slots[j]) then gone[#gone + 1] = slots[j]
-                else live[#live + 1] = slots[j] end
+                local slot = slots[j]
+                if isGone(slot) then
+                    gone[#gone + 1] = slot
+                    -- A slot that held a stack loses the whole stack. A slot with no
+                    -- recorded quantity (an older batch record) counts as one unit.
+                    goneUnits = goneUnits + (quantities[slot] or 1)
+                    quantities[slot] = nil
+                else
+                    live[#live + 1] = slot
+                end
             end
 
             if #gone > 0 then
-                lost[#lost + 1] = { item = item, slots = gone }
+                lost[#lost + 1] = { item = item, slots = gone, quantity = goneUnits }
             end
             if #live > 0 then
                 item.lootSlots = live
                 item.lootSlot = live[1]
-                item.count = math.max(1, (item.count or 1) - #gone)
+                item.count = math.max(1, (item.count or 1) - goneUnits)
                 kept[#kept + 1] = item
             end
         end
