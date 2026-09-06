@@ -209,11 +209,14 @@ function Browser.Refresh()
             panel:SetPoint("TOPLEFT", content, "TOPLEFT", 8, -y)
             local view = ns.History.ToView(record)
             for _, item in ipairs(view.items) do item.label = labelOf(item.itemString) end
-            view.awardRecord = function(itemIdx, copy)
-                for _, r in ipairs(view.results) do
-                    if r.itemIdx == itemIdx and r.award and r.award.copy == copy then return r.award end
+            -- Delivery state is the host's (section 2); a client's record has none to show.
+            if record.recordedAsHost then
+                view.awardRecord = function(itemIdx, copy)
+                    for _, r in ipairs(view.results) do
+                        if r.itemIdx == itemIdx and r.award and r.award.copy == copy then return r.award end
+                    end
+                    return nil
                 end
-                return nil
             end
             view.host = false
             local height = ns.RollWindow.RenderResults(panel, detailRows, view)

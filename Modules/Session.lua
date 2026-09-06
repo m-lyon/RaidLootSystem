@@ -390,7 +390,11 @@ function Session.Open(items)
     -- section 7): a batch resolves against the list as it stood when it opened.
     session.lootMode, session.priority = Session.LootModeNow()
     session.priorityAtOpen = Util.deepCopy(ns.Database.Priority())
-    session.source = items[1].lootSlot and ns.LootDetect.sourceName or "Item link"
+    if items[1].lootSlot then
+        session.source = ns.LootDetect.sourceName      -- nil when no dead target (spec 008)
+    else
+        session.source = "Item link"
+    end
     Session.current = session
     if ns.Award then ns.Award.Snapshot(session) end     -- spec 007: what the host already had
 

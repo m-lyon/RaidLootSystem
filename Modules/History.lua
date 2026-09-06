@@ -573,9 +573,10 @@ end
 --- Client side: called by Client once RESULT and ROLLS have both arrived, or on
 -- ABORT. The host's own mirror is skipped: its canonical record is already written.
 function History.RecordClient(session)
-    if ns.Session.current and ns.Session.current.id == session.id and ns.Session.IsHost() then
-        return nil
-    end
+    -- Judged by the batch's own host name, which is stable for the life of the mirror:
+    -- by the time an ML_CHANGED abort fires, IsHost() is already false on the old host.
+    local me = UnitName("player")
+    if session.host and me and session.host:lower() == me:lower() then return nil end
     local record = History.FromClient(session, {
         now = time(),
         zone = GetRealZoneText(),

@@ -233,6 +233,84 @@ return {
             },
         },
         {
+            -- Under SK: list positions on entries and awards, looked-up entries count as
+            -- rolled, and the text export says "position N".
+            name = "an SK host record carries list positions and exports them",
+            input = { op = "host", ctx = HOST_CTX, session = {
+                id = "Steve-102", host = "Steve", state = "CLOSED", tierCount = 3,
+                openedAt = T, closedAt = T + 100, lootMode = "SK",
+                priorityAtOpen = { version = 7, order = { "Ann", "Bob", "Cat" } },
+                items = { { idx = 1, itemString = "item:5", count = 1, lootSlot = 1,
+                            info = { itemLevel = 264, quality = 4, equipLoc = "INVTYPE_HEAD" } } },
+                entries = { [1] = { { char = "Bob", owner = "B", tier = 1, star = true, submittedAt = T + 5 },
+                                    { char = "Cat", owner = "C", tier = 1, submittedAt = T + 6 } } },
+                results = { { itemIdx = 1, unclaimed = false, degraded = false,
+                              awards = { { char = "Bob", owner = "B", tier = 1, roll = 0 } },
+                              record = { { char = "Bob", owner = "B", tier = 1, listIdx = 2, rolled = true, roll = 0, rerolled = {} },
+                                         { char = "Cat", owner = "C", tier = 1, listIdx = 3, rolled = true, roll = 0, rerolled = {} } } } },
+                awards = { [1] = { { copy = 1, char = "Bob", delivery = "AWAITING", priorIndex = 2 } } },
+            } },
+            expected = {
+                sessionId = "Steve-102", recordedAsHost = true, timestamp = T, closedAt = T + 100,
+                zone = "Icecrown Citadel", source = "Lord Marrowgar", host = "Steve",
+                settings = { tierCount = 3, timerSeconds = 180, qualityThreshold = 4, lootMode = "SK" },
+                priorityAtOpen = { version = 7, order = { "Ann", "Bob", "Cat" } },
+                raid = { "Steve", "Dave" }, outcome = "RESOLVED",
+                items = { { itemIdx = 1, itemString = "item:5", count = 1, lootSlot = 1, unclaimed = false, degraded = false,
+                            itemLevel = 264, quality = 4, equipLoc = "INVTYPE_HEAD",
+                            entries = {
+                                { char = "Bob", owner = "B", tier = 1, listIdx = 2, star = true, override = false,
+                                  rolled = true, roll = 0, rerolled = {}, withdrawn = false, submittedAt = T + 5 },
+                                { char = "Cat", owner = "C", tier = 1, listIdx = 3, star = false, override = false,
+                                  rolled = true, roll = 0, rerolled = {}, withdrawn = false, submittedAt = T + 6 },
+                            },
+                            awards = { { copy = 1, char = "Bob", owner = "B", tier = 1, roll = 0, listIdx = 2,
+                                         priorIndex = 2, delivery = "AWAITING" } } } },
+            },
+        },
+        {
+            name = "SK text export shows the list position, not a roll",
+            input = { op = "text", records = { {
+                sessionId = "S", recordedAsHost = true, timestamp = T, zone = "ICC", source = "Boss", host = "Steve",
+                settings = { tierCount = 3, lootMode = "SK" }, raid = {}, outcome = "RESOLVED",
+                items = { { itemIdx = 1, itemString = "item:5", count = 1, unclaimed = false, degraded = false,
+                            entries = {}, awards = { { copy = 1, char = "Bob", owner = "B", tier = 1, roll = 0, listIdx = 2,
+                                                       delivery = "DELIVERED" } } } },
+            } } },
+            expected = "D" .. T .. "  ICC / Boss  (host Steve, SK, 3 tiers)
+"
+                .. "  [item:5] -> Bob (B) T1, position 2, delivered
+",
+        },
+        {
+            -- Aborted before ROLLS: the client's entries fall back to what STATE said.
+            name = "a client abort record falls back to STATE entries",
+            input = { op = "client", ctx = CLIENT_CTX, session = {
+                id = "Steve-103", host = "Steve", state = "ABORTED", abortReason = "HOST_LEFT",
+                tierCount = 3, lootMode = "ROLL", openedAt = T, closedAt = T + 240,
+                items = { { idx = 1, itemString = "item:49623", count = 1 } },
+                entries = { [1] = { { char = "Bonk", owner = "Dave", tier = 1 } } },
+            } },
+            expected = {
+                sessionId = "Steve-103", recordedAsHost = false, timestamp = T, closedAt = T + 240,
+                zone = "Icecrown Citadel", host = "Steve",
+                settings = { tierCount = 3, lootMode = "ROLL" },
+                raid = { "Dave", "Steve" }, outcome = "ABORTED", abortReason = "HOST_LEFT",
+                items = { { itemIdx = 1, itemString = "item:49623", count = 1, unclaimed = false, degraded = false,
+                            itemLevel = 264, quality = 4, equipLoc = "INVTYPE_CHEST",
+                            entries = { { char = "Bonk", owner = "Dave", tier = 1, listIdx = 0, star = false,
+                                          override = false, rolled = false, roll = 0, rerolled = {}, withdrawn = false } },
+                            awards = {} } },
+            },
+        },
+        {
+            name = "upsert appends a batch it has not seen",
+            input = { op = "upsert",
+                      records = { { sessionId = "S1", recordedAsHost = true, tag = "a" } },
+                      record = { sessionId = "S2", recordedAsHost = true, tag = "b" } },
+            expected = { added = true, keys = { "S1/host:a", "S2/host:b" } },
+        },
+        {
             name = "upsert replaces a same-side record and keeps the other side's",
             input = { op = "upsert",
                       records = { { sessionId = "S1", recordedAsHost = true, tag = "a" },
