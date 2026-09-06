@@ -14,7 +14,7 @@ layout, pure-core boundary, saved-variable schema and comms protocol.
 | [003](003-resolution-engine.md) | Resolution engine | `Core/Resolve`, `Core/Eligibility` | 000, 001 | **Built** |
 | [004](004-loot-detection-and-batching.md) | Loot detection and item classification | `LootDetect`, `ItemInfo`, `Data/*` | 000 | **Built** |
 | [005](005-roll-window.md) | Roll window | `UI/RollWindow` | 000–004 | **Built** |
-| [006](006-host-panel.md) | Host panel | `UI/HostPanel`, `Announce` | 000, 001, 002, 004 | Not started |
+| [006](006-host-panel.md) | Host panel | `UI/HostPanel`, `Announce` | 000, 001, 002, 004 | **Built** — the priority-list section is 010's |
 | [007](007-award-and-delivery.md) | Award and delivery | `Award`, `Pending` | 000, 002, 003, 004 | Not started |
 | [008](008-history-and-export.md) | History and export | `History`, `UI/HistoryBrowser` | 000, 002, 003, 007 | Not started |
 | [009](009-simulation-and-testing.md) | Simulation and testing | `tests/`, `Simulate` | 000 | Partial — `tests/run.lua` and the fixture suites; `Simulate` not started |

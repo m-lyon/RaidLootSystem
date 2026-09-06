@@ -61,9 +61,12 @@ local function setTierCount(argument)
             C.MIN_TIER_COUNT, C.MAX_TIER_COUNT))
         return
     end
-    ns.Database.Host().tierCount = math.floor(count)
+    local ok, why = ns.Session.ChangeSetting("tierCount", count)
+    if not ok then
+        ns.Print(why)
+        return
+    end
     ns.Print("tier count set to " .. math.floor(count) .. ". It applies to the next batch.")
-    ns.HierarchyEditor.Refresh()
 end
 
 --------------------------------------------------------------------------------
@@ -125,14 +128,12 @@ end
 --- The quality bar the corpse scan applies (spec 004 section 2). The host panel (spec 006)
 -- owns this setting; this is here so the bar can be moved without one.
 local function setQuality(argument)
-    local quality = tonumber(argument)
-    if not quality or quality < 0 or quality > 5 then
-        ns.Print("quality must be between 0 and 5. 3 is rare, 4 is epic.")
+    local ok, why = ns.Session.ChangeSetting("qualityThreshold", tonumber(argument))
+    if not ok then
+        ns.Print(why)
         return
     end
-    ns.Database.Host().qualityThreshold = math.floor(quality)
-    ns.Print("only loot of quality " .. math.floor(quality)
-        .. " and above is offered. It applies to the next corpse.")
+    ns.Print("only loot of quality " .. tonumber(argument) .. " and above is offered.")
 end
 
 local function help()
@@ -140,13 +141,14 @@ local function help()
     ns.Print("  /rls              open the roll window, or your hierarchy when no batch is live")
     ns.Print("  /rls window       open the roll window")
     ns.Print("  /rls hierarchy    open your hierarchy")
+    ns.Print("  /rls host         open the host panel (master looter)")
     ns.Print("  /rls status       version, roster size, conflicts")
     ns.Print("  /rls tiers <0-5>  set the tier count you host with")
     ns.Print("  /rls publish      resend your roster to the raid")
     ns.Print("  /rls request      ask everyone to resend theirs")
     ns.Print("  /rls loot         list what the open corpse has worth rolling for")
     ns.Print("  /rls start        open a batch on those items (host)")
-    ns.Print("  /rls quality <0-5> set the quality bar the corpse scan applies")
+    ns.Print("  /rls quality <3|4> set the quality bar the corpse scan applies (rare/epic)")
     ns.Print("  /rls roll <link>  open a batch on one item link (host)")
     ns.Print("  /rls close        resolve the open batch now (host)")
     ns.Print("  /rls cancel       cancel the open batch (host)")
@@ -169,6 +171,8 @@ local function dispatch(input)
         ns.RollWindow.Show()
     elseif command == "hierarchy" then
         ns.HierarchyEditor.Toggle()
+    elseif command == "host" then
+        ns.HostPanel.Toggle()
     elseif command == "status" then
         status()
     elseif command == "tiers" then
@@ -231,12 +235,14 @@ loader:SetScript("OnEvent", function(_, event, addonName)
         math.randomseed(time())         -- exactly once, spec 000 section 7
     elseif event == "PLAYER_LOGIN" then
         ns.Comms.Init()
+        ns.Announce.Init()
         ns.Roster.Init()
         ns.ItemInfo.Init()
         ns.LootDetect.Init()
         ns.Session.Init()
         ns.Client.Init()
         ns.RollWindow.Init()
+        ns.HostPanel.Init()
         ns.Minimap.Init()
         ns.Comms.Send(C.OPS.HI, C.VERSION)
     end

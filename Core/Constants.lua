@@ -101,6 +101,14 @@ C.BATCH_EXPIRY = 15 * 60      -- an unresolved batch aborts as EXPIRED after thi
 
 C.MIN_TIMER_SECONDS = 15
 C.MAX_TIMER_SECONDS = 300
+C.EXTEND_SECONDS = 60         -- what the host panel's Extend adds (spec 006 section 3)
+
+-- Chat lines per second the announcement queue drains at (spec 006 section 4). The
+-- client throttles chat like the server throttles addon messages, just more visibly.
+C.CHAT_RATE = 3
+
+C.VERBOSITY = { OFF = "OFF", SUMMARY = "SUMMARY", VERBOSE = "VERBOSE" }
+C.QUALITY_CHOICES = { { value = 3, text = "Rare" }, { value = 4, text = "Epic" } }
 
 --------------------------------------------------------------------------------
 -- Tiers (spec 000 section 6)

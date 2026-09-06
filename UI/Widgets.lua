@@ -118,6 +118,89 @@ function Widgets.EditBox(parent, width, height)
     return e
 end
 
+--- A labelled slider. `onChange(value)` fires once, when the user lets go: a drag
+-- passes through every step, and a setting that broadcasts and announces on each
+-- would spam the raid. `onPreview(value)` fires on every step, for the label.
+-- SetValueQuiet moves the slider without firing either, for refreshes.
+function Widgets.Slider(parent, globalName, label, minValue, maxValue, step, onChange, onPreview)
+    local s = CreateFrame("Slider", globalName, parent, "OptionsSliderTemplate")
+    s:SetWidth(180)
+    s:SetHeight(16)
+    s:SetMinMaxValues(minValue, maxValue)
+    s:SetValueStep(step)
+    _G[globalName .. "Low"]:SetText(tostring(minValue))
+    _G[globalName .. "High"]:SetText(tostring(maxValue))
+    s.text = _G[globalName .. "Text"]
+    s.text:SetText(label)
+    s.quiet = false
+    s:SetScript("OnValueChanged", function(self, value)
+        if self.quiet then return end
+        self.dirty = true
+        if onPreview then onPreview(value) end
+    end)
+    s:SetScript("OnMouseUp", function(self)
+        if not self.dirty then return end
+        self.dirty = false
+        onChange(self:GetValue())
+    end)
+    function s:SetValueQuiet(value)
+        self.quiet = true
+        self:SetValue(value)
+        self.quiet = false
+        self.dirty = false
+    end
+    return s
+end
+
+--- A dropdown over `options`, each { value, text, disabled, tooltipTitle, tooltip }.
+-- `onSelect(value)` fires on user selection only; SetValue moves it without firing.
+function Widgets.Dropdown(parent, globalName, width, options, onSelect)
+    local d = CreateFrame("Frame", globalName, parent, "UIDropDownMenuTemplate")
+    d.options = options
+
+    UIDropDownMenu_Initialize(d, function()
+        for _, opt in ipairs(d.options) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text, info.value = opt.text, opt.value
+            info.disabled = opt.disabled
+            info.tooltipTitle, info.tooltipText = opt.tooltipTitle, opt.tooltip
+            info.checked = (opt.value == d.selected)
+            info.func = function(self)
+                d:SetValue(self.value)
+                onSelect(self.value)
+            end
+            UIDropDownMenu_AddButton(info)
+        end
+    end)
+    UIDropDownMenu_SetWidth(d, width)
+
+    function d:SetValue(value)
+        self.selected = value
+        UIDropDownMenu_SetSelectedValue(self, value)
+        local text
+        for _, opt in ipairs(self.options) do
+            if opt.value == value then text = opt.text end
+        end
+        UIDropDownMenu_SetText(self, text or tostring(value))
+    end
+
+    function d:SetOptions(newOptions)
+        self.options = newOptions
+    end
+    return d
+end
+
+--- A labelled check box. `onClick(checked)` fires on user clicks only.
+function Widgets.CheckBox(parent, globalName, label, onClick)
+    local c = CreateFrame("CheckButton", globalName, parent, "UICheckButtonTemplate")
+    c:SetWidth(24)
+    c:SetHeight(24)
+    c.text = _G[globalName .. "Text"]
+    c.text:SetText(label)
+    c:SetScript("OnClick", function(self) onClick(self:GetChecked() == 1) end)
+    return c
+end
+
 --- A bordered panel, used for list backgrounds and badges.
 function Widgets.Panel(parent, alpha)
     local p = CreateFrame("Frame", nil, parent)

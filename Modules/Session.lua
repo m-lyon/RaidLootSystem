@@ -246,6 +246,18 @@ function Session.ResultRows(results)
     return rows
 end
 
+--- How many entries each item has, in item order. Drives the host panel's per-item
+-- counts (spec 006 section 3), so "item 4 has nothing on it" is visible at a glance.
+-- @return array of { idx, count }
+function Session.EntryCounts(session)
+    local out = {}
+    for i = 1, #session.items do
+        local idx = session.items[i].idx
+        out[i] = { idx = idx, count = #(session.entries[idx] or {}) }
+    end
+    return out
+end
+
 --- ROLLS rows: the complete record behind the table, entries that never rolled
 -- included. An entry that vanished from the results is indistinguishable from a bug.
 function Session.RollRows(results)
@@ -285,14 +297,14 @@ local function fireChanged()
     for _, fn in ipairs(listeners) do fn(Session.current) end
 end
 
-local function announce(message)
-    -- Only the host writes to raid chat (spec 000 section 5). Announce.lua owns the
-    -- verbosity levels (spec 006); until it exists the host still sees the line.
-    if ns.Announce then
-        ns.Announce.Say(message)
-    else
-        ns.Debug("announce: " .. message)
-    end
+--- Only the host writes to raid chat (spec 000 section 5). Announce.lua owns the
+-- formats and the verbosity levels (spec 006 section 4).
+local function say(kind, args)
+    if ns.Announce then ns.Announce.Emit(kind, args) end
+end
+
+local function labelOf(item)
+    return ns.LootDetect.Label(item)
 end
 
 --------------------------------------------------------------------------------
@@ -382,8 +394,38 @@ function Session.Open(items)
     end
     ns.Comms.Send(C.OPS.OPEN, body)
 
-    announce(string.format("rolls are open on %d item(s) for %d seconds.",
-        #session.items, seconds))
+    local labels = {}
+    for i, item in ipairs(session.items) do
+        labels[i] = labelOf(item) .. (item.count > 1 and (" x" .. item.count) or "")
+    end
+    say("OPEN", { labels = labels, seconds = seconds })
+    fireChanged()
+    return true
+end
+
+--- Add time to the open batch (spec 006 section 3, "Extend"). Clients learn the new
+-- deadline from a same-id OPEN carrying the seconds left.
+function Session.Extend(seconds)
+    local session = Session.current
+    if not session or session.state ~= C.SESSION_STATE.OPEN then
+        return false, "there is no batch open."
+    end
+    if not Session.IsHost() then return false, "you are not the master looter." end
+
+    seconds = seconds or C.EXTEND_SECONDS
+    local endsAt = session.endsAt + seconds
+    local secondsLeft = math.max(0, endsAt - GetTime())
+    local body, err = Serialize.encodeOpen(session.id, session.tierCount, secondsLeft,
+        session.items)
+    if not body then
+        -- Extending locally while the clients keep the old deadline would close their
+        -- windows under an open batch. Refuse, loudly.
+        return false, "the extension could not be encoded (" .. tostring(err) .. "); "
+            .. "the deadline is unchanged."
+    end
+    session.endsAt = endsAt
+    ns.Comms.Send(C.OPS.OPEN, body)
+    say("EXTEND", { seconds = seconds, left = secondsLeft })
     fireChanged()
     return true
 end
@@ -422,13 +464,13 @@ function Session.DropSlots(goneSlots)
     end
 
     for _, entry in ipairs(lost) do
-        local label = ns.LootDetect.Label(entry.item)
+        local label = labelOf(entry.item)
         if Session.ItemByIdx(session, entry.item.idx) then
-            announce(string.format("%s: %d copy(s) are no longer on the corpse; "
-                .. "the roll continues on what is left.", label, entry.quantity or #entry.slots))
+            say("LOOT_LOST", { label = label, count = entry.quantity or #entry.slots,
+                               remaining = true })
         else
             session.entries[entry.item.idx] = nil
-            announce(label .. " is no longer on the corpse and has left the batch.")
+            say("LOOT_LOST", { label = label, remaining = false })
         end
     end
 
@@ -585,14 +627,16 @@ function Session.Close()
 
     session.state = C.SESSION_STATE.CLOSED
 
-    for _, row in ipairs(Session.ResultRows(results)) do
-        local item = Session.ItemByIdx(session, row.itemIdx)
-        local label = item and item.itemString or ("item " .. row.itemIdx)
-        if row.outcome == C.OUTCOME.UNCLAIMED then
-            announce(label .. ": nobody entered -- master looter's choice.")
-        else
-            announce(string.format("%s: %s wins (T%d).", label, row.winner, row.tier))
+    if ns.Announce then
+        local labelled = {}
+        for i, item in ipairs(session.items) do
+            labelled[i] = { idx = item.idx, itemString = item.itemString, label = labelOf(item) }
         end
+        ns.Announce.SayAll(ns.Announce.BatchLines(labelled, results, {
+            verbosity = ns.Database.Settings().verbosity,
+            isSK = (lootMode == C.LOOT_MODE.SK),
+            tierCount = session.tierCount,
+        }))
     end
 
     if ns.History then ns.History.Record(session) end
@@ -623,7 +667,7 @@ function Session.Abort(reason)
         ns.Comms.Send(C.OPS.ABORT, Serialize.encodeAbort(session.id, reason))
     end
     if Session.IsHost() then
-        announce("the batch was cancelled: " .. (C.ABORT_TEXT[reason] or reason) .. ".")
+        say("ABORT", { reason = reason, reasonText = C.ABORT_TEXT[reason] })
     end
 
     if ns.History then ns.History.Record(session) end
@@ -647,6 +691,76 @@ function Session.BroadcastConfig()
     ns.Comms.Send(C.OPS.CFG,
         Serialize.encodeConfig(host.tierCount, host.timerSeconds, host.lootMode))
     return true
+end
+
+--- Change one host setting from the host panel (spec 006 section 3). Tier count,
+-- timer and loot mode are frozen while a batch is open, are broadcast as CFG, and are
+-- announced: they change the rules everyone is playing by. The rest are local.
+-- @return true, or false plus a reason
+function Session.ChangeSetting(key, value)
+    local host = ns.Database.Host()
+    local settings = ns.Database.Settings()
+    local shared = (key == "tierCount" or key == "timerSeconds" or key == "lootMode")
+
+    if shared and Session.current and Session.current.state == C.SESSION_STATE.OPEN then
+        return false, "frozen while a batch is open; the change applies to the next one."
+    end
+
+    local kind
+    if key == "tierCount" then
+        value = Util.clamp(math.floor(tonumber(value) or 3), C.MIN_TIER_COUNT, C.MAX_TIER_COUNT)
+        kind = "TIER_COUNT"
+    elseif key == "timerSeconds" then
+        value = Util.clamp(math.floor(tonumber(value) or 180), C.MIN_TIMER_SECONDS,
+            C.MAX_TIMER_SECONDS)
+        kind = "TIMER"
+    elseif key == "lootMode" then
+        if value ~= C.LOOT_MODE.SK then value = C.LOOT_MODE.ROLL end
+        if value == C.LOOT_MODE.SK and #ns.Database.Priority().order == 0 then
+            return false, "seed the priority list to enable Suicide Kings."
+        end
+        kind = "LOOT_MODE"
+    elseif key == "qualityThreshold" then
+        value = tonumber(value)
+        if value ~= 3 and value ~= 4 then
+            return false, "the quality threshold is 3 (rare) or 4 (epic)."
+        end
+    elseif key == "autoClose" then
+        value = value and true or false
+    elseif key == "verbosity" then
+        if not C.VERBOSITY[value] then return false, "unknown verbosity: " .. tostring(value) end
+        if settings.verbosity ~= value then
+            settings.verbosity = value
+            fireChanged()
+        end
+        return true
+    else
+        return false, "unknown setting: " .. tostring(key)
+    end
+
+    if host[key] == value then return true end
+    host[key] = value
+
+    if key == "qualityThreshold" and ns.LootDetect.Rescan then ns.LootDetect.Rescan() end
+    if shared and Session.IsHost() then
+        Session.BroadcastConfig()
+        say(kind, { tierCount = value, seconds = value, lootMode = value })
+    end
+    if ns.HierarchyEditor then ns.HierarchyEditor.Refresh() end
+    fireChanged()
+    return true
+end
+
+--- Raid members running the addon who have not submitted, for the host panel.
+function Session.OutstandingPlayers()
+    local session = Session.current
+    local out = {}
+    if not session then return out end
+    for _, name in ipairs(expectedPlayers()) do
+        if not session.submitted[name] then out[#out + 1] = name end
+    end
+    table.sort(out)
+    return out
 end
 
 --------------------------------------------------------------------------------

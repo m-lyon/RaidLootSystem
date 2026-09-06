@@ -66,6 +66,36 @@ function LootDetect.IsCandidate(info, quality, threshold)
 end
 
 --------------------------------------------------------------------------------
+-- Pure: the candidate partition (section 2, spec 006 section 3)
+--------------------------------------------------------------------------------
+
+--- Split the corpse's slots into candidate rows and skipped rows, honouring the
+-- host's manual additions. One function, so a manual add, a lost slot and a moved
+-- quality bar cannot disagree about the list.
+--
+-- @param scanRows   every slot of the last scan: { lootSlot, quantity, quality, info }
+-- @param manualIds  set of item ids the host added by hand from the skipped list
+-- @param manualRows item-link additions with no loot slot: { quantity, info }
+-- @param threshold  host.qualityThreshold
+-- @return rows for Collapse, skipped array of { lootSlot, info, quality, reason }
+function LootDetect.Partition(scanRows, manualIds, manualRows, threshold)
+    local rows, skipped = {}, {}
+    manualIds = manualIds or {}
+    for _, row in ipairs(scanRows or {}) do
+        local id = row.info and row.info.itemId
+        local ok, reason = LootDetect.IsCandidate(row.info, row.quality, threshold)
+        if ok or (id and manualIds[id]) then
+            rows[#rows + 1] = row
+        else
+            skipped[#skipped + 1] = { lootSlot = row.lootSlot, info = row.info,
+                                      quality = row.quality, reason = reason }
+        end
+    end
+    for _, row in ipairs(manualRows or {}) do rows[#rows + 1] = row end
+    return rows, skipped
+end
+
+--------------------------------------------------------------------------------
 -- Pure: duplicate stacks (section 2)
 --------------------------------------------------------------------------------
 
@@ -184,6 +214,10 @@ LootDetect.skipped = {}        -- { lootSlot, info, quality, reason } -- the man
 LootDetect.scanning = false
 LootDetect.windowOpen = false
 
+local scanRows = {}            -- every slot of the last scan: { lootSlot, quantity, quality, info }
+local manualIds = {}           -- item ids the host added by hand from the skipped list
+local manualRows = {}          -- item-link additions with no loot slot: { quantity, info }
+
 local listeners = {}
 local expectedClears = {}      -- loot slots our own award is about to empty
 local scanToken = 0            -- see LootDetect.Scan
@@ -193,8 +227,9 @@ function LootDetect.RegisterListener(fn)
     listeners[#listeners + 1] = fn
 end
 
-local function fireChanged()
-    for _, fn in ipairs(listeners) do fn(LootDetect.candidates) end
+--- @param newScan true when a fresh corpse replaced the list, false for a rebuild
+local function fireChanged(newScan)
+    for _, fn in ipairs(listeners) do fn(LootDetect.candidates, newScan == true) end
 end
 
 --------------------------------------------------------------------------------
@@ -203,6 +238,14 @@ end
 
 local function threshold()
     return ns.Database.Host().qualityThreshold or 4
+end
+
+--- Recompute the candidate and skipped lists from the retained scan (Partition).
+local function rebuild(newScan)
+    local rows, skipped = LootDetect.Partition(scanRows, manualIds, manualRows, threshold())
+    LootDetect.candidates = LootDetect.Collapse(rows)
+    LootDetect.skipped = skipped
+    fireChanged(newScan)
 end
 
 --- Scan the open loot window. Asynchronous, because an uncached item takes up to five
@@ -227,29 +270,64 @@ function LootDetect.Scan(callback)
     LootDetect.scanning = true
     ns.ItemInfo.RequestAll(links, function(infos)
         if token ~= scanToken then return end
-        local rows, skipped = {}, {}
-        for i = 1, #slots do
-            local row = slots[i]
-            row.info = infos[i]
-            local ok, reason = LootDetect.IsCandidate(row.info, row.quality, threshold())
-            if ok then
-                rows[#rows + 1] = row
-            else
-                skipped[#skipped + 1] = {
-                    lootSlot = row.lootSlot,
-                    info = row.info,
-                    quality = row.quality,
-                    reason = reason,
-                }
-            end
-        end
-
-        LootDetect.candidates = LootDetect.Collapse(rows)
-        LootDetect.skipped = skipped
+        for i = 1, #slots do slots[i].info = infos[i] end
+        -- A new corpse: whatever the host added by hand was for the last one.
+        scanRows, manualIds, manualRows = slots, {}, {}
         LootDetect.scanning = false
-        fireChanged()
+        rebuild(true)
         if callback then callback(LootDetect.candidates) end
     end)
+end
+
+--- Re-apply the candidate rule to the last scan, after the quality bar moves.
+function LootDetect.Rescan()
+    if #scanRows > 0 then rebuild() end
+end
+
+--- Add an item the filter excluded (spec 006 section 3, "Add item"). A link that
+-- matches a skipped loot slot joins with that slot, so the award still goes through
+-- master loot; anything else joins as an item-link row and will be traded.
+-- @param callback optional, called with true once it is in the list
+function LootDetect.AddCandidate(link, callback)
+    local itemString, itemId = ns.ItemInfo.ParseLink(link)
+    if not itemString then
+        ns.Print("that is not an item link.")
+        if callback then callback(false) end
+        return false
+    end
+
+    for _, row in ipairs(scanRows) do
+        if row.info and row.info.itemId == itemId then
+            manualIds[itemId] = true
+            rebuild()
+            if callback then callback(true) end
+            return true
+        end
+    end
+
+    ns.ItemInfo.Request(link, function(info)
+        for _, row in ipairs(manualRows) do
+            if row.info.itemId == info.itemId then
+                row.quantity = row.quantity + 1
+                rebuild()
+                if callback then callback(true) end
+                return
+            end
+        end
+        manualRows[#manualRows + 1] = { quantity = 1, info = info }
+        rebuild()
+        if callback then callback(true) end
+    end)
+    return true
+end
+
+--- Drop a manual item-link row again.
+function LootDetect.RemoveManual(itemId)
+    for i = #manualRows, 1, -1 do
+        if manualRows[i].info.itemId == itemId then table.remove(manualRows, i) end
+    end
+    manualIds[itemId] = nil
+    rebuild()
 end
 
 --------------------------------------------------------------------------------
@@ -331,10 +409,13 @@ local function onSlotCleared(lootSlot)
         ns.Session.DropSlots({ [lootSlot] = true })
     end
 
-    if #LootDetect.candidates > 0 then
-        LootDetect.candidates = LootDetect.Prune(LootDetect.candidates,
-            function(slot) return slot == lootSlot end)
-        fireChanged()
+    local kept = {}
+    for _, row in ipairs(scanRows) do
+        if row.lootSlot ~= lootSlot then kept[#kept + 1] = row end
+    end
+    if #kept ~= #scanRows then
+        scanRows = kept
+        rebuild()
     end
 end
 
