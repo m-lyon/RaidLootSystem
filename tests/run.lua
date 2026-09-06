@@ -21,6 +21,8 @@ local CORE_FILES = {
     "Core/Util.lua",
     "Core/Serialize.lua",
     "Core/Tiers.lua",
+    "Core/Eligibility.lua",
+    "Core/Resolve.lua",
 }
 
 local DATA_FILES = {
@@ -34,7 +36,7 @@ local MODULE_FILES = {
     "Modules/Roster.lua",
 }
 
-local SUITES = { "tiers", "serialize", "roster" }
+local SUITES = { "tiers", "serialize", "roster", "eligibility", "resolve" }
 
 --------------------------------------------------------------------------------
 -- Comparison and reporting

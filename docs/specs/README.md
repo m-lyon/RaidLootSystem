@@ -6,19 +6,22 @@ and its acceptance criteria.
 **Read [`000-architecture.md`](000-architecture.md) first.** Every other spec assumes its module
 layout, pure-core boundary, saved-variable schema and comms protocol.
 
-| # | Spec | Modules | Depends on |
-|---|---|---|---|
-| [000](000-architecture.md) | Architecture | *(all)* | — |
-| [001](001-roster-and-hierarchy.md) | Roster and hierarchy | `Roster`, `Core/Tiers`, `UI/HierarchyEditor` | 000 |
-| [002](002-session-protocol.md) | Session protocol | `Session`, `Client`, `Comms` | 000, 001 |
-| [003](003-resolution-engine.md) | Resolution engine | `Core/Resolve`, `Core/Eligibility` | 000, 001 |
-| [004](004-loot-detection-and-batching.md) | Loot detection and item classification | `LootDetect`, `ItemInfo`, `Data/*` | 000 |
-| [005](005-roll-window.md) | Roll window | `UI/RollWindow` | 000–004 |
-| [006](006-host-panel.md) | Host panel | `UI/HostPanel`, `Announce` | 000, 001, 002, 004 |
-| [007](007-award-and-delivery.md) | Award and delivery | `Award`, `Pending` | 000, 002, 003, 004 |
-| [008](008-history-and-export.md) | History and export | `History`, `UI/HistoryBrowser` | 000, 002, 003, 007 |
-| [009](009-simulation-and-testing.md) | Simulation and testing | `tests/`, `Simulate` | 000 |
-| [010](010-priority-list.md) | Priority list (Suicide Kings) | `Core/PriorityList`, `Modules/PriorityList`, `Core/Resolve` | 000, 001, 002, 003, 007, 008 |
+| # | Spec | Modules | Depends on | Status |
+|---|---|---|---|---|
+| [000](000-architecture.md) | Architecture | *(all)* | — | — |
+| [001](001-roster-and-hierarchy.md) | Roster and hierarchy | `Roster`, `Core/Tiers`, `UI/HierarchyEditor` | 000 | **Built** |
+| [002](002-session-protocol.md) | Session protocol | `Session`, `Client`, `Comms` | 000, 001 | Not started |
+| [003](003-resolution-engine.md) | Resolution engine | `Core/Resolve`, `Core/Eligibility` | 000, 001 | **Built** |
+| [004](004-loot-detection-and-batching.md) | Loot detection and item classification | `LootDetect`, `ItemInfo`, `Data/*` | 000 | Not started |
+| [005](005-roll-window.md) | Roll window | `UI/RollWindow` | 000–004 | Not started |
+| [006](006-host-panel.md) | Host panel | `UI/HostPanel`, `Announce` | 000, 001, 002, 004 | Not started |
+| [007](007-award-and-delivery.md) | Award and delivery | `Award`, `Pending` | 000, 002, 003, 004 | Not started |
+| [008](008-history-and-export.md) | History and export | `History`, `UI/HistoryBrowser` | 000, 002, 003, 007 | Not started |
+| [009](009-simulation-and-testing.md) | Simulation and testing | `tests/`, `Simulate` | 000 | Partial — `tests/run.lua` and the fixture suites; `Simulate` not started |
+| [010](010-priority-list.md) | Priority list (Suicide Kings) | `Core/PriorityList`, `Modules/PriorityList`, `Core/Resolve` | 000, 001, 002, 003, 007, 008 | Partial — `Core/Resolve`'s SK path only |
+
+Status is the state of the tree, not of the spec. A spec is written before it is built; a
+**Built** row means the module exists, is loaded by the `.toc` and has fixture coverage.
 
 ## Suggested build order
 

@@ -60,11 +60,44 @@ C.MAX_TIER_COUNT = 5
 C.EXPORT_PREFIX = "RLS1:"
 
 -- Reasons a character cannot be entered. Rendered by the roll window (spec 005).
+-- The first four are roster states (spec 001). The rest are the eligibility filter's
+-- verdicts (spec 003 section 8); only those are overridable.
 C.REASON = {
     NOT_PRESENT = "NOT_PRESENT",
     CONTESTED   = "CONTESTED",
     UNCLAIMED   = "UNCLAIMED",
     NOT_OWNED   = "NOT_OWNED",
+
+    NOT_IN_RAID       = "NOT_IN_RAID",
+    WRONG_CLASS_TOKEN = "WRONG_CLASS_TOKEN",
+    WRONG_ARMOR       = "WRONG_ARMOR",
+    WRONG_WEAPON      = "WRONG_WEAPON",
+}
+
+-- Set of reason codes the player may override per entry (spec 003 section 8, spec 005).
+C.OVERRIDABLE_REASON = {
+    WRONG_CLASS_TOKEN = true,
+    WRONG_ARMOR       = true,
+    WRONG_WEAPON      = true,
+}
+
+--------------------------------------------------------------------------------
+-- Resolution (spec 003)
+--------------------------------------------------------------------------------
+
+C.LOOT_MODE = { ROLL = "ROLL", SK = "SK" }
+
+C.ROLL_MIN = 1
+C.ROLL_MAX = 100
+
+-- Re-roll rounds allowed on a boundary tie before the result is marked degraded
+-- (spec 003 section 6). A guard against a pathological rng, not an expected path.
+C.MAX_REROLL = 10
+
+-- Why an entry did not roll. Recorded so the results table can say so out loud.
+C.NOT_ROLLED = {
+    NOT_CONSULTED = "not consulted",
+    WITHDRAWN     = "withdrawn",
 }
 
 --------------------------------------------------------------------------------
