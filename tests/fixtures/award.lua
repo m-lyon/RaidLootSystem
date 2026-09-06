@@ -37,6 +37,29 @@ local function run(input, ns)
     elseif input.op == "equip" then
         return Award.ShouldAutoEquip(input.record, input.roster, input.settings)
 
+    elseif input.op == "outstanding" then
+        -- Begin registers the batch; the deliveries are then set as if the host had
+        -- worked through some of it, and the section asks what is left.
+        Award.Reset()
+        for _, session in ipairs(input.sessions) do
+            Award.Begin(session)
+            for _, set in ipairs(input.delivered or {}) do
+                if set.sessionId == session.id then
+                    local record = Award.Get(set.sessionId, set.itemIdx, set.copy)
+                    if record then
+                        record.delivery = set.delivery
+                        record.failure = set.failure
+                    end
+                end
+            end
+        end
+        local out = {}
+        for i, record in ipairs(Award.OutstandingRecords()) do
+            out[i] = string.format("%s/%d/%d %s %s", record.sessionId, record.itemIdx,
+                record.copy, record.char, record.delivery)
+        end
+        return out
+
     elseif input.op == "spare" then
         return Award.SpareUnits(input.record, input.held, input.baseline, input.claimed)
 
@@ -145,6 +168,29 @@ return {
         { name = "a corpse copy looted on top of one the host owned counts once",
           input = { op = "spare", record = CORPSE, held = 2, baseline = 1, claimed = 0 },
           expected = 1 },
+
+        -- What is left to award (spec 007 section 4). The host panel's section reads
+        -- this; an unclaimed item contributes nothing, and a copy that has moved on to
+        -- Pending or been delivered has left.
+        { name = "every won copy is outstanding before the host does anything",
+          input = { op = "outstanding", sessions = { SESSION } },
+          expected = { "Steve-100/1/1 Bonk AWAITING", "Steve-100/2/1 Ann AWAITING",
+                       "Steve-100/2/2 Bob AWAITING", "Steve-100/3/1 Cat AWAITING" } },
+        { name = "delivered and pending copies drop out, the rest keep item order",
+          input = { op = "outstanding", sessions = { SESSION }, delivered = {
+              { sessionId = "Steve-100", itemIdx = 1, copy = 1, delivery = "DELIVERED" },
+              { sessionId = "Steve-100", itemIdx = 2, copy = 1, delivery = "PENDING" },
+          } },
+          expected = { "Steve-100/2/2 Bob AWAITING", "Steve-100/3/1 Cat AWAITING" } },
+        { name = "a failed award stays outstanding, an expired trade does not",
+          input = { op = "outstanding", sessions = { SESSION }, delivered = {
+              { sessionId = "Steve-100", itemIdx = 1, copy = 1, delivery = "FAILED",
+                failure = "NOT_A_CANDIDATE" },
+              { sessionId = "Steve-100", itemIdx = 2, copy = 1, delivery = "FAILED",
+                failure = "TRADE_EXPIRED" },
+          } },
+          expected = { "Steve-100/1/1 Bonk FAILED", "Steve-100/2/2 Bob AWAITING",
+                       "Steve-100/3/1 Cat AWAITING" } },
 
         { name = "a delivered award is not awarded again",
           input = { op = "path", record = { char = "Bonk", lootSlot = 2, delivery = "DELIVERED" },

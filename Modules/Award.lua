@@ -198,6 +198,7 @@ end
 --------------------------------------------------------------------------------
 
 Award.bySession = {}           -- sessionId -> itemIdx -> array of records
+local sessionOrder = {}        -- session ids in the order their batches closed
 
 local listeners = {}
 local frame
@@ -291,6 +292,9 @@ end
 --- Called by Session.Close, host side. Builds the records the results view offers.
 function Award.Begin(session)
     session.awards = Award.Build(session)
+    if Award.bySession[session.id] == nil then
+        sessionOrder[#sessionOrder + 1] = session.id
+    end
     Award.bySession[session.id] = session.awards
     fireChanged()
 end
@@ -303,6 +307,43 @@ end
 
 function Award.Records(sessionId)
     return Award.bySession[sessionId]
+end
+
+--- Test and simulation seam: forget every batch's records, order included.
+function Award.Reset()
+    Award.bySession = {}
+    sessionOrder = {}
+end
+
+--- Award records the host still has to act on: won by someone, but not delivered
+-- and not sitting in Pending, which tracks its own. Oldest batch first, so a copy
+-- left behind two kills ago does not sort below tonight's.
+--
+-- These live in memory only, unlike pending deliveries: a reload between the roll
+-- resolving and the award being made loses them, and the batch is then in history
+-- rather than here (spec 007 section 4).
+function Award.OutstandingRecords()
+    local D = C.DELIVERY
+    local out = {}
+    for _, sessionId in ipairs(sessionOrder) do
+        local awards = Award.bySession[sessionId]
+        if awards then
+            -- Sorted, not pairs(): the table is keyed by itemIdx, and hash order
+            -- would reshuffle the list under the host on every refresh.
+            local idxs = {}
+            for idx in pairs(awards) do idxs[#idxs + 1] = idx end
+            table.sort(idxs)
+            for _, idx in ipairs(idxs) do
+                for _, record in ipairs(awards[idx]) do
+                    if record.delivery ~= D.DELIVERED and record.delivery ~= D.PENDING
+                        and Award.Retryable(record) then
+                        out[#out + 1] = record
+                    end
+                end
+            end
+        end
+    end
+    return out
 end
 
 --- A record's delivery changed. History (008) updates in place; the priority list

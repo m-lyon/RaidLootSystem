@@ -98,8 +98,8 @@ local ROW_H = 20
 local PAD = 16
 
 local frame, content
-local settings, candidates, health, priority, live, banner, pending
-local candidateRows, healthRows, liveRows, pendingRows = {}, {}, {}, {}
+local settings, candidates, health, priority, live, banner, pending, awaiting
+local candidateRows, healthRows, liveRows, pendingRows, awaitingRows = {}, {}, {}, {}, {}
 local ticked = {}                   -- itemId -> false when the host unticked it. Keyed by
                                     -- id, not idx: a rebuild renumbers idx.
 local refreshAccumulator = 0
@@ -139,7 +139,8 @@ end
 
 local function layoutSections()
     local y = 0
-    for _, panel in ipairs({ banner, pending, settings, candidates, health, priority, live }) do
+    for _, panel in ipairs({ banner, awaiting, pending, settings, candidates, health,
+                             priority, live }) do
         if panel:IsShown() then
             panel:ClearAllPoints()
             panel:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -y)
@@ -622,6 +623,81 @@ local function refreshCountdown()
 end
 
 --------------------------------------------------------------------------------
+-- Awaiting award (spec 007 section 4)
+--
+-- The roll window's results view is where awards are normally made, but it is a
+-- window like any other and closing it used to leave the host with no route back
+-- to an unawarded item. This is that route, and it outlives the results view: it
+-- is keyed off the award records, so a batch from two kills ago still lists here.
+--------------------------------------------------------------------------------
+
+local function buildAwaiting(parent)
+    local panel = section(parent, "Awaiting award", 60)
+    panel.list = CreateFrame("Frame", nil, panel)
+    panel.list:SetPoint("TOPLEFT", panel.title, "BOTTOMLEFT", 0, -6)
+    panel.list:SetWidth(INNER - 20)
+    panel.list:SetHeight(1)
+    panel:Hide()
+    return panel
+end
+
+local function awaitingRow(i)
+    local row = awaitingRows[i]
+    if row then return row end
+    row = CreateFrame("Frame", nil, awaiting.list)
+    row:SetWidth(INNER - 20)
+    row:SetHeight(ROW_H)
+
+    row.left = Widgets.Label(row, "", "GameFontHighlightSmall")
+    row.left:SetPoint("LEFT", row, "LEFT", 0, 0)
+    row.left:SetWidth(INNER - 190)
+    row.left:SetJustifyH("LEFT")
+
+    row.award = Widgets.Button(row, "Award", 64, 18, function()
+        if not row.record then return end
+        ns.Award.Prompt(row.record.sessionId, row.record.itemIdx, row.record.copy,
+            IsShiftKeyDown())
+    end)
+    row.award:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+    row.award:RegisterForClicks("LeftButtonUp")
+    Widgets.Tooltip(row.award, "Award",
+        "Give the item to the winner. Click for the corpse (master loot); shift-click to take "
+        .. "it into your bags and trade it instead.")
+
+    row.status = Widgets.Label(row, "", "GameFontHighlightSmall")
+    row.status:SetPoint("RIGHT", row.award, "LEFT", -6, 0)
+    row.status:SetJustifyH("RIGHT")
+    awaitingRows[i] = row
+    return row
+end
+
+local function refreshAwaiting()
+    local records = ns.Award.OutstandingRecords()
+    if #records == 0 then
+        awaiting:Hide()
+        return
+    end
+    awaiting:Show()
+    for i, record in ipairs(records) do
+        local row = awaitingRow(i)
+        row.record = record
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", awaiting.list, "TOPLEFT", 0, -(i - 1) * ROW_H)
+        local info = ns.ItemInfo.Get(record.itemString)
+        row.left:SetText((info.link or info.name or record.itemString) .. " for "
+            .. record.char .. " |cff888888(" .. tostring(record.owner or "?") .. ")|r")
+        -- A plain AWAITING record says nothing: the button already says what to do.
+        -- A failed or lost one has to explain itself or the row looks stuck.
+        row.status:SetText(record.delivery == C.DELIVERY.AWAITING and ""
+            or ("|cffff6060" .. ns.Award.StatusText(record) .. "|r"))
+        row:Show()
+    end
+    for i = #records + 1, #awaitingRows do awaitingRows[i]:Hide() end
+    awaiting.list:SetHeight(#records * ROW_H)
+    awaiting:SetHeight(34 + #records * ROW_H + 8)
+end
+
+--------------------------------------------------------------------------------
 -- Pending deliveries (spec 007 section 5)
 --------------------------------------------------------------------------------
 
@@ -769,6 +845,7 @@ local function build()
     }
 
     banner = buildBanner(content)
+    awaiting = buildAwaiting(content)
     pending = buildPending(content)
     settings = buildSettings(content)
     candidates = buildCandidates(content)
@@ -800,6 +877,7 @@ local function build()
         end
         refreshCountdown()
         refreshBanner()
+        refreshAwaiting()
         refreshPending()
         layoutSections()
     end)
@@ -814,6 +892,7 @@ function HostPanel.Refresh()
     refreshLive()
     refreshCountdown()
     refreshBanner()
+    refreshAwaiting()
     refreshPending()
     layoutSections()
 end
