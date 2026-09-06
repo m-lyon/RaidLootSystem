@@ -134,6 +134,11 @@ delivery that succeeds after a restore suicides the character again, from wherev
 
 The restore uses the **present indices the suicide used**, recorded on the award, not the raid as
 it stands at restore time. That is what makes it an exact inverse whoever has come or gone since.
+When the list has moved in between (a later batch's suicides, a removal) those indices no longer
+describe it; the restore then refuses rather than silently doing nothing, and the host restores
+the character to its prior index **against the raid as it stands**, saying so. The pending record
+carries the same data, because the award records do not survive a `/reload` and a two-hour trade
+window usually spans one.
 
 Leaving someone suicided for an item they never received is the worst bug this feature could
 ship, and unlike the rest of the list's state it cannot be noticed by inspection — the list looks

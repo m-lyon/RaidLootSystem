@@ -293,7 +293,12 @@ end
 -- (010) restores a position when a delivery moves away from DELIVERED.
 local function deliveryChanged(record, previous)
     if ns.History then ns.History.UpdateDeliveryFromAward(record) end
-    if ns.Priority then ns.Priority.OnDeliveryChanged(record, previous) end
+    if ns.Priority then
+        ns.Priority.OnDeliveryChanged(record, previous)
+        -- The pending record mirrors the flag, so a reload cannot restore twice.
+        local pending = ns.Pending and ns.Pending.Find(record)
+        if pending then pending.restored = record.restored end
+    end
     fireChanged(record)
 end
 

@@ -116,24 +116,62 @@ end
 --- Undo a suicide: the character returns to `index`, and the present characters that
 -- moved up shift back down. `present` is the index array the suicide used, so the
 -- restore is an exact inverse whoever has since come or gone.
+--
+-- When the list has moved since (a later suicide shifted the character, a removal
+-- closed a gap) the recorded indices no longer describe it, and this returns nil
+-- and a reason rather than a silent no-op: leaving someone suicided for an item they
+-- never received is the worst outcome this feature can produce (spec 010 section 6).
+-- The caller then restores against the present raid (restoreNow).
+-- @return order', or nil plus a reason
 function PriorityList.restore(order, char, index, present)
     local at = PriorityList.indexOf(order, char)
-    if not at then return order end
-    local out = {}
-    for i = 1, #order do out[i] = order[i] end
+    if not at then return nil, tostring(char) .. " is not on the list" end
+    if at == index then return order end
 
-    -- The character sits at `at`; walk the present indices from `at` back to `index`.
     local p, q
     for k = 1, #present do
         if present[k] == index then p = k end
         if present[k] == at then q = k end
     end
-    if not p or not q or p > q then return out end
+    if not p then
+        return nil, "position " .. tostring(index) .. " is not among the recorded present indices"
+    end
+    if not q then
+        return nil, tostring(char) .. " is now at " .. at .. ", which the recorded present indices do not cover"
+    end
+    if p > q then
+        return nil, tostring(char) .. " is already above position " .. tostring(index)
+    end
+
+    local out = {}
+    for i = 1, #order do out[i] = order[i] end
     for k = q, p + 1, -1 do
         out[present[k]] = order[present[k - 1]]
     end
     out[present[p]] = order[at]
     return out
+end
+
+--- Restore against the raid as it stands now: the character returns to `index` and
+-- the present characters between shift down. The fallback when the recorded indices
+-- no longer fit, and the shape of a manual restore (section 10).
+-- @return order', present indices used, or nil plus a reason
+function PriorityList.restoreNow(order, char, index, presentSet)
+    local at = PriorityList.indexOf(order, char)
+    if not at then return nil, nil, tostring(char) .. " is not on the list" end
+    if index >= at then return nil, nil, tostring(char) .. " is already at or above " .. tostring(index) end
+    local present = PriorityList.presentIndices(order, presentSet, at)
+    local has = false
+    for _, i in ipairs(present) do
+        if i == index then has = true end
+    end
+    if not has then
+        present[#present + 1] = index
+        table.sort(present)
+    end
+    local out, why = PriorityList.restore(order, char, index, present)
+    if not out then return nil, nil, why end
+    return out, present
 end
 
 --- Apply a batch's suicides once per winning character, in (item index, copy) order
@@ -207,7 +245,9 @@ function PriorityList.apply(order, event)
             .. " at " .. tostring(event.from) .. ", found " .. tostring(from) end
         return PriorityList.suicideAt(order, from, event.present or { from })
     elseif kind == "restore" then
-        return PriorityList.restore(order, event.char, event.to, event.present or { event.to })
+        local out, why = PriorityList.restore(order, event.char, event.to, event.present or { event.to })
+        if not out then return order, why end
+        return out
     elseif kind == "move" then
         return PriorityList.move(order, event.from, event.to)
     elseif kind == "add" then

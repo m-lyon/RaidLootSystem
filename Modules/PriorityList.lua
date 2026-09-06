@@ -169,17 +169,18 @@ function Priority.Broadcast()
 end
 
 --- Apply one mutation on the host: store, log, announce, broadcast.
-local function hostMutate(event, text)
+-- @param quiet  skip the broadcast; the caller sends one list once it is done
+local function hostMutate(event, text, quiet)
     event.at = time()
     event.by = UnitName("player")
     local next_, why = Priority.Mutate(DB(), event)
     if not next_ then
         ns.Print("the priority list was not changed: " .. tostring(why))
-        return false
+        return false, why
     end
     store(next_)
     if text then announce(text) end
-    Priority.Broadcast()
+    if not quiet then Priority.Broadcast() end
     fireChanged()
     return true
 end
@@ -223,19 +224,9 @@ function Priority.ManualRestore(char, index)
     local at = PriorityList.indexOf(order, char)
     if not at then return false, char .. " is not on the list." end
     index = Util.clamp(math.floor(tonumber(index) or 1), 1, #order)
-    if index >= at then return false, "restore moves a character up; " .. index .. " is not above " .. at .. "." end
-    local present = PriorityList.presentIndices(order, presentSet(), at)
-    local withTarget = {}
-    local seen = false
-    for _, i in ipairs(present) do
-        if i == index then seen = true end
-        withTarget[#withTarget + 1] = i
-    end
-    if not seen then
-        withTarget[#withTarget + 1] = index
-        table.sort(withTarget)
-    end
-    return hostMutate({ kind = "restore", char = order[at], to = index, present = withTarget },
+    local _, present, why = PriorityList.restoreNow(order, char, index, presentSet())
+    if not present then return false, why .. "." end
+    return hostMutate({ kind = "restore", char = order[at], to = index, present = present },
         string.format("%s restored %s to position %d by hand (from %d)", UnitName("player"),
             order[at], index, at))
 end
@@ -254,12 +245,15 @@ end
 function Priority.SyncRoster()
     if not ns.Session.IsHost() or not Priority.Seeded() then return end
     local order = DB().order
+    local added = false
     for _, name in ipairs(Priority.SeedCandidates(ns.Roster.claims)) do
         if not PriorityList.indexOf(order, name) then
-            hostMutate({ kind = "add", char = name }, name .. " joined the list at the bottom")
+            hostMutate({ kind = "add", char = name }, name .. " joined the list at the bottom", true)
             order = DB().order
+            added = true
         end
     end
+    if added then Priority.Broadcast() end
 end
 
 --------------------------------------------------------------------------------
@@ -285,7 +279,7 @@ function Priority.ApplyAwards(session)
                     record.priorIndex = from
                     record.presentIndices = presentIdx
                     hostMutate({ kind = "suicide", char = record.char, from = from, present = presentIdx },
-                        nil)
+                        nil, true)
                     record.listVersion = Priority.Version()
                 else
                     ns.Print(record.char .. " won under Suicide Kings but is not on the list; "
@@ -301,35 +295,87 @@ function Priority.ApplyAwards(session)
     Priority.Broadcast()
 end
 
+--- Restore a character to its prior index (section 6). The recorded present indices
+-- give the exact inverse; when the list has moved since and they no longer fit, the
+-- restore is made against the raid as it stands, and says so.
+-- @param entry  { char, priorIndex, presentIndices } -- an award or a pending record
+-- @return true when the list changed
+local function restoreEntry(entry, why)
+    local order = DB().order
+    local at = PriorityList.indexOf(order, entry.char)
+    if not at then
+        ns.Print(entry.char .. " is not on the priority list; nothing to restore.")
+        return false
+    end
+    if at == entry.priorIndex then return true end     -- nothing moved it; nothing to undo
+
+    local ok, err = hostMutate({ kind = "restore", char = entry.char, to = entry.priorIndex,
+                                 present = entry.presentIndices or { entry.priorIndex } },
+        string.format("%s restored to position %d (%s)", entry.char, entry.priorIndex, why))
+    if ok then return true end
+
+    -- The list moved since the suicide. Restore against today's raid rather than leave
+    -- the character suicided for an item it never received.
+    local _, present, reason = PriorityList.restoreNow(order, entry.char, entry.priorIndex, presentSet())
+    if not present then
+        ns.Print(string.format("%s could not be restored to %d: %s. Fix the list by hand "
+            .. "from the host panel.", entry.char, entry.priorIndex, tostring(reason)))
+        return false
+    end
+    ns.Print(string.format("the list moved since %s won; restoring against the current raid.",
+        entry.char))
+    return (hostMutate({ kind = "restore", char = entry.char, to = entry.priorIndex, present = present },
+        string.format("%s restored to position %d (%s)", entry.char, entry.priorIndex, why)))
+end
+
+--- A character restored earlier was delivered to after all: it drops again, from
+-- wherever it now stands.
+local function suicideEntry(entry)
+    local from = PriorityList.indexOf(DB().order, entry.char)
+    if not from then return false end
+    local _, _, present = PriorityList.suicide(DB().order, entry.char, presentSet())
+    local ok = hostMutate({ kind = "suicide", char = entry.char, from = from, present = present },
+        string.format("%s moved to the bottom after all (delivered)", entry.char))
+    if ok then
+        entry.priorIndex = from
+        entry.presentIndices = present
+    end
+    return ok
+end
+
+local function needsHost(entry)
+    if ns.Session.IsHost() then return true end
+    ns.Print("the priority list needs a change for " .. entry.char
+        .. ", but only the master looter can make it. Ask them to restore by hand.")
+    return false
+end
+
 --- Award tells us a delivery changed (spec 007). Section 6: a delivery that will
--- never happen returns the character to its prior index, exactly.
+-- never happen returns the character to its prior index.
 function Priority.OnDeliveryChanged(record)
     local action = Priority.DeliveryAction(record)
     if not action then return end
-    if not ns.Session.IsHost() then
-        ns.Print("the priority list needs restoring for " .. record.char
-            .. ", but only the master looter can change it.")
-        return
-    end
+    if not needsHost(record) then return end
     if action == "restore" then
-        local ok = hostMutate({ kind = "restore", char = record.char, to = record.priorIndex,
-                                present = record.presentIndices or { record.priorIndex } },
-            string.format("%s restored to position %d (the delivery failed)", record.char,
-                record.priorIndex))
-        if ok then record.restored = true end
+        if restoreEntry(record, "the delivery failed") then record.restored = true end
     else
-        local from = PriorityList.indexOf(DB().order, record.char)
-        if not from then return end
-        local _, _, present = PriorityList.suicide(DB().order, record.char, presentSet())
-        local ok = hostMutate({ kind = "suicide", char = record.char, from = from, present = present },
-            string.format("%s moved to the bottom after all (delivered)", record.char))
-        if ok then
-            record.restored = nil
-            record.priorIndex = from
-            record.presentIndices = present
-        end
+        if suicideEntry(record) then record.restored = nil end
     end
     if ns.History then ns.History.UpdateDeliveryFromAward(record) end
+end
+
+--- Pending tells us a record changed state after a reload took the award records
+-- with it (spec 007 section 5). The pending record carries what a restore needs.
+-- @param state  "failed" or "delivered"
+function Priority.OnPendingChanged(record, state)
+    if record.priorIndex == nil then return end
+    if state == "failed" and not record.restored then
+        if not needsHost(record) then return end
+        if restoreEntry(record, "the delivery failed") then record.restored = true end
+    elseif state == "delivered" and record.restored then
+        if not needsHost(record) then return end
+        if suicideEntry(record) then record.restored = nil end
+    end
 end
 
 --------------------------------------------------------------------------------
@@ -348,8 +394,12 @@ local function onSklist(sender, body)
         return
     end
 
+    -- The positions matter to a batch only under SK (spec 005 section 3); a list
+    -- edit during a ROLL batch must not make the window render it as Suicide Kings.
     local session = ns.Client.session
-    if session then session.priority = PriorityList.positions(msg.order) end
+    if session and session.lootMode == C.LOOT_MODE.SK then
+        session.priority = PriorityList.positions(msg.order)
+    end
 
     if not ns.Comms.IsSelf(sender) then
         local stored = DB()
@@ -359,9 +409,11 @@ local function onSklist(sender, body)
             stored.version, stored.seed, stored.order = msg.version, msg.seed, msg.order
             stored.log = {}                   -- the log is the host's; a client has none
             ns.Print(noticeText)
+            if session then session.priorityNotice = noticeText end
+        else
+            noticeText = nil
         end
     end
-    if session then session.priorityNotice = noticeText end
     fireChanged()
 end
 
@@ -388,8 +440,14 @@ function Priority.OnClientResult(session)
     fireChanged()
 end
 
---- `/rls sk verify`: replay and report (section 8).
+--- `/rls sk verify`: replay and report (section 8). Host only: the log that replay
+-- needs is the host's, and a client holds the host's copy without it.
 function Priority.RunVerify()
+    if not ns.Session.IsHost() then
+        ns.Print("verify runs on the master looter's client: the event log it replays is theirs. "
+            .. "Your copy is version " .. (DB().version or 0) .. ".")
+        return nil
+    end
     local result = Priority.Verify(DB())
     if result.why then
         ns.Print("verify: " .. result.why)

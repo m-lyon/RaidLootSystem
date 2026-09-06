@@ -414,8 +414,7 @@ local function currentSession()
 end
 
 local function isSK(session)
-    if session.priority then return true end          -- SKLIST arrived (spec 010)
-    return session.lootMode == C.LOOT_MODE.SK
+    return session.lootMode == C.LOOT_MODE.SK          -- OPEN carries it (spec 010 section 8)
 end
 
 local function me()

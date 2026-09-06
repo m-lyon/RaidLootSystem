@@ -24,6 +24,12 @@ local function run(input, ns)
         local after, prior, present = PL.suicide(input.order, input.char, input.present)
         local back = PL.restore(after, input.char, prior, present)
         return { after = after, back = back }
+    elseif input.op == "restoreFails" then
+        local order, why = PL.restore(input.order, input.char, input.index, input.present)
+        return { order = order, why = why or "" }
+    elseif input.op == "restoreNow" then
+        local order, present, why = PL.restoreNow(input.order, input.char, input.index, input.present)
+        return { order = order, present = present, why = why or "" }
     elseif input.op == "restoreLater" then
         -- Suicide with one present set, restore after the raid has changed.
         local after, prior, present = PL.suicide(input.order, input.char, input.present)
@@ -184,6 +190,56 @@ return {
             name = "restore uses the indices the suicide used, whoever is present now",
             input = { op = "restoreLater", order = ORDER, char = "Ann", present = SOME },
             expected = ORDER,
+        },
+
+        {
+            -- The review case. Ann suicides from 1 with Bob and Dan at home and lands at
+            -- 5; Cat (now at 1) wins the next batch with everyone present, which shifts
+            -- Ann to 4; Ann's trade expires. The recorded indices {1,3,5} no longer
+            -- cover Ann, and restore must say so rather than do nothing.
+            name = "restore refuses when the list has moved since the suicide",
+            input = { op = "restoreFails", char = "Ann", index = 1, present = { 1, 3, 5 },
+                      -- after Ann's suicide: Cat Bob Eve Dan Ann; after Cat's with everyone:
+                      order = { "Bob", "Eve", "Dan", "Ann", "Cat" } },
+            expected = { why = "Ann is now at 4, which the recorded present indices do not cover" },
+        },
+        {
+            name = "restore refuses a character that is not on the list",
+            input = { op = "restoreFails", char = "Zed", index = 1, present = { 1, 2 }, order = ORDER },
+            expected = { why = "Zed is not on the list" },
+        },
+        {
+            name = "restore to the index a character already holds is a no-op",
+            input = { op = "restoreFails", char = "Ann", index = 1, present = { 1, 2 }, order = ORDER },
+            expected = { order = ORDER, why = "" },
+        },
+        {
+            -- The fallback: against today's raid (everyone present), Ann returns to 1 and
+            -- the present characters between shift down.
+            name = "restoreNow restores against the current raid",
+            input = { op = "restoreNow", char = "Ann", index = 1, present = ALL,
+                      order = { "Bob", "Eve", "Dan", "Ann", "Cat" } },
+            expected = { order = { "Ann", "Bob", "Eve", "Dan", "Cat" }, present = { 1, 2, 3, 4, 5 }, why = "" },
+        },
+        {
+            name = "restoreNow keeps absent characters in place and includes the target index",
+            input = { op = "restoreNow", char = "Ann", index = 2, present = { ann = true, eve = true },
+                      order = { "Bob", "Cat", "Eve", "Dan", "Ann" } },
+            -- present indices {2, 3, 5} (2 is the target, Bob is absent); Ann to 2,
+            -- Cat to 3, Eve to 5.
+            expected = { order = { "Bob", "Ann", "Cat", "Dan", "Eve" }, present = { 2, 3, 5 }, why = "" },
+        },
+        {
+            name = "restoreNow refuses to move a character down",
+            input = { op = "restoreNow", char = "Ann", index = 3, present = ALL, order = ORDER },
+            expected = { why = "Ann is already at or above 3" },
+        },
+        {
+            name = "a replayed restore that no longer fits is reported, not skipped silently",
+            input = { op = "replay", seed = 1757155200, chars = ORDER, events = {
+                { kind = "restore", char = "Ann", to = 1, present = { 1, 3, 5 }, version = 2 },
+            } },
+            expected = { order = { "Eve", "Dan", "Cat", "Ann", "Bob" }, problems = 1 },
         },
 
         ----------------------------------------------------------------------
