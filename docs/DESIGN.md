@@ -55,6 +55,12 @@ With a tier count of 3, Steve's hierarchy resolves like this:
 Everything below the cut-off collapses into a single **Rest** tier where all characters are
 equal. If Steve had nine characters, positions 4 through 9 would all sit in Rest together.
 
+> Rest is equal chance *before any fairness adjustment*. The raid leader can enable an
+> adjustment that reorders or demotes players according to what they have recently received;
+> under it, Rest is still one bucket but not a level one. See
+> [proposal 001](proposals/001-loot-fairness.md), which is currently open for review. With the
+> adjustment off — the default — Rest is exactly the flat lottery described above.
+
 Lowering the tier count does not destroy your ordering — the addon always stores your full
 list, so if the raid leader raises the count from 3 to 5 next week, your 4th and 5th positions
 come back exactly as you left them.
@@ -174,6 +180,12 @@ something that isn't yours.
 | Entry timer | 180s | 15–300s |
 | Quality threshold for auto-added items | Epic | Rare or better |
 | Chat verbosity | Summary | Off / Summary / Verbose |
+| Fairness adjustment | Off | Off / Tier adjustment / Roll adjustment |
+
+The fairness adjustment gives the rules a memory of what each player has recently received. It
+is **off by default** and is the subject of [proposal 001](proposals/001-loot-fairness.md),
+which the group has yet to decide. Like the tier count, it can only change between batches and
+the change is announced.
 
 The tier count can be changed mid-raid, but only between batches, never while a roll is open —
 and the change is announced.
@@ -194,8 +206,12 @@ Every batch is recorded: what dropped, who entered, what tier they were, what th
 won, and whether the handover actually completed. Both the master looter and every player keep
 their own copy. It can be exported as plain text or CSV.
 
+Every award also records the item's **GearScore value**, whether or not any fairness adjustment
+is switched on. That is what lets the group turn one on later and have it work immediately from
+the history already logged, rather than starting from nothing.
+
 The log is deliberately richer than v1 needs, because it's the raw material for anything we
-build later — loot-priority decay, per-bot gearing statistics, attendance.
+build later — per-bot gearing statistics, attendance, sniping patterns.
 
 ## 9. What this deliberately does not do
 
@@ -217,6 +233,10 @@ reasoning attached, so we don't re-argue them every month.
   you. A bot nobody has claimed simply can't be entered, and the master looter sees a warning
   so it gets fixed.
 - **No points, DKP or EPGP.** Rolls only.
+- **No memory of past loot — by default.** Out of the box every item is an independent lottery,
+  and a player who won three things tonight is treated exactly like one who won nothing. Whether
+  to change that, and how, is [proposal 001](proposals/001-loot-fairness.md) — open for review,
+  two options on the table, neither switched on until the group picks one.
 
 ## 10. Glossary
 
@@ -230,3 +250,6 @@ reasoning attached, so we don't re-argue them every month.
 | **Batch** | One roll covering every item from a single loot source |
 | **Entry** | One character submitted for one item |
 | **Host** | The client running the batch. Always whoever holds master looter |
+| **Ledger** | A running, public record of what each player's roster has recently received |
+| **Standing** | One player's position in the ledger — how much they have had lately |
+| **Adjustment** | The tier or roll change the ledger applies to a player, when enabled |

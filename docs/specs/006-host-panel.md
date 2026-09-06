@@ -34,12 +34,21 @@ controls they cannot use invites confusion about who is actually driving.
 | Quality threshold | Dropdown | Epic | Rare / Epic | Any time |
 | Chat verbosity | Dropdown | Summary | Off / Summary / Verbose | Any time |
 | Auto-close when all in | Checkbox | Off | — | Any time |
+| **Fairness mode** | Dropdown | Off | Off / Tier adjustment / Roll adjustment | Between batches only |
+| Shadow mode | Checkbox | Off | — | Between batches only |
 
-Changing tier count or timer broadcasts `CFG` and **announces to raid chat** — these change the
-rules everyone is playing by, so they are never silent. Both controls are disabled with an
-explanatory tooltip while a batch is open (002 §4).
+Changing tier count, timer or fairness mode broadcasts `CFG` and **announces to raid chat** —
+these change the rules everyone is playing by, so they are never silent. All three controls are
+disabled with an explanatory tooltip while a batch is open (002 §4).
 
-A tier count of 0 shows an inline explanation: *"Flat roll — no priorities."*
+A tier count of 0 shows an inline explanation: *"Flat roll — no priorities."* With a fairness
+mode also active, extend it: *"Flat roll — the fairness adjustment is the only priority."*
+(011 §4).
+
+The fairness parameters themselves — window length, caps, half-life — live in an **Advanced**
+sub-panel, collapsed by default and disabled while a batch is open. Defaults and ranges are in
+010 §8. Every one of them is a guess that the group should be able to change without a release,
+but none of them should be the first thing a new host sees.
 
 ### Batch candidates
 
@@ -66,6 +75,13 @@ The section that keeps the ownership model honest. Three lists, each empty in th
 
 A **Request rosters** button broadcasts `RREQ` to force a refresh, for when someone has just
 fixed their claims.
+
+### Loot ledger
+
+Present whenever a fairness mode is active, collapsed when it is `OFF`. Standings table, window
+summary, **Reset ledger** and **Manual adjustment**, all specified in 010 §10. Both escape
+hatches are confirmed, announced to raid chat, and written to history — a silent change to a
+public fairness ledger is the fastest way to lose the group's trust in the feature.
 
 ### Live batch
 

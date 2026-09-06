@@ -53,8 +53,14 @@ Then `/reload` or restart the client.
 | Document | Audience |
 |---|---|
 | [`docs/DESIGN.md`](docs/DESIGN.md) | Players. What it does and why. Start here. |
+| [`docs/proposals/`](docs/proposals/) | Players. Open questions the group needs to decide |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | What was deliberately left out, and why |
 | [`docs/specs/`](docs/specs/) | Implementers. Numbered, self-contained feature specs |
+
+> **Open for review:** [proposal 001 — making loot distribution fairer over
+> time](docs/proposals/001-loot-fairness.md). Two options for giving the rules a memory of what
+> you've recently received, so a run of bad luck doesn't compound. Neither is switched on until
+> the group picks one.
 
 ## Contributing
 

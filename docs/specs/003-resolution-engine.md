@@ -40,6 +40,7 @@ opts = {
   rng       = function(lo, hi) return ... end,   -- REQUIRED. Injected.
   tierCount = 3,
   maxReroll = 10,
+  fairness  = nil,              -- optional; see spec 011 §6. Absent or OFF = no adjustment.
 }
 ```
 
@@ -64,6 +65,9 @@ Before any rolling, entries are sorted by `(tier asc, owner asc, char asc)`. Thi
 sequence of `rng` calls deterministic for a given input, which is what allows fixture tests to
 assert exact outcomes against a scripted rng.
 
+Under fairness mode `TIER` (011 §4) this sort uses the **effective** tier, since that is the
+tier the algorithm actually buckets on.
+
 ## 5. Algorithm
 
 ```
@@ -79,7 +83,8 @@ for tier := 1 .. maxTierPresent, ascending:
         continue
 
     for each entry in bucket: entry.roll := rng(1, 100)
-    sort bucket by roll descending (stable, using the §4 ordering as the tiebreak for sorting only)
+    apply the fairness penalty if any (011 §5): entry.score := entry.roll − penalty[entry.owner]
+    sort bucket by score descending (stable, using the §4 ordering as the tiebreak for sorting only)
 
     k := min(remaining, #bucket)        -- how many can win from this bucket
     resolveBoundaryTies(bucket, k)      -- see §6
@@ -112,8 +117,11 @@ one copy is irrelevant noise; two entries tied for 1st place is the whole ballga
 
 Procedure:
 
-1. Identify the tie group straddling the boundary.
-2. Re-roll `rng(1, 100)` for **only** those entries.
+1. Identify the tie group straddling the boundary. Ties are on `score`, which equals `roll`
+   unless mode `ROLL` is active.
+2. Re-roll `rng(1, 100)` for **only** those entries. The re-roll replaces the **raw roll**; the
+   owner's penalty is then re-applied unchanged, so the adjustment keeps the same meaning across
+   a re-roll.
 3. Re-sort and repeat until the boundary is unambiguous, or `maxReroll` iterations elapse.
 4. On exhausting `maxReroll`, fall back to the deterministic §4 ordering, mark the result
    `degraded = true`, and record it. This is a guard against a pathological rng, not an expected
@@ -136,15 +144,26 @@ result = {
     { char = "Bonk", owner = "Dave", tier = 1, roll = 91 },
   },
   record = {                                  -- EVERY entry, for the results table and history
-    { char = "Bonk",   owner = "Dave",  tier = 1, rolled = true,  roll = 91, rerolled = {} },
-    { char = "Sneaky", owner = "Steve", tier = 2, rolled = false, reason = "not consulted" },
+    { char = "Bonk",   owner = "Dave",  tier = 1, effTier = 1, penalty = 0,
+      rolled = true, roll = 91, score = 91, rerolled = {} },
+    { char = "Sneaky", owner = "Steve", tier = 2, effTier = 2, penalty = 0,
+      rolled = false, reason = "not consulted" },
   },
   tiersConsulted = 1,
 }
 ```
 
-`Resolve.batch(items, entriesByItem, opts)` maps `Resolve.item` across a batch and returns a
-list of results. Items are fully independent; there is no cross-item interaction of any kind.
+`effTier`, `penalty` and `score` are always present. Under `OFF` they equal `tier`, `0` and
+`roll` respectively, so consumers need no mode-specific branching.
+
+`Resolve.batch(items, entriesByItem, opts)` applies `Resolve.item` across a batch and returns a
+list of results.
+
+**Items are independent only when fairness is off.** With a fairness mode active, `Resolve.batch`
+threads a working ledger through the items in ascending `item.idx` order, so an award on item 1
+affects item 2 (010 §6, 011 §6). What is preserved in every mode is **determinism** — item index
+is loot-slot order, so the same input always produces byte-identical output. If you are
+refactoring this loop, the ordering is load-bearing and is not an implementation detail.
 
 ## 8. Eligibility — `Core/Eligibility.lua`
 
@@ -213,3 +232,5 @@ Fixture tests with a scripted rng, all runnable outside WoW:
 - Cloak eligibility: a `WARRIOR` passes for an `INVTYPE_CLOAK` reporting `CLOTH`.
 - Token eligibility: `PALADIN` passes and `MAGE` fails for a Conqueror token.
 - The same input with the same scripted rng produces byte-identical output across runs.
+- Every case above passes identically with `opts.fairness` absent and with
+  `opts.fairness.mode = "OFF"` over a populated ledger (011 §9).

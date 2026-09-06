@@ -15,7 +15,10 @@ later — priority decay, per-bot gearing statistics, attendance, sniping patter
 people have a tier's worth of raiding logged you cannot retroactively add fields. Log
 generously now; read simply now.
 
-**Out of scope:** using history as a resolution input (ROADMAP: history-driven priority decay).
+**Out of scope:** using history as a resolution input — that is [010](010-loot-ledger.md), which
+derives the loot ledger from these records. This spec owns the record; 010 owns the reading of
+it. The fields 010 needs are listed in §3 and are written regardless of whether any fairness
+mode is active.
 
 ## 2. Who records what
 
@@ -42,6 +45,13 @@ context, and splitting them loses that.
 
   settings   = {                          -- what the rules were AT THE TIME
     tierCount = 3, timerSeconds = 180, qualityThreshold = 4,
+    fairnessMode = "TIER",                -- OFF | TIER | ROLL           (011 §2)
+    fairnessParams = { tierStep=1, tierCap=2, penaltyPerItem=15, penaltyCap=30,
+                       halfLifeBatches=6, ledgerBatches=12, ledgerMaxDays=14 },
+  },
+
+  ledgerAtOpen = {                        -- host standings when the batch opened (010 §9)
+    Steve = { count = 3, weight = 1180.4 }, Anna = { count = 0, weight = 0 },
   },
 
   raid = { "Steve", "Dave", "Anna" },     -- players running the addon, for attendance later
@@ -56,15 +66,20 @@ context, and splitting them loses that.
       unclaimed  = false,
       degraded   = false,
 
+      gsValue    = 494,                    -- item value, ALWAYS written, even under OFF (010 §9)
+
       entries = {                          -- EVERY entry, including not-consulted ones
-        { char="Bonk", owner="Dave", tier=1, rolled=true, roll=91,
+        { char="Bonk", owner="Dave", tier=1, effTier=1, penalty=0,
+          rolled=true, roll=91, score=91,
           rerolled={}, override=false,
           submittedAt=1757155230, revisedAt=nil },     -- host-only fields
-        { char="Sneaky", owner="Steve", tier=2, rolled=false, reason="not consulted" },
+        { char="Sneaky", owner="Steve", tier=2, effTier=3, penalty=0,
+          rolled=false, reason="not consulted" },
       },
 
       awards = {
-        { copy=1, char="Bonk", owner="Dave", tier=1, roll=91,
+        { copy=1, char="Bonk", owner="Dave", tier=1, effTier=1, roll=91, penalty=0,
+          gsValue=494,
           delivery="DELIVERED",            -- DELIVERED | PENDING | FAILED | LOST | UNCLAIMED
           deliveryPath="MASTER_LOOT",      -- MASTER_LOOT | TRADE
           deliveredAt=1757155390 },
@@ -76,6 +91,10 @@ context, and splitting them loses that.
 
 Delivery state is **updated in place** when a pending item is later handed over, so the history
 reflects what actually happened rather than what was intended at resolution time.
+
+This in-place update is also the loot ledger's only reversal path (010 §9): the ledger is
+derived from these records on demand, so an award that later becomes `FAILED` or `LOST` simply
+stops counting. Do not add a separate reversal mechanism, and do not cache the ledger.
 
 ## 4. Retention
 
@@ -109,7 +128,8 @@ write files):
 - **Plain text** — human-readable, for pasting into Discord. One line per award, with a batch
   header.
 - **CSV** — one row per **entry**, not per award, so the data is analysable:
-  `timestamp, zone, source, item, character, owner, tier, rolled, roll, awarded, delivery`
+  `timestamp, zone, source, item, gsValue, character, owner, tier, effTier, rolled, roll,
+  penalty, score, awarded, delivery`
 
 Export respects the browser's current filters, so "everything Botty won in ICC" is one action.
 
@@ -127,5 +147,9 @@ The addon never transmits history anywhere. Export is manual, local, and user-in
 - Client and host records of the same batch are both present and distinguishable by
   `recordedAsHost`.
 - CSV export of a 6-item batch with 20 entries produces 20 rows plus a header.
+- `gsValue` and `ledgerAtOpen` are written under `fairnessMode = "OFF"`, so a group that later
+  switches modes has a usable ledger from day one.
+- `settings.fairnessParams` captures the values in force at open and is unaffected by later
+  changes.
 - The per-character summary for a bot lists exactly the items it was awarded, and nothing it
   merely rolled on.

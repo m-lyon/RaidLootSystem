@@ -8,7 +8,8 @@ players each control several bots. AzerothCore + mod-playerbots.
 1. [`docs/specs/000-architecture.md`](docs/specs/000-architecture.md) — module layout, pure-core
    boundary, saved-variable schema, comms protocol. **Non-negotiable; everything assumes it.**
 2. The numbered spec for the feature you're implementing ([`docs/specs/`](docs/specs/)).
-3. [`docs/DESIGN.md`](docs/DESIGN.md) for the player-facing intent behind a rule.
+3. [`docs/DESIGN.md`](docs/DESIGN.md) for the player-facing intent behind a rule, and
+   [`docs/proposals/`](docs/proposals/) for intent behind rules the group hasn't settled yet.
 
 If a spec and the code disagree, the spec wins — fix the code, or change the spec in the same PR
 with the reasoning.
@@ -35,6 +36,16 @@ with the reasoning.
   overwriting a roster on import.
 - **Failures are surfaced, never swallowed.** A silently dropped entry or a silently failed award
   costs someone an item.
+- **The loot ledger counts owning players, not characters.** Per-character accounting penalises
+  a player's top-ranked character for being top-ranked, inverting the hierarchy. Spec 010 §3.
+- **The ledger is derived, never cached.** It is recomputed from history on demand so a
+  delivery that later fails stops counting with no reversal path. Spec 010 §8.
+- **`gsValue` is written to every award even when `fairnessMode = "OFF"`.** A group that enables
+  a mode later must find usable history waiting.
+- **`Core/GearScore.lua` takes scalars, not an item link.** PlayerbotManager's version calls
+  `GetItemInfo` itself; ours cannot. `Modules/ItemInfo.lua` does the lookup.
+- **With fairness on, items in a batch are no longer independent** — spec 003 §7 changed.
+  Resolution order (ascending `item.idx`) is load-bearing, not incidental.
 
 ## Testing
 
@@ -52,6 +63,12 @@ getting them wrong silently makes a class ineligible for a whole item category:
 - WotLK class → weapon-subclass permissions (`Data/ClassArmor.lua`)
 - Tier token item ids (`Data/TierTokens.lua`) — the trailing-word match is the robust path
 - The exact mod-playerbots `equip` command syntax
+- GearScore constants (`Core/GearScore.lua`) — copied from
+  `../PlayerbotManager/PBM/PBM_Constants.lua:12–50`, pinned by the `gearscore` fixture suite
+
+**PlayerbotManager naming trap:** in `LichborneTrackerDB`, `row.gs` is **average item level**
+and `row.realGs` is the GearScore (`PBM_Inspect.lua:151`). We don't read that DB — this note
+exists so nobody starts.
 
 ## Conventions
 

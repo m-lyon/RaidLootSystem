@@ -55,6 +55,9 @@ RaidLootSystem/
     Tiers.lua                 -- hierarchy ordering -> tier assignment
     Eligibility.lua           -- (itemInfo, charInfo, config) -> bool, reason
     Resolve.lua               -- entries -> ordered winners + full roll record
+    GearScore.lua             -- (itemLevel, quality, equipLoc) -> item value   [010]
+    Ledger.lua                -- history records -> per-player standings        [010]
+    Fairness.lua              -- ledger + entries -> tier deltas / roll penalties [011]
   Modules/
     Database.lua              -- SavedVariables load, defaults, migration
     Comms.lua                 -- addon-message transport: queue, chunk, throttle
@@ -66,6 +69,7 @@ RaidLootSystem/
     Award.lua                 -- GiveMasterLoot, failures, trade fallback, auto-equip
     Pending.lua               -- undelivered items and their 2h countdown
     History.lua               -- record, retain, export
+    Ledger.lua                -- host-side derivation + LEDGER broadcast        [010]
     Announce.lua              -- chat output, verbosity levels
     Simulate.lua              -- /rls simulate harness
   UI/
@@ -127,6 +131,8 @@ RaidLootSystemDB = {
     tierCount        = 3,            -- 0..5
     timerSeconds     = 180,          -- 15..300
     qualityThreshold = 4,            -- 3 = rare, 4 = epic
+    -- fairness ledger and modes: see spec 010 §8 for the full block
+    fairnessMode     = "OFF",        -- OFF | TIER | ROLL
   },
 
   history = { --[[ see spec 008 ]] },
@@ -184,9 +190,10 @@ Payload budget: **180 bytes** per chunk body. Outgoing messages sit in a queue d
 | `SUBMIT` | client → host | `sessionId^entry~entry…` where entry is `itemIdx=charName=overrideFlag` | Submit or revise entries |
 | `STATE` | host → all | `sessionId^submittedNames~…^entry~entry…` where entry is `itemIdx=charName=owner=tier` | Authoritative aggregate; drives the live open view |
 | `RESULT` | host → all | `sessionId^result~result…` where result is `itemIdx=winner=tier=roll=outcome` | Resolved batch |
-| `ROLLS` | host → all | `sessionId^roll~roll…` where roll is `itemIdx=charName=tier=roll` | Full roll record for the results table |
+| `ROLLS` | host → all | `sessionId^roll~roll…` where roll is `itemIdx=charName=baseTier=effTier=roll=penalty` | Full roll record for the results table (011 §7) |
 | `ABORT` | host → all | `sessionId^reasonCode` | Batch cancelled |
-| `CFG` | host → all | `tierCount^timerSeconds` | Settings changed between batches |
+| `CFG` | host → all | `tierCount^timerSeconds^fairnessMode` | Settings changed between batches |
+| `LEDGER` | host → all | `mode^reference^params^row~row…` where row is `player=count=weight` | The host's loot-ledger standings, sent immediately after `OPEN` (010 §7) |
 | `SYNC` | client → host | `sessionId` | Request a resend of `OPEN` + `STATE` |
 
 ### Authority rules

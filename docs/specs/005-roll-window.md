@@ -49,6 +49,9 @@ batch is live or while its results are the most recent.
 - Ordered by hierarchy position, so your highest priority is at the top.
 - **Tier badge** on every row, computed for the batch's frozen tier count. Colour-coded, with
   Rest visually distinct from the numbered tiers.
+- **Adjustment badge** beside it when a fairness mode is active (010 §11) — `-1 tier` under
+  `TIER`, `-12` under `ROLL`, nothing under `OFF`. It is per *item*, so it updates as the
+  selected column changes.
 - Class-coloured name; a marker on your own character.
 - Presence dot. Absent characters render greyed with every cell disabled.
 - A **"hide ineligible rows"** toggle collapses the grid to only rows with at least one
@@ -82,6 +85,16 @@ for that item, from the latest `STATE`, grouped by tier and labelled with the ow
 This is where DESIGN's "fully open" promise actually lands. It updates live as people submit
 and revise. It renders **only** from host `STATE` (002 §7) — never from local optimism.
 
+With a fairness mode active it also shows each entrant's **standing** alongside their tier,
+drawn from the host's `LEDGER` (010 §7) and never from local history, plus a one-line caveat:
+*"Adjustments shown are as of the start of this roll."* That caveat is not optional — winning an
+earlier item in the same batch increases your real adjustment on later ones (010 §6), and a
+displayed number that silently drifts from the result is worse than no number.
+
+A client that has not received `LEDGER` renders adjustments as *unknown* and says so. It must
+never substitute its own derivation, which would show a player an adjustment the host will not
+apply.
+
 ### Footer
 
 - **Countdown** to `endsAt`, turning amber in the last 30 seconds.
@@ -104,8 +117,13 @@ On `RESULT` + `ROLLS`, the window switches. Per item:
 
 - **Winner banner** — class-coloured character name, owning player, tier, winning roll. For
   duplicate drops, both winners in copy order.
-- **Full roll table** — every entry: character, owner, tier, roll. Sorted by tier then roll
-  descending.
+- **Full roll table** — every entry: character, owner, tier, roll. Sorted by effective tier then
+  score descending. When a fairness mode is active the adjustment is shown **decomposed**, never
+  as a bare final number — `T1 -> T2` under `TIER`, `88 - 12 = 76` under `ROLL` (011 §7). The
+  numbers come from `ROLLS`, not from a local re-derivation.
+- **Shadow result**, when the host has it on (011 §8): one line per item naming what the other
+  mode would have produced, with the replay caveat on hover. Hidden by default even when
+  recorded.
 - **Not-consulted entries shown explicitly**, greyed, labelled `"T3 — not consulted"` (003 §5).
   Showing them is what makes the tier rule legible: people can see their entry was never rolled
   *because* a higher tier was occupied, rather than assuming they lost a roll.

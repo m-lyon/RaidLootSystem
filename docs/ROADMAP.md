@@ -55,7 +55,8 @@ its own failure modes, and v1 works fine without it.
 **Promote if:** people are routinely entering bots for sidegrades and wasting rolls.
 
 **Cost:** medium-high. New data source, cache invalidation, and a hard dependency or an
-optional integration layer. Its own spec.
+optional integration layer. Its own spec. **Paired with Character-need weighting above** — same
+data source, same failure modes, same promotion trigger.
 
 ---
 
@@ -121,21 +122,43 @@ which takes ten seconds to fix properly.
 
 ---
 
-## History-driven priority decay
+## ~~History-driven priority decay~~ — PROMOTED
 
-**What:** use the loot history as an input to resolution — e.g. a character that has already
-won twice tonight is demoted, or accumulates a soft penalty across the tier.
+**Promoted** to [proposal 001](proposals/001-loot-fairness.md), specs
+[010](specs/010-loot-ledger.md) and [011](specs/011-fairness-modes.md).
 
-**Why deferred:** it's a significant change to the fairness model and needs a season of real
-history to design against. v1 logs richly precisely so this is buildable later without
-retroactively missing fields.
+Two mechanisms are on the table — tier demotion and decayed roll weighting — and the group has
+yet to pick one. Both are off by default until it does.
 
-**Promote if:** the raw roll system visibly concentrates loot on a few lucky characters over a
-tier's worth of raiding.
+The deferral note's one hard constraint was carried through: history reaches `Core/Resolve` as
+an **injected ledger parameter**, never a global read, so the pure-core testability guarantee
+survives.
 
-**Cost:** high. Resolution stops being a pure function of the current batch, which weakens the
-testability guarantee in spec 003 unless history is injected as an explicit input. Design it
-as an injected parameter, not a global read.
+---
+
+## Character-need weighting
+
+**What:** weight priority by how geared a character actually *is*, rather than by what its owner
+has recently received. An undergeared bot gets priority because it is undergeared.
+
+**Why deferred:** it is the natural next question after proposal 001 and the one players will
+ask for once they see it, but the data is not good enough to build a rule on. Character
+GearScore comes from PlayerbotManager's inspect scan
+(`PBM_TrackerCore.lua:715`), which is **manually triggered**, inspects one unit at a time at
+~2.5s each, is gated on `CheckInteractDistance`, silently skips anyone out of range, and never
+refreshes when a bot equips something. The numbers are as fresh as the last time a human
+remembered to press a button. A fairness rule reading stale, partial gear data would be worse
+than no rule, because its errors would be invisible.
+
+By contrast, proposal 001's *item*-value GearScore needs only an item link and is computed
+locally by every client, which is why that half was buildable now.
+
+**Promote if:** a live gear-data source appears — either PBM gains automatic refresh, or we do
+our own scanning — and the group is still asking for it.
+
+**Cost:** medium-high, and it shares its entire data problem with **Gear-aware upgrade
+filtering** below. If either is promoted, both should be: they stand or fall on the same
+question of whether we can trust per-bot gear data.
 
 ---
 

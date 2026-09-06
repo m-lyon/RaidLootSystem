@@ -50,6 +50,13 @@ the purity rule.
 | `eligibility` | The check order and every reason code, incl. cloaks and tokens | 003 §8 |
 | `resolve` | Tier walking, multi-copy spill, boundary ties, unclaimed, degraded | 003 §9 |
 | `serialize` | Round-trip of every op, chunk split/join, malformed input rejection | 000 §5 |
+| `gearscore` | Real WotLK items pinned to exact scores; unscoreable slots and qualities | 010 §4 |
+| `ledger` | Window, decay, dedupe, delivery reversal, reset, manual adjustment | 010 §12 |
+| `fairness` | Both modes, neutrality under `OFF`, caps, sequential batch threading | 011 §9 |
+
+The `fairness` suite carries a standing obligation: **every `resolve` case must also pass with
+`opts.fairness.mode = "OFF"` over a populated ledger.** That is what stops 011 from quietly
+changing the base algorithm.
 
 ### Scripted randomness
 
@@ -120,13 +127,18 @@ window → revision → close → resolution → results rendering → history w
 | `special` | An unclassifiable item with the filter off |
 | `abort` | Master looter changing mid-batch |
 | `chunked` | A payload large enough to require multi-chunk transport |
+| `ledger` | A seeded loot history, so adjustments are visible on the first roll |
+| `tiermode` | An entrant demoted below Rest, rendering as `Rest -1` |
+| `rollmode` | A visible roll penalty and its decomposition in the results table |
+| `sweep` | One roster winning item 1 of 4, so the within-batch ledger update is visible |
 
 **Guard rails:**
 
 - Simulation refuses to run while a real batch is open.
 - It never sends a real addon message, a real chat message, or a real whisper.
 - History records written in simulation are tagged `simulated = true` and excluded from the
-  history browser by default.
+  history browser by default, **and from the loot ledger unconditionally** (010 §5). A
+  simulation that moved real standings would be worse than no simulation.
 - The award step is stubbed — `GiveMasterLoot` is never called.
 
 ## 5. Manual test checklist
@@ -162,3 +174,6 @@ A GitHub Actions workflow on push and PR:
 - `/rls simulate scenario=tie` produces a visible re-roll in the roll window without a raid.
 - `/rls simulate` writes no addon messages and no chat output.
 - A simulated batch does not appear in the default history browser view.
+- A simulated batch contributes nothing to the loot ledger.
+- Introducing `GetItemInfo` into `Core/GearScore.lua`, or `time()` into `Core/Ledger.lua`,
+  fails CI.
