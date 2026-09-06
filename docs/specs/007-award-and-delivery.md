@@ -95,6 +95,11 @@ host records how many of each batch item it holds when the batch opens; a copy c
 only when the bags hold more than that baseline plus what other pending records already
 account for. Otherwise the copy is looted from the corpse.
 
+This baseline applies to **corpse batches only**. An item-link batch has no corpse: the host
+opened it on an item already in their bags, so that copy *is* the one being awarded and the
+baseline is not charged against it. Other pending records still are, so two copies are never
+promised to the same winner twice.
+
 **Constraint worth stating explicitly:** the 2-hour flag only permits trading to characters who
 were **eligible for that loot at kill time**. A bot summoned in after the boss died cannot
 receive it even though it won the roll and is standing right there. When a trade is refused,

@@ -97,6 +97,22 @@ function Award.PathFor(record, ctx)
     return nil, "Open the corpse to award from it, or loot the item yourself and award again."
 end
 
+--- How many units of this record's item the host holds that this record may
+-- claim (section 5).
+--
+-- `held` is what the bags hold now, `baseline` what they held when the batch
+-- opened, `claimed` what other pending records already account for.
+--
+-- The baseline is subtracted for a corpse batch: a copy that predates the loot
+-- is not the looted copy. It is NOT subtracted for an item-link batch, which has
+-- no corpse -- there the copy the host already held IS the one being awarded, so
+-- charging it against the baseline leaves the host holding an item the addon
+-- insists is not in their bags.
+function Award.SpareUnits(record, held, baseline, claimed)
+    local base = record.lootSlot and (baseline or 0) or 0
+    return (held or 0) - base - (claimed or 0)
+end
+
 --- The confirmation dialog's text (section 6): the item, the winner, and the path.
 function Award.ConfirmText(record, label, path)
     local who = record.char .. (record.owner and (" (" .. record.owner .. ")") or "")
@@ -265,7 +281,7 @@ local function spareUnits(record)
     if not id then return 0 end
     local base = baseline[record.sessionId] and baseline[record.sessionId][id] or 0
     local claimed = ns.Pending.UnitsHeld(ns.Pending.Records(), id, record)
-    return countInBags(id) - base - claimed
+    return Award.SpareUnits(record, countInBags(id), base, claimed)
 end
 
 --------------------------------------------------------------------------------

@@ -25,7 +25,16 @@ local ROW_H = 22
 local LIST_H = 300
 local ICON = 16
 
+-- The export and summary panels drop in below the buttons that open them, so
+-- the window is measured to end just under whichever is open rather than being
+-- guessed at: too short and the panel hangs through the frame, too tall and
+-- there is dead space under the list when none is.
+local PANEL_GAP = 8
+local BOTTOM_MARGIN = 16
+local START_HEIGHT = 640        -- provisional; layoutPanels measures the real one
+
 local frame, content, filters, exportPanel, summaryPanel
+local layoutPanels
 local batchRows, detail, detailRows = {}, nil, {}
 local expandedKey
 local filtered = {}
@@ -240,6 +249,7 @@ function Browser.Refresh()
     frame.empty:SetText(#filtered == 0 and "No batches match." or "")
     frame.count:SetText(string.format("%d batch%s", #filtered, #filtered == 1 and "" or "es"))
     content:SetHeight(math.max(y, 1))
+    layoutPanels()
 end
 
 --------------------------------------------------------------------------------
@@ -273,7 +283,28 @@ local function buildTextPanel(parent, title)
 
     panel.close = Widgets.Button(panel, "Close", 70, 20, function() panel:Hide() end)
     panel.close:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -8, 6)
+
+    -- Both panels share the slot, so either appearing or going resizes the window.
+    panel:SetScript("OnShow", layoutPanels)
+    panel:SetScript("OnHide", layoutPanels)
     return panel
+end
+
+--- Size the window to end below whichever text panel is open, or below the
+-- export buttons when neither is.
+function layoutPanels()
+    if not frame or not frame.exportRow then return end
+
+    local anchor = frame.exportRow
+    if exportPanel and exportPanel:IsShown() then anchor = exportPanel end
+    if summaryPanel and summaryPanel:IsShown() then anchor = summaryPanel end
+
+    -- Everything down to here hangs off the frame's top edge, so this distance
+    -- holds however the window is anchored on screen.
+    local top, bottom = frame:GetTop(), anchor:GetBottom()
+    if top and bottom then
+        frame:SetHeight(top - bottom + BOTTOM_MARGIN)
+    end
 end
 
 local function showText(panel, title, text)
@@ -321,7 +352,7 @@ end
 
 local function build()
     frame = Widgets.Window("RaidLootSystemHistoryBrowser", "history",
-        "Raid Loot System -- History", WIDTH, 640)
+        "Raid Loot System -- History", WIDTH, START_HEIGHT)
 
     filters = buildFilters(frame)
     filters:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, -40)
@@ -343,6 +374,7 @@ local function build()
 
     local exportTextButton = Widgets.Button(frame, "Export text", 100, 22, exportText)
     exportTextButton:SetPoint("TOPLEFT", listPanel, "BOTTOMLEFT", 0, -8)
+    frame.exportRow = exportTextButton
     Widgets.Tooltip(exportTextButton, "Export text",
         "The batches shown, one line per award, for pasting into Discord.")
 
@@ -357,9 +389,9 @@ local function build()
         "Everything the character in the Character box has won, with dates.")
 
     exportPanel = buildTextPanel(frame, "Export")
-    exportPanel:SetPoint("TOPLEFT", exportTextButton, "BOTTOMLEFT", 0, -8)
+    exportPanel:SetPoint("TOPLEFT", exportTextButton, "BOTTOMLEFT", 0, -PANEL_GAP)
     summaryPanel = buildTextPanel(frame, "Summary")
-    summaryPanel:SetPoint("TOPLEFT", exportTextButton, "BOTTOMLEFT", 0, -8)
+    summaryPanel:SetPoint("TOPLEFT", exportTextButton, "BOTTOMLEFT", 0, -PANEL_GAP)
 
     frame:SetScript("OnShow", function() Browser.Refresh() end)
     ns.History.RegisterListener(function() Browser.Refresh() end)

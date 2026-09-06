@@ -37,6 +37,9 @@ local function run(input, ns)
     elseif input.op == "equip" then
         return Award.ShouldAutoEquip(input.record, input.roster, input.settings)
 
+    elseif input.op == "spare" then
+        return Award.SpareUnits(input.record, input.held, input.baseline, input.claimed)
+
     elseif input.op == "retryable" then
         return Award.Retryable(input.record)
     end
@@ -126,6 +129,23 @@ return {
         { name = "an item-link batch with nothing in bags cannot be awarded",
           input = { op = "path", record = LINKED, ctx = { inBags = false } },
           expected = { path = "", why = "The item is not in your bags." } },
+
+        -- What the host holds (section 5). The regression: an item-link batch is
+        -- opened on an item already in the host's bags, so the open-time baseline
+        -- covers the very copy being awarded and must not be charged against it.
+        { name = "an item-link copy counts even though the baseline covered it",
+          input = { op = "spare", record = LINKED, held = 1, baseline = 1, claimed = 0 },
+          expected = 1 },
+        { name = "an item-link copy already promised to another record does not count twice",
+          input = { op = "spare", record = LINKED, held = 1, baseline = 1, claimed = 1 },
+          expected = 0 },
+        { name = "a corpse copy the host owned before the batch does not count",
+          input = { op = "spare", record = CORPSE, held = 1, baseline = 1, claimed = 0 },
+          expected = 0 },
+        { name = "a corpse copy looted on top of one the host owned counts once",
+          input = { op = "spare", record = CORPSE, held = 2, baseline = 1, claimed = 0 },
+          expected = 1 },
+
         { name = "a delivered award is not awarded again",
           input = { op = "path", record = { char = "Bonk", lootSlot = 2, delivery = "DELIVERED" },
                     ctx = { lootMethod = "master", windowOpen = true, slotHolds = true } },

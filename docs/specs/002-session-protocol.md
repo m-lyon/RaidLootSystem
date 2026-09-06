@@ -124,7 +124,9 @@ A batch closes when:
 - The timer expires, or
 - The host force-closes early (typical once `submitted == expected`), or
 - Every expected player has submitted **and** the host has "auto-close when all in" enabled
-  (default off — someone may still be deciding).
+  (default on; a host who would rather let stragglers reconsider unticks it). The condition is
+  re-tested when the group changes as well as on each submission, since a player leaving can be
+  what empties the outstanding set.
 
 On close: state goes `RESOLVING`, the host runs `Core/Resolve` per item (003), broadcasts
 `RESULT` then `ROLLS`, announces per `Announce` verbosity, writes history (008), and moves to

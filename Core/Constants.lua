@@ -245,7 +245,7 @@ C.DEFAULTS = {
         timerSeconds     = 180,
         qualityThreshold = 4,
         lootMode         = "ROLL",
-        autoClose        = false,   -- close as soon as everyone expected has submitted
+        autoClose        = true,    -- close as soon as everyone expected has submitted
     },
     priority = {
         version   = 0,

@@ -535,6 +535,16 @@ local function allExpectedIn(session)
     return true
 end
 
+--- Close early once every expected player is in, if the host asked for that.
+-- Two things can make it true: the last expected submission arriving, and the
+-- last player who had not submitted leaving the group.
+local function maybeAutoClose(session)
+    if session.state ~= C.SESSION_STATE.OPEN then return end
+    if not ns.Database.Host().autoClose then return end
+    if not allExpectedIn(session) then return end
+    Session.Close()
+end
+
 local function onSubmit(sender, body)
     local session = Session.current
     if not Session.IsHost() then return end
@@ -566,9 +576,7 @@ local function onSubmit(sender, body)
     stateDirty = true                      -- coalesced, section 7
     fireChanged()
 
-    if ns.Database.Host().autoClose and allExpectedIn(session) then
-        Session.Close()
-    end
+    maybeAutoClose(session)
 end
 
 local function onSync(sender, body)
@@ -834,6 +842,12 @@ end
 
 local function onGroupEvent()
     Session.CheckHost()
+
+    -- Someone leaving can be what completes the set: they were expected and had
+    -- not submitted, and now nobody outstanding is left to wait for.
+    local session = Session.current
+    if session and Session.IsHost() then maybeAutoClose(session) end
+
     -- Version handshake (section 11), throttled: roster events arrive in bursts.
     local now = GetTime()
     if now - lastHi > 5 then
