@@ -104,7 +104,7 @@ Specs 005 through 008 and 010 are built too: `UI/{RollWindow,HostPanel,HistoryBr
 `rollwindow`, `announce`, `hostpanel`, `award`, `pending`, `history`, `priority` and `sk` suites.
 The pure list operations are `ns.PriorityList` (Core); the stateful module is `ns.Priority`.
 
-Still to write: `Modules/Simulate.lua` (spec 009 §4).
+Spec 009's `Modules/Simulate.lua` is built too. Every module in spec 000 §3 now exists.
 
 ## Conventions
 

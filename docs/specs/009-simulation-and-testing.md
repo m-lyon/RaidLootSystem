@@ -119,9 +119,14 @@ An in-game harness that runs the full pipeline solo — no raid, no bots, no oth
 ```
 
 **How it works:** `Modules/Simulate.lua` installs a **loopback transport** in place of
-`Comms.lua`'s `SendAddonMessage`. Messages are routed to in-process fake clients, each with its
-own roster and a scripted submission behaviour. Host and client code paths both execute for real
-— only the wire is faked.
+`Comms.lua`'s `SendAddonMessage`. Everything the host sends is delivered back to this client on
+the next frame, as the real echo would be, so the real `Session` (host) and the real `Client`
+mirror and roll window execute unchanged. Fake players are scripted senders: their `HI`, `ROSTER`
+and `SUBMIT` messages enter through the real transport code with their own sender names, so the
+host validates and aggregates them for real. They do not run a second copy of `Client.lua` —
+the addon's modules are singletons bound to the logged-in character — and they do not need to:
+they react to what the local mirror shows. Only the wire, the chat, the group roster, the master
+looter derivation and the award click are faked.
 
 It must exercise, end to end: batch open → fake submissions → live `STATE` updates in the roll
 window → revision → close → resolution → results rendering → history write.
@@ -152,7 +157,12 @@ window → revision → close → resolution → results rendering → history w
 - **Simulation never mutates the real priority list.** It operates on a copy and discards it. A
   simulation that suicided people for pretend items would be worse than no simulation, and unlike
   a bad history record it cannot be spotted by looking at it.
-- The award step is stubbed — `GiveMasterLoot` is never called.
+- The award step is stubbed — `GiveMasterLoot` is never called. The award click marks the copy
+  delivered on the spot (or terminally failed, for `restore`).
+- The scripted rng, the loot mode and the master looter derivation are restored when the run
+  ends; fake rosters and peers are forgotten; anything still queued for chat or the wire is
+  dropped before the real transports come back. A step that errors stops the run and restores
+  everything; `/rls simulate stop` does the same by hand.
 
 ## 5. Manual test checklist
 

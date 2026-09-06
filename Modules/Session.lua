@@ -594,7 +594,8 @@ end
 -- Closing (section 8)
 --------------------------------------------------------------------------------
 
-local function rng(low, high)
+--- The rng Resolve draws from. A field, so /rls simulate can script it (spec 009).
+function Session.rng(low, high)
     return math.random(low, high)
 end
 
@@ -622,7 +623,8 @@ function Session.Close()
 
     local lootMode, priority = session.lootMode or C.LOOT_MODE.ROLL, session.priority
     local ok, results = pcall(ns.Resolve.batch, session.items, Session.ResolveInput(session),
-        { rng = rng, lootMode = lootMode, priority = priority,
+        { rng = function(lo, hi) return Session.rng(lo, hi) end,
+          lootMode = lootMode, priority = priority,
           stars = Session.Stars(session) })
 
     if not ok then
@@ -816,7 +818,8 @@ end
 -- Events: the master looter changing under an open batch
 --------------------------------------------------------------------------------
 
-local function onGroupEvent()
+--- Re-derive the host. Public so /rls simulate can change hands without an event.
+function Session.CheckHost()
     local host = Session.HostName()
     if host ~= lastHost then
         lastHost = host
@@ -827,6 +830,10 @@ local function onGroupEvent()
             Session.Abort(C.ABORT_REASON.ML_CHANGED)
         end
     end
+end
+
+local function onGroupEvent()
+    Session.CheckHost()
     -- Version handshake (section 11), throttled: roster events arrive in bursts.
     local now = GetTime()
     if now - lastHi > 5 then
