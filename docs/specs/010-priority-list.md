@@ -124,9 +124,21 @@ somebody did not bother to summon.
 
 The list mutates when the award is made. Delivery is confirmed later (007), or is not.
 
-When an award's `delivery` moves away from `DELIVERED`, the character is **restored to the index
-it held immediately before that suicide**, the affected present characters shift back down, the
-version bumps, and it is announced.
+When an award's delivery reaches a state it cannot recover from — `LOST`, or `FAILED` with
+`TRADE_EXPIRED` (007 §8), which is also what abandoning a pending item produces — the character is
+**restored to the index it held immediately before that suicide**, the affected present
+characters shift back down, the version bumps, and it is announced. A *retryable* failure (out of
+range, bags full) does not restore: the retry is expected to succeed, and restoring then
+re-suiciding would land the winner at a different bottom than the one the batch gave them. A
+delivery that succeeds after a restore suicides the character again, from wherever it then stands.
+
+The restore uses the **present indices the suicide used**, recorded on the award, not the raid as
+it stands at restore time. That is what makes it an exact inverse whoever has come or gone since.
+When the list has moved in between (a later batch's suicides, a removal) those indices no longer
+describe it; the restore then refuses rather than silently doing nothing, and the host restores
+the character to its prior index **against the raid as it stands**, saying so. The pending record
+carries the same data, because the award records do not survive a `/reload` and a two-hour trade
+window usually spans one.
 
 Leaving someone suicided for an item they never received is the worst bug this feature could
 ship, and unlike the rest of the list's state it cannot be noticed by inspection — the list looks
@@ -242,9 +254,15 @@ Existing ops change:
 | `ROLLS` | roll becomes `itemIdx=charName=tier=roll=listIdx=status=rerolls`; `roll` is 0 under SK, `listIdx` is 0 under ROLL; `status` is `WD` for an entry withdrawn by rule (1) or the star, so the results table can mark it (§11) |
 | `CFG` | `tierCount^timerSeconds^lootMode` |
 
-**`/rls sk verify`** recomputes the list from `priority.seed` plus the chronological award events
-in history and reports whether it matches the stored order. Drift becomes a number rather than an
-argument. It reports; it never silently repairs.
+**`/rls sk verify`** recomputes the list from `priority.seed` plus the list's own **event log**
+(§9) — every suicide, restore, manual edit and roster change since the seed, each stamped with the
+version it produced — and reports whether it matches the stored order. Drift becomes a number
+rather than an argument. It reports; it never silently repairs.
+
+The log, not history, is the replay source for two reasons: history is pruned (008 §4) and a
+replay that loses its oldest events is worthless; and a suicide's outcome depends on who was
+present at that moment, which a history award does not carry. The log entry does. A reseed
+starts the log over.
 
 ## 9. Saved variables
 
@@ -259,9 +277,17 @@ host = {
 },
 
 priority = {                     -- account-wide, not host-only: every client keeps it
-  version = 47,
-  seed    = 1757155200,
-  order   = { "Chop", "Sneaky", ... },
+  version   = 47,
+  seed      = 1757155200,
+  seedChars = { "Bonk", "Chop", ... },   -- sorted; what the seed shuffled, for replay
+  order     = { "Chop", "Sneaky", ... },
+  log       = {                          -- host-side; a client's is empty (§8)
+    { version = 1, kind = "seed", seed = 1757155200, chars = { ... }, at = ..., by = "Steve" },
+    { version = 2, kind = "suicide", char = "Chop", from = 1, present = { 1, 3, 4 }, at = ... },
+    { version = 3, kind = "restore", char = "Chop", to = 1, present = { 1, 3, 4 }, at = ... },
+    { version = 4, kind = "move", char = "Bonk", from = 5, to = 2, at = ..., by = "Steve" },
+    -- add { char } · remove { char }
+  },
 },
 ```
 
@@ -287,6 +313,9 @@ items = { {
   awards  = { { copy=1, char="Bonk", owner="Dave", tier=1, listIdx=3,
                 priorIndex=3,                     -- for restore-on-failure (§6)
                 delivery="DELIVERED", deliveryPath="MASTER_LOOT" } },
+  -- The host's award record additionally carries presentIndices (the indices the
+  -- suicide moved among) and listVersion (the version it produced); both live in
+  -- priority.log too, which is what verify replays.
 } },
 ```
 
@@ -307,7 +336,11 @@ A **Priority list** section, added to 006 §3:
 - **The list itself**, ordered, with each character's owner, class colour, a marker for the
   host's own characters, and absent characters visibly greyed.
 - **Seed list** when none exists — the prompt that enables `SK`. Shows the seed value afterwards.
-- **Reseed**, **manual reorder** (drag), and **manual suicide / restore** for any character.
+- **Reseed**, **manual reorder** (one place up or down per confirmed click; a drag would make
+  every accidental drop a confirmed, announced, logged edit), **manual suicide / restore** for any
+  character, and **remove** for a character nobody claims any more. Newly claimed characters
+  join at the bottom automatically; nothing is ever removed automatically, because a transient
+  claim loss (a reload) would otherwise send someone to the bottom.
 - **Version and verification** — the current version, and a `verify` button running §8's replay.
 
 Every manual action is confirmed, announced to raid chat, version-bumped and written to history.

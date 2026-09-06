@@ -35,6 +35,11 @@ function Pending.NewRecord(award, now)
         delivered = false,
         deliveredAt = nil,
         expired = false,
+        -- What a Suicide Kings restore needs (spec 010 section 6), carried here because
+        -- the award records do not survive a reload and a two-hour window often spans one.
+        priorIndex = award.priorIndex,
+        presentIndices = award.presentIndices,
+        listVersion = award.listVersion,
     }
 end
 
@@ -218,17 +223,39 @@ function Pending.MarkDelivered(record)
     if award then
         ns.Award.MarkDelivered(award, C.DELIVERY_PATH.TRADE)
     else
+        -- After a reload there is no award record: history and the list are told from here.
         ns.Print(string.format("%s delivered to %s.", labelFor(record.itemString), record.winner))
+        if ns.History then
+            ns.History.UpdateDeliveryFromAward({ sessionId = record.sessionId, itemIdx = record.itemIdx,
+                copy = record.copy, delivery = C.DELIVERY.DELIVERED,
+                deliveryPath = C.DELIVERY_PATH.TRADE, deliveredAt = record.deliveredAt })
+        end
+        if ns.Priority then ns.Priority.OnPendingChanged(record, "delivered") end
     end
     fireChanged()
+end
+
+--- A pending delivery that will never happen: the award record if it exists, else
+-- history and the priority list directly.
+local function failPending(record)
+    local award = awardFor(record)
+    if award then
+        ns.Award.MarkFailed(award, C.AWARD_FAILURE.TRADE_EXPIRED)
+        return
+    end
+    if ns.History then
+        ns.History.UpdateDeliveryFromAward({ sessionId = record.sessionId, itemIdx = record.itemIdx,
+            copy = record.copy, delivery = C.DELIVERY.FAILED, deliveryPath = C.DELIVERY_PATH.TRADE,
+            failure = C.AWARD_FAILURE.TRADE_EXPIRED })
+    end
+    if ns.Priority then ns.Priority.OnPendingChanged(record, "failed") end
 end
 
 --- The host has given up on it: it stays in the table, marked, but leaves the list.
 function Pending.Abandon(record)
     if record.delivered or record.abandoned then return end
     record.abandoned = true
-    local award = awardFor(record)
-    if award then ns.Award.MarkFailed(award, C.AWARD_FAILURE.TRADE_EXPIRED) end
+    failPending(record)
     ns.Print(string.format("%s for %s abandoned. It stays in your bags and in the history.",
         labelFor(record.itemString), record.winner))
     fireChanged()
@@ -357,8 +384,7 @@ local function onUpdate(_, elapsed)
     for _, r in ipairs(newly) do
         ns.Print(string.format("%s for %s can no longer be traded: the two hours are up. "
             .. "It stays in the pending list.", labelFor(r.itemString), r.winner))
-        local award = awardFor(r)
-        if award then ns.Award.MarkFailed(award, C.AWARD_FAILURE.TRADE_EXPIRED) end
+        failPending(r)
     end
     if #newly > 0 then fireChanged() end
 end

@@ -19,7 +19,9 @@ local Util = ns.Util
 --------------------------------------------------------------------------------
 
 local migrations = {
-    -- [1] = function(db) ... end,   -- schema 1 -> 2
+    -- 1 -> 2: priority.seedChars and priority.log (spec 010 section 9). Additive;
+    -- applyDefaults fills the new tables, so there is nothing to rewrite.
+    [1] = function(db) end,
 }
 
 local function migrate(db)

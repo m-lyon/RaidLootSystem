@@ -18,6 +18,7 @@ Core\Serialize.lua
 Core\Tiers.lua
 Core\Eligibility.lua
 Core\Resolve.lua
+Core\PriorityList.lua
 
 Data\TierTokens.lua
 Data\ClassArmor.lua
@@ -33,6 +34,7 @@ Modules\Client.lua
 Modules\Award.lua
 Modules\Pending.lua
 Modules\History.lua
+Modules\PriorityList.lua
 Modules\Announce.lua
 
 UI\Widgets.lua

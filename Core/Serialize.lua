@@ -242,7 +242,10 @@ end
 -- arrival lands on the same wall-clock deadline as everyone else.
 --------------------------------------------------------------------------------
 
-function Serialize.encodeOpen(sessionId, tierCount, secondsLeft, items)
+--- @param lootMode optional; a trailing field (spec 010 section 8), so a batch carries
+--        its own mode and a late joiner who never saw CFG still knows it. Omitted when
+--        nil, and a body without it decodes as ROLL.
+function Serialize.encodeOpen(sessionId, tierCount, secondsLeft, items, lootMode)
     local rows = {}
     for i = 1, #items do
         local item = items[i]
@@ -250,7 +253,9 @@ function Serialize.encodeOpen(sessionId, tierCount, secondsLeft, items)
     end
     local body, err = encodeElements(rows)
     if not body then return nil, err end
-    return Serialize.encodeFields({ sessionId, tierCount, secondsLeft, body })
+    local fields = { sessionId, tierCount, secondsLeft, body }
+    if lootMode then fields[5] = lootMode end
+    return Serialize.encodeFields(fields)
 end
 
 function Serialize.decodeOpen(body)
@@ -275,8 +280,11 @@ function Serialize.decodeOpen(body)
     end
     if #items == 0 then return nil, "OPEN carries no items" end
 
+    local lootMode = fields[5]
+    if lootMode ~= C.LOOT_MODE.SK then lootMode = C.LOOT_MODE.ROLL end
+
     return { sessionId = sessionId, tierCount = tierCount,
-             secondsLeft = secondsLeft, items = items }
+             secondsLeft = secondsLeft, items = items, lootMode = lootMode }
 end
 
 --------------------------------------------------------------------------------
@@ -459,6 +467,39 @@ function Serialize.decodeRolls(body)
     end
 
     return { sessionId = sessionId, rolls = rolls }
+end
+
+--------------------------------------------------------------------------------
+-- SKLIST: version^seed^name~name~...   (spec 010 section 8)
+--
+-- The authoritative priority list. Sent after OPEN under SK, after RESULT once the
+-- suicides are applied, and on SYNC. A client whose copy differs replaces it whole.
+--------------------------------------------------------------------------------
+
+function Serialize.encodeSklist(version, seed, order)
+    local names = {}
+    for i = 1, #order do
+        local element, err = Serialize.encodeElement({ order[i] })
+        if not element then return nil, err end
+        names[i] = element
+    end
+    return Serialize.encodeFields({ version, seed, Serialize.encodeList(names) })
+end
+
+function Serialize.decodeSklist(body)
+    local fields = Serialize.decodeFields(body)
+    local version, seed = tonumber(fields[1]), tonumber(fields[2])
+    if not version or not seed then return nil, "SKLIST has a non-numeric field" end
+    local order, seen = {}, {}
+    for _, name in ipairs(Serialize.decodeList(fields[3])) do
+        if name ~= "" then
+            local key = name:lower()
+            if seen[key] then return nil, "SKLIST lists " .. name .. " twice" end
+            seen[key] = true
+            order[#order + 1] = name
+        end
+    end
+    return { version = version, seed = seed, order = order }
 end
 
 --------------------------------------------------------------------------------

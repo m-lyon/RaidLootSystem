@@ -414,8 +414,7 @@ local function currentSession()
 end
 
 local function isSK(session)
-    if session.priority then return true end          -- SKLIST arrived (spec 010)
-    return session.lootMode == C.LOOT_MODE.SK
+    return session.lootMode == C.LOOT_MODE.SK          -- OPEN carries it (spec 010 section 8)
 end
 
 local function me()
@@ -901,6 +900,8 @@ local function refreshEntry(session)
     if session.lastRejected and #session.lastRejected > 0 then
         entryPanel.warning:SetText("|cffff6060The host refused: "
             .. table.concat(session.lastRejected, ", ") .. "|r")
+    elseif session.priorityNotice then
+        entryPanel.warning:SetText("|cffffaa00" .. session.priorityNotice .. "|r")
     else
         entryPanel.warning:SetText("")
     end

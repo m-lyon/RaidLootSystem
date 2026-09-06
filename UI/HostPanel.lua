@@ -9,7 +9,7 @@
 -- addon-status rows. The frame code renders those answers.
 --
 -- The priority-list section (spec 010 section 10) is built by Modules/PriorityList
--- when it exists; until then the panel says so in its place.
+-- into the frame this file reserves for it.
 
 local ADDON, ns = ...
 
@@ -508,8 +508,8 @@ local function buildPriority(parent)
 end
 
 local function refreshPriority()
-    if ns.PriorityList and ns.PriorityList.RefreshSection then
-        ns.PriorityList.RefreshSection(priority)
+    if ns.Priority then
+        ns.Priority.RefreshSection(priority)
         return
     end
     local order = DB().Priority().order

@@ -94,6 +94,7 @@ local function onOpen(sender, body)
         previous.endsAt = GetTime() + msg.secondsLeft
         previous.tierCount = msg.tierCount
         previous.items = msg.items
+        previous.lootMode = msg.lootMode
         fireChanged()
         return
     end
@@ -107,7 +108,7 @@ local function onOpen(sender, body)
         entries = {},          -- itemIdx -> array, from STATE only
         submitted = {},
         state = C.SESSION_STATE.OPEN,
-        lootMode = Client.LootMode(),
+        lootMode = msg.lootMode,           -- the batch carries its mode (spec 010 section 8)
         openedAt = time(),
     }
     expectedCount, lastSent, warnedForSubmission = nil, {}, false
@@ -225,6 +226,7 @@ local function onResult(sender, body)
     session.results = msg.results
     session.state = C.SESSION_STATE.CLOSED
     session.closedAt = time()
+    if ns.Priority then ns.Priority.OnClientResult(session) end
     if session.rolls and ns.History then ns.History.RecordClient(session) end
     fireChanged()
 end

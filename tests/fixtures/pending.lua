@@ -11,7 +11,8 @@ local function run(input, ns)
     if input.op == "new" then
         local r = Pending.NewRecord(input.award, input.now)
         return { winner = r.winner, takenAt = r.takenAt, expiresAt = r.expiresAt,
-                 delivered = r.delivered, expired = r.expired, copy = r.copy }
+                 delivered = r.delivered, expired = r.expired, copy = r.copy,
+                 priorIndex = r.priorIndex, presentIndices = r.presentIndices }
 
     elseif input.op == "expire" then
         local records = input.records
@@ -55,9 +56,11 @@ return {
             name = "a new record expires two hours after it was taken",
             input = { op = "new", now = T,
                       award = { char = "Bonk", owner = "Dave", itemString = "item:1",
-                                sessionId = "Steve-100", itemIdx = 1, copy = 2 } },
+                                sessionId = "Steve-100", itemIdx = 1, copy = 2,
+                                priorIndex = 3, presentIndices = { 1, 3, 5 } } },
             expected = { winner = "Bonk", takenAt = T, expiresAt = T + 7200,
-                         delivered = false, expired = false, copy = 2 },
+                         delivered = false, expired = false, copy = 2,
+                         priorIndex = 3, presentIndices = { 1, 3, 5 } },
         },
         {
             -- Acceptance: an expired item is retained and marked, not deleted.
