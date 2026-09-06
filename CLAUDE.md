@@ -62,12 +62,21 @@ Add a fixture case for every bug fixed in `Core/`.
 
 ## Verify, don't recall
 
-Several data tables must be checked against the live server rather than written from memory —
-getting them wrong silently makes a class ineligible for a whole item category:
+- **`Data/ClassArmor.lua` ships with `WEAPONS_VERIFIED = false`.** The weapon table was
+  assembled from reference material and has not been checked in game.
+  [`Data/VERIFY.md`](Data/VERIFY.md) lists the doubtful rows in priority order. Do not raise
+  that flag without doing the checks.
+- **`Data/TierTokens.lua`'s `TOKEN_IDS` is intentionally empty.** Detection is by trailing word.
+  Add an id only for a token observed to be misclassified in game, with the link in a comment —
+  a fabricated id silently routes a token to the wrong classes with no fallback behind it.
+- **The exact mod-playerbots `equip` command syntax** (spec 007) is still unconfirmed against
+  the server build.
 
-- WotLK class → weapon-subclass permissions (`Data/ClassArmor.lua`)
-- Tier token item ids (`Data/TierTokens.lua`) — the trailing-word match is the robust path
-- The exact mod-playerbots `equip` command syntax
+## What is and isn't in the tree
+
+`Libs/` and `Data/` are populated; everything else in spec 000's file layout is still to be
+written. There is no `.toc` yet — the first person to add Lua under `Core/` writes it, in the
+load order given in spec 000 §3.
 
 ## Conventions
 
