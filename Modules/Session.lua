@@ -385,6 +385,16 @@ function Session.Open(items)
         GetTime() + seconds, items)
     session.openedAt = time()
     session.openedAtLocal = GetTime()      -- GetTime for elapsed, time() for history
+
+    -- The loot mode and the priority list are frozen here, not at close (spec 010
+    -- section 7): a batch resolves against the list as it stood when it opened.
+    session.lootMode, session.priority = Session.LootModeNow()
+    session.priorityAtOpen = Util.deepCopy(ns.Database.Priority())
+    if items[1].lootSlot then
+        session.source = ns.LootDetect.sourceName      -- nil when no dead target (spec 008)
+    else
+        session.source = "Item link"
+    end
     Session.current = session
     if ns.Award then ns.Award.Snapshot(session) end     -- spec 007: what the host already had
 
@@ -582,9 +592,9 @@ local function rng(low, high)
     return math.random(low, high)
 end
 
---- The loot mode this batch resolves under. SK needs a seeded list, and until
--- spec 010's stateful half exists there is never one, so this reads ROLL.
-local function lootModeFor()
+--- The loot mode a batch opened now would resolve under, and the name -> index map
+-- of the priority list. SK needs a seeded list; without one this reads ROLL.
+function Session.LootModeNow()
     local host = ns.Database.Host()
     local priority = ns.Database.Priority()
     if host.lootMode == C.LOOT_MODE.SK and #priority.order > 0 then
@@ -604,7 +614,7 @@ function Session.Close()
     session.state = C.SESSION_STATE.RESOLVING
     fireChanged()
 
-    local lootMode, priority = lootModeFor()
+    local lootMode, priority = session.lootMode or C.LOOT_MODE.ROLL, session.priority
     local ok, results = pcall(ns.Resolve.batch, session.items, Session.ResolveInput(session),
         { rng = rng, lootMode = lootMode, priority = priority,
           stars = Session.Stars(session) })

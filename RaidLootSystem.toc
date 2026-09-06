@@ -32,12 +32,14 @@ Modules\Session.lua
 Modules\Client.lua
 Modules\Award.lua
 Modules\Pending.lua
+Modules\History.lua
 Modules\Announce.lua
 
 UI\Widgets.lua
 UI\RollWindow.lua
 UI\HostPanel.lua
 UI\HierarchyEditor.lua
+UI\HistoryBrowser.lua
 UI\Minimap.lua
 
 RaidLootSystem.lua

@@ -108,6 +108,7 @@ local function onOpen(sender, body)
         submitted = {},
         state = C.SESSION_STATE.OPEN,
         lootMode = Client.LootMode(),
+        openedAt = time(),
     }
     expectedCount, lastSent, warnedForSubmission = nil, {}, false
     fireChanged()
@@ -223,6 +224,8 @@ local function onResult(sender, body)
 
     session.results = msg.results
     session.state = C.SESSION_STATE.CLOSED
+    session.closedAt = time()
+    if session.rolls and ns.History then ns.History.RecordClient(session) end
     fireChanged()
 end
 
@@ -239,6 +242,11 @@ local function onRolls(sender, body)
     if not session or session.id ~= msg.sessionId then return end
 
     session.rolls = msg.rolls
+    -- The record is written once both RESULT and ROLLS are here (spec 008 section 2),
+    -- whichever arrives second.
+    if session.state == C.SESSION_STATE.CLOSED and ns.History then
+        ns.History.RecordClient(session)
+    end
     fireChanged()
 end
 
@@ -252,7 +260,9 @@ local function abortLocally(reason)
     if not session or session.state ~= C.SESSION_STATE.OPEN then return end
     session.state = C.SESSION_STATE.ABORTED
     session.abortReason = reason
+    session.closedAt = time()
     ns.Print("the batch was cancelled: " .. (C.ABORT_TEXT[reason] or reason) .. ".")
+    if ns.History then ns.History.RecordClient(session) end
     fireChanged()
 end
 

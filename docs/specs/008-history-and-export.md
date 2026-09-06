@@ -39,7 +39,9 @@ context, and splitting them loses that.
   timestamp  = 1757155200,               -- time() at batch open
   closedAt   = 1757155380,
   zone       = "Icecrown Citadel",
-  source     = "Lord Marrowgar",         -- creature name, or "Item link" for the manual path
+  source     = "Lord Marrowgar",         -- creature name, or "Item link" for the manual path.
+                                         -- 3.3.5a has no loot-source API: this is the
+                                         -- looter's dead target at LOOT_OPENED, or nil.
   host       = "Steve",
 
   settings   = {                          -- what the rules were AT THE TIME
@@ -90,6 +92,10 @@ context, and splitting them loses that.
 
 Delivery state is **updated in place** when a pending item is later handed over, so the history
 reflects what actually happened rather than what was intended at resolution time.
+
+A client's record has no `submittedAt`/`revisedAt`, `lootSlot`, `star`, `override` or delivery
+fields: none of those reach the wire. On the host's own machine only the host record is written;
+the host's mirror of its own broadcast would otherwise duplicate the batch.
 
 Under `SK` this update also **triggers a list restore** (010 §6): an award moving away from
 `DELIVERED` returns the character to `priorIndex`. That is why `priorIndex` is recorded rather

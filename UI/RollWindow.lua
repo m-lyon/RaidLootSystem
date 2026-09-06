@@ -919,12 +919,12 @@ end
 -- Results mode refresh (section 5)
 --------------------------------------------------------------------------------
 
-local function resultRow(i)
-    local row = resultRows[i]
+local function resultRow(pool, content, i)
+    local row = pool[i]
     if row then return row end
-    row = CreateFrame("Frame", nil, resultsPanel.content)
+    row = CreateFrame("Frame", nil, content)
     row:SetHeight(16)
-    row:SetWidth(resultsPanel.content:GetWidth())
+    row:SetWidth(content:GetWidth())
     row.left = Widgets.Label(row, "", "GameFontHighlightSmall")
     row.left:SetPoint("LEFT", row, "LEFT", 0, 0)
     row.left:SetJustifyH("LEFT")
@@ -959,21 +959,27 @@ local function resultRow(i)
     row.status:SetPoint("RIGHT", row.award, "LEFT", -6, 0)
     row.status:SetJustifyH("RIGHT")
     row.status:Hide()
-    resultRows[i] = row
+    pool[i] = row
     return row
 end
 
-local function refreshResults(session)
-    local sk = isSK(session)
-    local owners = ownersFor(session)
-    local host = ns.Session.IsHost() and ns.Award ~= nil
+--- Render a results view into `content`, reusing `pool`'s rows. One rendering
+-- component for the roll window and the history browser (spec 008 section 5).
+--
+-- @param view { sessionId, items = { { idx, itemString, count, label } }, results, rolls,
+--               owners, isSK, tierCount, host, awardRecord = function(itemIdx, copy),
+--               outcome, abortReason }
+-- @return the rendered height
+function RollWindow.RenderResults(content, pool, view)
+    local sk = view.isSK
     local n, y = 0, 0
 
     local function line(left, right, height, font)
         n = n + 1
-        local row = resultRow(n)
+        local row = resultRow(pool, content, n)
         row:ClearAllPoints()
-        row:SetPoint("TOPLEFT", resultsPanel.content, "TOPLEFT", 0, -y)
+        row:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -y)
+        row:SetWidth(content:GetWidth())
         row:SetHeight(height or 16)
         row.left:SetFontObject(font or "GameFontHighlightSmall")
         row.left:SetText(left or "")
@@ -986,9 +992,21 @@ local function refreshResults(session)
         return row
     end
 
-    for _, item in ipairs(session.items) do
-        local table_ = RollWindow.ResultTable(item.idx, session.results, session.rolls, owners, sk)
-        local header = itemLabel(session, item) .. (item.count > 1 and (" x" .. item.count) or "")
+    local function labelOf(idx)
+        for _, item in ipairs(view.items) do
+            if item.idx == idx then return item.label or item.itemString end
+        end
+        return "another item"
+    end
+
+    if view.outcome == "ABORTED" then
+        line("|cffff6060Cancelled: " .. (C.ABORT_TEXT[view.abortReason] or tostring(view.abortReason)) .. "|r",
+            "", 20, "GameFontNormal")
+    end
+
+    for _, item in ipairs(view.items) do
+        local table_ = RollWindow.ResultTable(item.idx, view.results, view.rolls, view.owners, sk)
+        local header = (item.label or item.itemString) .. (item.count > 1 and (" x" .. item.count) or "")
         line(header, table_.degraded and "|cffff6600degraded: re-rolls exhausted|r" or "",
             20, "GameFontNormal")
 
@@ -998,47 +1016,51 @@ local function refreshResults(session)
         for _, w in ipairs(table_.winners) do
             local text = "   |cff66ff66Winner|r " .. colouredChar(w.char)
                 .. " (" .. tostring(w.owner or "?") .. ") "
-                .. ns.Tiers.label(w.tier, session.tierCount)
+                .. ns.Tiers.label(w.tier, view.tierCount)
             local right = sk and ("position " .. tostring(w.listIdx or "?") .. " -> bottom")
                 or ("roll " .. tostring(w.roll))
             if item.count > 1 then text = text .. "  |cff888888copy " .. w.copy .. "|r" end
             local row = line(text, right)
-            local record = host and ns.Award.Get(session.id, item.idx, w.copy) or nil
+            local record = view.awardRecord and view.awardRecord(item.idx, w.copy) or nil
             if record then
-                -- The host's award control (section 5, spec 007): the state, and the
-                -- one action it allows next. Nobody else sees it.
-                row.right:Hide()
-                row.award.sessionId, row.award.itemIdx, row.award.copy = session.id, item.idx, w.copy
+                -- The delivery state (spec 007), and for the host the one action it
+                -- allows next. Nobody else sees the control.
                 local D = C.DELIVERY
-                if record.delivery == D.DELIVERED then
-                    row.status:SetText("|cff66ff66" .. ns.Award.StatusText(record) .. "|r")
-                    row.award:Hide()
-                elseif record.delivery == D.PENDING then
-                    row.status:SetText("|cffffaa00" .. ns.Award.StatusText(record) .. "|r")
-                    row.award.action = "deliver"
-                    row.award:SetText("Deliver")
-                    row.award:Show()
-                elseif record.delivery == D.LOST then
-                    row.status:SetText("|cffff6060" .. ns.Award.StatusText(record) .. "|r")
-                    row.award.action = "award"
-                    row.award:SetText("Retry")
-                    row.award:Show()
+                local colour = record.delivery == D.DELIVERED and "|cff66ff66"
+                    or record.delivery == D.PENDING and "|cffffaa00"
+                    or (record.delivery == D.FAILED or record.delivery == D.LOST) and "|cffff6060"
+                    or "|cffaaaaaa"
+                row.status:SetText(colour .. ns.Award.StatusText(record) .. "|r")
+                if view.host then
+                    row.right:Hide()
+                    row.award.sessionId, row.award.itemIdx, row.award.copy =
+                        view.sessionId, item.idx, w.copy
+                    if record.delivery == D.DELIVERED then
+                        row.award:Hide()
+                    elseif record.delivery == D.PENDING then
+                        row.award.action = "deliver"
+                        row.award:SetText("Deliver")
+                        row.award:Show()
+                    else
+                        row.award.action = "award"
+                        row.award:SetText(record.delivery == D.AWAITING and "Award" or "Retry")
+                        if ns.Award.Retryable(record) then row.award:Show() else row.award:Hide() end
+                    end
+                    row.status:ClearAllPoints()
+                    row.status:SetPoint("RIGHT", row.award:IsShown() and row.award or row, "LEFT", -6, 0)
+                    if not row.award:IsShown() then
+                        row.status:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+                    end
                 else
-                    local failed = record.delivery == D.FAILED
-                    row.status:SetText((failed and "|cffff6060" or "|cffaaaaaa")
-                        .. ns.Award.StatusText(record) .. "|r")
-                    row.award.action = "award"
-                    row.award:SetText(failed and "Retry" or "Award")
-                    if ns.Award.Retryable(record) then row.award:Show() else row.award:Hide() end
+                    row.right:SetText(right .. "  " .. colour .. ns.Award.StatusText(record) .. "|r")
                 end
-                row.status:Show()
+                if view.host then row.status:Show() end
             end
         end
         for _, r in ipairs(table_.rows) do
-            local tierLabel = ns.Tiers.label(r.tier, session.tierCount)
-            local wonItem = r.wonItemIdx and itemByIdx(session, r.wonItemIdx)
+            local tierLabel = ns.Tiers.label(r.tier, view.tierCount)
             local right = RollWindow.RowText(r, sk, tierLabel,
-                wonItem and itemLabel(session, wonItem) or nil)
+                r.wonItemIdx and labelOf(r.wonItemIdx) or nil)
             local left = "      " .. tierLabel .. "  " .. colouredChar(r.char)
                 .. " |cff888888(" .. tostring(r.owner or "?") .. ")|r"
             if r.status ~= C.ROLL_STATUS.ROLLED then
@@ -1047,14 +1069,32 @@ local function refreshResults(session)
             end
             line(left, right)
         end
-        if not session.rolls then
+        if not view.rolls then
             line("      |cff888888waiting for the roll record...|r", "")
         end
         y = y + 6
     end
 
-    for i = n + 1, #resultRows do resultRows[i]:Hide() end
-    resultsPanel.content:SetHeight(math.max(y, 1))
+    for i = n + 1, #pool do pool[i]:Hide() end
+    content:SetHeight(math.max(y, 1))
+    return y
+end
+
+local function refreshResults(session)
+    local items = {}
+    for i, item in ipairs(session.items) do
+        items[i] = { idx = item.idx, itemString = item.itemString, count = item.count,
+                     label = itemLabel(session, item) }
+    end
+    local host = ns.Session.IsHost() and ns.Award ~= nil
+    RollWindow.RenderResults(resultsPanel.content, resultRows, {
+        sessionId = session.id, items = items,
+        results = session.results, rolls = session.rolls, owners = ownersFor(session),
+        isSK = isSK(session), tierCount = session.tierCount, host = host,
+        awardRecord = host and function(itemIdx, copy)
+            return ns.Award.Get(session.id, itemIdx, copy)
+        end or nil,
+    })
 
     frame:SetWidth(PAD * 2 + HEADER_W + MAX_VISIBLE_COLS * CELL_W + 8)
     frame:SetHeight(70 + RESULTS_H + PAD)

@@ -81,6 +81,14 @@ function DB.History()  return section("history")  end
 function DB.Pending()  return section("pending")  end
 function DB.Scratch()  return section("scratch")  end
 
+--- History is pruned by replacing the array (spec 008 section 4); the accessor keeps
+-- the global out of every other file.
+function DB.ReplaceHistory(records)
+    local db = DB.db or DB.Load()
+    db.history = records
+    return records
+end
+
 --- The tier count to display outside a raid, or before a host announces one.
 function DB.DefaultTierCount()
     return Util.clamp(DB.Host().tierCount or 3, C.MIN_TIER_COUNT, C.MAX_TIER_COUNT)
