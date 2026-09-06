@@ -27,7 +27,8 @@ local function run(input, ns)
 
     elseif input.op == "dirty" then
         local accepted = RW.AcceptedFor(input.entries, input.me)
-        return { dirty = RW.IsDirty(input.localEntries, accepted), accepted = #accepted }
+        return { dirty = RW.IsDirty(input.localEntries, accepted, input.lastSent),
+                 accepted = #accepted }
 
     elseif input.op == "outstanding" then
         local inCount, total, names = RW.Outstanding(input.expected, input.submitted)
@@ -239,6 +240,26 @@ return {
             expected = { dirty = false, accepted = 0 },
         },
         {
+            -- STATE cannot carry a star, so a moved star is judged against the last SUBMIT.
+            name = "a moved star is dirty even though the accepted pairs match",
+            input = { op = "dirty", me = "Steve",
+                      entries = { [1] = { { char = "Steve", owner = "Steve", tier = 1 } },
+                                  [2] = { { char = "Steve", owner = "Steve", tier = 1 } } },
+                      lastSent = { { itemIdx = 1, char = "Steve", star = true },
+                                   { itemIdx = 2, char = "Steve" } },
+                      localEntries = { { itemIdx = 1, char = "Steve" },
+                                       { itemIdx = 2, char = "Steve", star = true } } },
+            expected = { dirty = true, accepted = 2 },
+        },
+        {
+            name = "unchanged flags against the last submit are clean",
+            input = { op = "dirty", me = "Steve",
+                      entries = { [1] = { { char = "Steve", owner = "Steve", tier = 1 } } },
+                      lastSent = { { itemIdx = 1, char = "Steve", override = true } },
+                      localEntries = { { itemIdx = 1, char = "Steve", override = true } } },
+            expected = { dirty = false, accepted = 1 },
+        },
+        {
             name = "the counter names who is still out",
             input = { op = "outstanding", expected = { "Steve", "Dave", "Anna" },
                       submitted = { Dave = true } },
@@ -296,6 +317,26 @@ return {
                 winners = { "1:Bonk(Dave)", "2:Sneaky(Steve)" },
                 rows = { "T1 Bonk(Dave) 60 WON", "T2 Sneaky(Steve) 40 WON", "T2 Locky(Steve) 15" },
             },
+        },
+        {
+            -- Between RESULT and ROLLS arriving: the winner is known, the table is not.
+            name = "a result with no roll record yet lists the winner and no rows",
+            input = { op = "results", itemIdx = 1, results = RESULTS, rolls = nil,
+                      owners = OWNERS, isSK = false },
+            expected = { unclaimed = false, degraded = false,
+                         winners = { "1:Steve(Steve)" }, rows = {} },
+        },
+        {
+            -- Under ROLL items are independent: a character can win two, and its row
+            -- on the second is a win, never "withdrawn".
+            name = "under ROLL a character winning two items is not withdrawn from either",
+            input = { op = "results", itemIdx = 2, isSK = false, owners = OWNERS,
+                      results = { { itemIdx = 1, winner = "Steve", tier = 1, roll = 90, outcome = "WON" },
+                                  { itemIdx = 2, winner = "Steve", tier = 1, roll = 70, outcome = "WON" } },
+                      rolls = { { itemIdx = 2, char = "Steve", tier = 1, roll = 70, listIdx = 0, status = "", rerolled = {} },
+                                { itemIdx = 2, char = "Chop", tier = 1, roll = 20, listIdx = 0, status = "", rerolled = {} } } },
+            expected = { unclaimed = false, degraded = false, winners = { "1:Steve(Steve)" },
+                         rows = { "T1 Steve(Steve) 70 WON", "T1 Chop(Dave) 20" } },
         },
         {
             name = "an unclaimed item says so",

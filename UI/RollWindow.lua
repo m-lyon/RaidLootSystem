@@ -146,10 +146,26 @@ local function pairSignature(entries)
     return table.concat(keys, ",")
 end
 
+local function flagSignature(entries)
+    local keys = {}
+    for _, e in ipairs(entries) do
+        keys[#keys + 1] = tostring(e.itemIdx) .. "/" .. tostring(e.char):lower()
+            .. (e.override and "!" or "") .. (e.star and "*" or "")
+    end
+    table.sort(keys)
+    return table.concat(keys, ",")
+end
+
 --- Do the local ticks differ from what the host has accepted for this player?
--- Only (item, character) pairs are compared: STATE carries nothing else.
-function RollWindow.IsDirty(localEntries, accepted)
-    return pairSignature(localEntries) ~= pairSignature(accepted)
+--
+-- (item, character) pairs are compared against STATE, which carries nothing else. The
+-- override and star flags are compared against what this client last sent: a moved
+-- star is a material change under SK (spec 010 section 7) that STATE cannot reflect.
+-- @param lastSent  the entries of the last SUBMIT, or nil before the first
+function RollWindow.IsDirty(localEntries, accepted, lastSent)
+    if pairSignature(localEntries) ~= pairSignature(accepted) then return true end
+    if lastSent and flagSignature(localEntries) ~= flagSignature(lastSent) then return true end
+    return false
 end
 
 --- This player's entries as the host last reported them.
@@ -337,7 +353,10 @@ local ROW_H = 26
 local COL_HEADER_H = 48
 local MAX_VISIBLE_COLS = 6     -- past this the columns scroll (section 3)
 local DETAIL_H = 84
-local FOOTER_H = 34
+local TOGGLE_GAP = 22          -- below the grid; the horizontal slider lives in it
+local TOGGLE_H = 20
+local WARN_H = 16
+local BUTTON_H = 22
 local PAD = 16
 local RESULTS_H = 380
 
@@ -412,14 +431,18 @@ local function infoFor(session, item)
     if info then return info end
     if not infoByIdx["pending" .. item.idx] then
         infoByIdx["pending" .. item.idx] = true
+        -- A cached item answers synchronously. Refreshing from inside a refresh would
+        -- rebuild the grid once per item, nested; the caller is mid-refresh and will
+        -- read the answer itself.
+        local immediate = true
         ns.ItemInfo.Request(item.itemString, function(result)
-            if infoSessionId == session.id then
-                infoByIdx[item.idx] = result
-                RollWindow.Refresh()
-            end
+            if infoSessionId ~= session.id then return end
+            infoByIdx[item.idx] = result
+            if not immediate then RollWindow.Refresh() end
         end)
+        immediate = false
     end
-    return nil
+    return infoByIdx[item.idx]
 end
 
 local function itemLabel(session, item)
@@ -872,7 +895,7 @@ local function refreshEntry(session)
     local submitted = session.submitted[myName] == true or lastSentSessionId == session.id
     entryPanel.submit:SetText(submitted and "Revise" or
         string.format("Submit %d entr%s", #localEntries, #localEntries == 1 and "y" or "ies"))
-    local dirty = submitted and RollWindow.IsDirty(localEntries, accepted)
+    local dirty = submitted and RollWindow.IsDirty(localEntries, accepted, ns.Client.LastSent())
     entryPanel.dirty:SetText(dirty and "|cffffaa00unsent changes|r" or "")
 
     if session.lastRejected and #session.lastRejected > 0 then
@@ -882,10 +905,12 @@ local function refreshEntry(session)
         entryPanel.warning:SetText("")
     end
 
-    -- Window size follows the grid.
+    -- Window size follows the grid. The terms are the entry panel's anchors, top to
+    -- bottom: column header, grid, the gap holding the slider, the toggle, the detail
+    -- panel, the warning line, the buttons.
     local width = PAD * 2 + HEADER_W + visibleCols * CELL_W + 8
-    local height = 70 + COL_HEADER_H + gridH + (hslider:IsShown() and 20 or 0)
-        + 26 + DETAIL_H + FOOTER_H + PAD
+    local height = 70 + COL_HEADER_H + gridH + TOGGLE_GAP + TOGGLE_H + 4 + DETAIL_H
+        + 2 + WARN_H + 6 + BUTTON_H + PAD
     frame:SetWidth(math.max(width, 420))
     frame:SetHeight(height)
 end
@@ -1135,9 +1160,9 @@ local function buildEntryPanel(parent)
 
     panel.hideToggle = CreateFrame("CheckButton", "RaidLootSystemRollWindowHide", panel,
         "UICheckButtonTemplate")
-    panel.hideToggle:SetWidth(20)
-    panel.hideToggle:SetHeight(20)
-    panel.hideToggle:SetPoint("TOPLEFT", rowHeaders, "BOTTOMLEFT", 0, -22)
+    panel.hideToggle:SetWidth(TOGGLE_H)
+    panel.hideToggle:SetHeight(TOGGLE_H)
+    panel.hideToggle:SetPoint("TOPLEFT", rowHeaders, "BOTTOMLEFT", 0, -TOGGLE_GAP)
     _G[panel.hideToggle:GetName() .. "Text"]:SetText("Hide ineligible rows")
     panel.hideToggle:SetChecked(false)
     panel.hideToggle:SetScript("OnClick", function() RollWindow.Refresh() end)
@@ -1155,15 +1180,18 @@ local function buildEntryPanel(parent)
     panel.warning = Widgets.Label(panel, "", "GameFontHighlightSmall")
     panel.warning:SetPoint("TOPLEFT", detailPanel, "BOTTOMLEFT", 0, -2)
     panel.warning:SetPoint("RIGHT", panel, "RIGHT", 0, 0)
+    panel.warning:SetHeight(WARN_H)
     panel.warning:SetJustifyH("LEFT")
 
-    panel.pass = Widgets.Button(panel, "Pass all", 90, 22, function() submitGrid(true) end)
-    panel.pass:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 0, 0)
+    -- The buttons hang off the warning line, never off the panel bottom, so they cannot
+    -- cover it whatever the grid height works out to.
+    panel.pass = Widgets.Button(panel, "Pass all", 90, BUTTON_H, function() submitGrid(true) end)
+    panel.pass:SetPoint("TOPLEFT", panel.warning, "BOTTOMLEFT", 0, -6)
     Widgets.Tooltip(panel.pass, "Pass all",
         "Clear every tick and submit nothing. That still counts you as in, so the host can close.")
 
-    panel.submit = Widgets.Button(panel, "Submit", 130, 22, function() submitGrid(false) end)
-    panel.submit:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", 0, 0)
+    panel.submit = Widgets.Button(panel, "Submit", 130, BUTTON_H, function() submitGrid(false) end)
+    panel.submit:SetPoint("TOPRIGHT", panel.warning, "BOTTOMRIGHT", 0, -6)
 
     panel.dirty = Widgets.Label(panel, "", "GameFontHighlightSmall")
     panel.dirty:SetPoint("RIGHT", panel.submit, "LEFT", -8, 0)
@@ -1292,6 +1320,9 @@ local function onClientChanged(session)
         RollWindow.Refresh()
         return
     end
+    -- A SYNC resend can bring an aborted mirror back to OPEN (Client.lua); the abort
+    -- linger must not then close a live grid.
+    if session.state ~= C.SESSION_STATE.ABORTED then abortHideAt = nil end
     if session.state == C.SESSION_STATE.OPEN then
         if lastShownSessionId ~= session.id then
             -- A new batch opens the window (section 2). A resend of the same batch

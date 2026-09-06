@@ -13,11 +13,19 @@ local pulseElapsed = 0
 
 --- Fade the button in and out while a batch is open and this player is not in
 -- (spec 005 section 6). Checked on a light throttle; nothing to do most of the time.
+local sinceCheck = 0
+local attention = false
+
 local function pulse(_, elapsed)
     pulseElapsed = pulseElapsed + elapsed
+    sinceCheck = sinceCheck + elapsed
+    if sinceCheck >= 0.1 then
+        sinceCheck = 0
+        attention = ns.RollWindow ~= nil and ns.RollWindow.NeedsAttention()
+    end
     local button = _G[BUTTON_NAME]
     if not button then return end
-    if ns.RollWindow and ns.RollWindow.NeedsAttention() then
+    if attention then
         button:SetAlpha(0.55 + 0.45 * math.abs(math.sin(pulseElapsed * 3)))
     elseif button:GetAlpha() ~= 1 then
         button:SetAlpha(1)

@@ -314,6 +314,13 @@ end
 -- Resync (section 10)
 --------------------------------------------------------------------------------
 
+--- The entries of this client's last SUBMIT for the open batch, for the roll window's
+-- dirty check. nil before the first submit of a batch.
+function Client.LastSent()
+    if expectedCount == nil then return nil end
+    return lastSent
+end
+
 --- Ask the host to resend the batch. At most once every C.SYNC_INTERVAL seconds.
 function Client.RequestSync()
     local now = GetTime()

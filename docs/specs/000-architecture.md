@@ -145,6 +145,11 @@ RaidLootSystemDB = {
 
   history = { --[[ see spec 008 ]] },
   pending = { --[[ see spec 007 ]] },
+
+  scratch = {                        -- unsent roll-window ticks, so a /reload mid-batch
+    sessionId = "",                  -- keeps them (005 §6). Reset when the batch changes.
+    ticks     = {},                  -- itemIdx -> charName -> { override, star }
+  },
 }
 ```
 
