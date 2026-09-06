@@ -44,6 +44,16 @@ local function run(input, ns)
     elseif input.op == "collapse" then
         return { items = project(LootDetect.Collapse(input.rows)) }
 
+    elseif input.op == "partition" then
+        local rows, skipped = LootDetect.Partition(input.scanRows, input.manualIds,
+            input.manualRows, input.threshold)
+        local candidates = project(LootDetect.Collapse(rows))
+        local out = {}
+        for i, skip in ipairs(skipped) do
+            out[i] = tostring(skip.lootSlot) .. ":" .. skip.reason
+        end
+        return { candidates = candidates, skipped = out }
+
     elseif input.op == "prune" then
         local gone = input.gone
         local kept, lost = LootDetect.Prune(input.items, function(slot)
@@ -213,6 +223,85 @@ return {
                 { idx = 1, itemString = "item:40000:0:0:0:0:0:0:0:0",
                   count = 1, slots = "", units = "" },
             } },
+        },
+
+        ----------------------------------------------------------------------
+        -- The candidate partition (section 2, spec 006 section 3)
+        ----------------------------------------------------------------------
+        {
+            name = "the partition keeps candidates and names why the rest were skipped",
+            input = { op = "partition", threshold = 4, scanRows = {
+                { lootSlot = 1, quantity = 1, quality = 4, info = EPIC_CHEST },
+                { lootSlot = 2, quantity = 1, quality = 4, info = MOUNT },
+                { lootSlot = 3, quantity = 1, quality = 3, info = info(41001, { equipLoc = "INVTYPE_CHEST", quality = 3 }) },
+            } },
+            expected = {
+                candidates = { { idx = 1, itemString = "item:40000:0:0:0:0:0:0:0:0",
+                                 count = 1, slots = "1", units = "1=1" } },
+                skipped = { "2:NOT_EQUIPPABLE", "3:BELOW_QUALITY" },
+            },
+        },
+        {
+            -- Added by hand from the skipped list: it joins WITH its loot slot, so the
+            -- award still goes through master loot.
+            name = "a skipped row added by hand is a candidate with its slot",
+            input = { op = "partition", threshold = 4, manualIds = { [44083] = true }, scanRows = {
+                { lootSlot = 1, quantity = 1, quality = 4, info = EPIC_CHEST },
+                { lootSlot = 2, quantity = 1, quality = 4, info = MOUNT },
+            } },
+            expected = {
+                candidates = { { idx = 1, itemString = "item:40000:0:0:0:0:0:0:0:0",
+                                 count = 1, slots = "1", units = "1=1" },
+                               { idx = 2, itemString = "item:44083:0:0:0:0:0:0:0:0",
+                                 count = 1, slots = "2", units = "2=1" } },
+                skipped = {},
+            },
+        },
+        {
+            -- The host's manual add survives another slot being looted out from under
+            -- the list: the partition is recomputed from what is left.
+            name = "a manual add stays a candidate after another slot clears",
+            input = { op = "partition", threshold = 4, manualIds = { [44083] = true }, scanRows = {
+                { lootSlot = 2, quantity = 1, quality = 4, info = MOUNT },
+            } },
+            expected = {
+                candidates = { { idx = 1, itemString = "item:44083:0:0:0:0:0:0:0:0",
+                                 count = 1, slots = "2", units = "2=1" } },
+                skipped = {},
+            },
+        },
+        {
+            name = "lowering the bar admits a blue; raising it again re-skips it",
+            input = { op = "partition", threshold = 3, scanRows = {
+                { lootSlot = 3, quantity = 1, quality = 3, info = info(41001, { equipLoc = "INVTYPE_CHEST", quality = 3 }) },
+            } },
+            expected = {
+                candidates = { { idx = 1, itemString = "item:41001:0:0:0:0:0:0:0:0",
+                                 count = 1, slots = "3", units = "3=1" } },
+                skipped = {},
+            },
+        },
+        {
+            name = "withdrawing a manual add returns the row to skipped with its reason",
+            input = { op = "partition", threshold = 4, manualIds = {}, scanRows = {
+                { lootSlot = 2, quantity = 1, quality = 4, info = MOUNT },
+            } },
+            expected = { candidates = {}, skipped = { "2:NOT_EQUIPPABLE" } },
+        },
+        {
+            name = "an item-link addition joins with no slot, after the corpse rows",
+            input = { op = "partition", threshold = 4,
+                      manualRows = { { quantity = 1, info = info(50001) } },
+                      scanRows = {
+                          { lootSlot = 1, quantity = 1, quality = 4, info = EPIC_CHEST },
+                      } },
+            expected = {
+                candidates = { { idx = 1, itemString = "item:40000:0:0:0:0:0:0:0:0",
+                                 count = 1, slots = "1", units = "1=1" },
+                               { idx = 2, itemString = "item:50001:0:0:0:0:0:0:0:0",
+                                 count = 1, slots = "", units = "" } },
+                skipped = {},
+            },
         },
 
         ----------------------------------------------------------------------

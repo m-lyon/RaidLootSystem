@@ -66,6 +66,36 @@ function LootDetect.IsCandidate(info, quality, threshold)
 end
 
 --------------------------------------------------------------------------------
+-- Pure: the candidate partition (section 2, spec 006 section 3)
+--------------------------------------------------------------------------------
+
+--- Split the corpse's slots into candidate rows and skipped rows, honouring the
+-- host's manual additions. One function, so a manual add, a lost slot and a moved
+-- quality bar cannot disagree about the list.
+--
+-- @param scanRows   every slot of the last scan: { lootSlot, quantity, quality, info }
+-- @param manualIds  set of item ids the host added by hand from the skipped list
+-- @param manualRows item-link additions with no loot slot: { quantity, info }
+-- @param threshold  host.qualityThreshold
+-- @return rows for Collapse, skipped array of { lootSlot, info, quality, reason }
+function LootDetect.Partition(scanRows, manualIds, manualRows, threshold)
+    local rows, skipped = {}, {}
+    manualIds = manualIds or {}
+    for _, row in ipairs(scanRows or {}) do
+        local id = row.info and row.info.itemId
+        local ok, reason = LootDetect.IsCandidate(row.info, row.quality, threshold)
+        if ok or (id and manualIds[id]) then
+            rows[#rows + 1] = row
+        else
+            skipped[#skipped + 1] = { lootSlot = row.lootSlot, info = row.info,
+                                      quality = row.quality, reason = reason }
+        end
+    end
+    for _, row in ipairs(manualRows or {}) do rows[#rows + 1] = row end
+    return rows, skipped
+end
+
+--------------------------------------------------------------------------------
 -- Pure: duplicate stacks (section 2)
 --------------------------------------------------------------------------------
 
@@ -197,8 +227,9 @@ function LootDetect.RegisterListener(fn)
     listeners[#listeners + 1] = fn
 end
 
-local function fireChanged()
-    for _, fn in ipairs(listeners) do fn(LootDetect.candidates) end
+--- @param newScan true when a fresh corpse replaced the list, false for a rebuild
+local function fireChanged(newScan)
+    for _, fn in ipairs(listeners) do fn(LootDetect.candidates, newScan == true) end
 end
 
 --------------------------------------------------------------------------------
@@ -209,26 +240,12 @@ local function threshold()
     return ns.Database.Host().qualityThreshold or 4
 end
 
---- Candidates = the scan rows that pass the rule or were added by hand, plus the
--- item-link additions, collapsed; skipped = the rest, with their reasons. One
--- function, so a manual add and a slot loss cannot disagree about the list.
-local function rebuild()
-    local rows, skipped = {}, {}
-    for _, row in ipairs(scanRows) do
-        local id = row.info and row.info.itemId
-        local ok, reason = LootDetect.IsCandidate(row.info, row.quality, threshold())
-        if ok or (id and manualIds[id]) then
-            rows[#rows + 1] = row
-        else
-            skipped[#skipped + 1] = { lootSlot = row.lootSlot, info = row.info,
-                                      quality = row.quality, reason = reason }
-        end
-    end
-    for _, row in ipairs(manualRows) do rows[#rows + 1] = row end
-
+--- Recompute the candidate and skipped lists from the retained scan (Partition).
+local function rebuild(newScan)
+    local rows, skipped = LootDetect.Partition(scanRows, manualIds, manualRows, threshold())
     LootDetect.candidates = LootDetect.Collapse(rows)
     LootDetect.skipped = skipped
-    fireChanged()
+    fireChanged(newScan)
 end
 
 --- Scan the open loot window. Asynchronous, because an uncached item takes up to five
@@ -257,7 +274,7 @@ function LootDetect.Scan(callback)
         -- A new corpse: whatever the host added by hand was for the last one.
         scanRows, manualIds, manualRows = slots, {}, {}
         LootDetect.scanning = false
-        rebuild()
+        rebuild(true)
         if callback then callback(LootDetect.candidates) end
     end)
 end

@@ -128,14 +128,12 @@ end
 --- The quality bar the corpse scan applies (spec 004 section 2). The host panel (spec 006)
 -- owns this setting; this is here so the bar can be moved without one.
 local function setQuality(argument)
-    local quality = tonumber(argument)
-    if not quality or quality < 0 or quality > 5 then
-        ns.Print("quality must be between 0 and 5. 3 is rare, 4 is epic.")
+    local ok, why = ns.Session.ChangeSetting("qualityThreshold", tonumber(argument))
+    if not ok then
+        ns.Print(why)
         return
     end
-    ns.Database.Host().qualityThreshold = math.floor(quality)
-    ns.LootDetect.Rescan()
-    ns.Print("only loot of quality " .. math.floor(quality) .. " and above is offered.")
+    ns.Print("only loot of quality " .. tonumber(argument) .. " and above is offered.")
 end
 
 local function help()
@@ -150,7 +148,7 @@ local function help()
     ns.Print("  /rls request      ask everyone to resend theirs")
     ns.Print("  /rls loot         list what the open corpse has worth rolling for")
     ns.Print("  /rls start        open a batch on those items (host)")
-    ns.Print("  /rls quality <0-5> set the quality bar the corpse scan applies")
+    ns.Print("  /rls quality <3|4> set the quality bar the corpse scan applies (rare/epic)")
     ns.Print("  /rls roll <link>  open a batch on one item link (host)")
     ns.Print("  /rls close        resolve the open batch now (host)")
     ns.Print("  /rls cancel       cancel the open batch (host)")

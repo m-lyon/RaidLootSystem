@@ -100,7 +100,8 @@ local PAD = 16
 local frame, content
 local settings, candidates, health, priority, live, banner
 local candidateRows, healthRows, liveRows = {}, {}, {}
-local ticked = {}                   -- itemIdx -> false when the host unticked it
+local ticked = {}                   -- itemId -> false when the host unticked it. Keyed by
+                                    -- id, not idx: a rebuild renumbers idx.
 local refreshAccumulator = 0
 
 local function DB() return ns.Database end
@@ -162,9 +163,9 @@ local function buildSettings(parent)
     local panel = section(parent, "Raid settings", 214)
 
     panel.tier = Widgets.Slider(panel, "RaidLootSystemHostTierSlider", "Tier count",
-        C.MIN_TIER_COUNT, C.MAX_TIER_COUNT, 1, function(value)
-            change("tierCount", math.floor(value + 0.5))
-        end)
+        C.MIN_TIER_COUNT, C.MAX_TIER_COUNT, 1,
+        function(value) change("tierCount", math.floor(value + 0.5)) end,
+        function(value) panel.tier.text:SetText("Tier count: " .. math.floor(value + 0.5)) end)
     panel.tier:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, -40)
 
     panel.tierNote = Widgets.Label(panel, "", "GameFontDisableSmall")
@@ -172,10 +173,11 @@ local function buildSettings(parent)
     panel.tierNote:SetWidth(200)
     panel.tierNote:SetJustifyH("LEFT")
 
+    local function timerValue(value) return math.floor(value / 15 + 0.5) * 15 end
     panel.timer = Widgets.Slider(panel, "RaidLootSystemHostTimerSlider", "Entry timer (s)",
-        C.MIN_TIMER_SECONDS, C.MAX_TIMER_SECONDS, 15, function(value)
-            change("timerSeconds", math.floor(value / 15 + 0.5) * 15)
-        end)
+        C.MIN_TIMER_SECONDS, C.MAX_TIMER_SECONDS, 15,
+        function(value) change("timerSeconds", timerValue(value)) end,
+        function(value) panel.timer.text:SetText("Entry timer: " .. timerValue(value) .. "s") end)
     panel.timer:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, -104)
 
     panel.quality = Widgets.Dropdown(panel, "RaidLootSystemHostQuality", 110,
@@ -250,10 +252,14 @@ end
 -- Batch candidates (section 3)
 --------------------------------------------------------------------------------
 
+local function tickKey(item)
+    return (item.info and item.info.itemId) or item.itemString
+end
+
 local function tickedItems()
     local items = {}
     for _, item in ipairs(ns.LootDetect.candidates) do
-        if ticked[item.idx] ~= false then items[#items + 1] = item end
+        if ticked[tickKey(item)] ~= false then items[#items + 1] = item end
     end
     return items
 end
@@ -334,7 +340,7 @@ local function candidateRow(i)
     row.check:SetHeight(20)
     row.check:SetPoint("LEFT", row, "LEFT", 0, 0)
     row.check:SetScript("OnClick", function(self)
-        ticked[row.itemIdx] = (self:GetChecked() == 1)
+        ticked[row.tickKey] = (self:GetChecked() == 1)
         HostPanel.Refresh()
     end)
 
@@ -379,11 +385,12 @@ local function refreshCandidates()
         n = n + 1
         local row = candidateRow(n)
         row.itemIdx = item.idx
+        row.tickKey = tickKey(item)
         row.itemString = item.itemString
         row.link = item.info and item.info.link
         row:ClearAllPoints()
         row:SetPoint("TOPLEFT", candidates.list, "TOPLEFT", 0, -(n - 1) * ROW_H)
-        row.check:SetChecked(ticked[item.idx] ~= false)
+        row.check:SetChecked(ticked[row.tickKey] ~= false)
         row.icon:SetTexture(item.info and item.info.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
         local label = LootDetect.Label(item)
         if item.count > 1 then label = label .. " |cffffcc00x" .. item.count .. "|r" end
@@ -721,8 +728,10 @@ end
 
 function HostPanel.Init()
     ns.Session.RegisterListener(function() HostPanel.Refresh() end)
-    ns.LootDetect.RegisterListener(function()
-        ticked = {}                          -- a new list means a fresh set of ticks
+    ns.LootDetect.RegisterListener(function(_, newScan)
+        -- A new corpse means a fresh set of ticks; a rebuild of the same one (a manual
+        -- add, a lost slot, a moved quality bar) keeps what the host unticked.
+        if newScan then ticked = {} end
         HostPanel.Refresh()
     end)
     ns.Roster.RegisterListener(function() HostPanel.Refresh() end)

@@ -118,9 +118,11 @@ function Widgets.EditBox(parent, width, height)
     return e
 end
 
---- A labelled slider. `onChange(value)` fires on user changes only; SetValueQuiet
--- moves it without firing, for refreshes.
-function Widgets.Slider(parent, globalName, label, minValue, maxValue, step, onChange)
+--- A labelled slider. `onChange(value)` fires once, when the user lets go: a drag
+-- passes through every step, and a setting that broadcasts and announces on each
+-- would spam the raid. `onPreview(value)` fires on every step, for the label.
+-- SetValueQuiet moves the slider without firing either, for refreshes.
+function Widgets.Slider(parent, globalName, label, minValue, maxValue, step, onChange, onPreview)
     local s = CreateFrame("Slider", globalName, parent, "OptionsSliderTemplate")
     s:SetWidth(180)
     s:SetHeight(16)
@@ -133,12 +135,19 @@ function Widgets.Slider(parent, globalName, label, minValue, maxValue, step, onC
     s.quiet = false
     s:SetScript("OnValueChanged", function(self, value)
         if self.quiet then return end
-        onChange(value)
+        self.dirty = true
+        if onPreview then onPreview(value) end
+    end)
+    s:SetScript("OnMouseUp", function(self)
+        if not self.dirty then return end
+        self.dirty = false
+        onChange(self:GetValue())
     end)
     function s:SetValueQuiet(value)
         self.quiet = true
         self:SetValue(value)
         self.quiet = false
+        self.dirty = false
     end
     return s
 end

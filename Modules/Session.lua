@@ -413,10 +413,18 @@ function Session.Extend(seconds)
     if not Session.IsHost() then return false, "you are not the master looter." end
 
     seconds = seconds or C.EXTEND_SECONDS
-    session.endsAt = session.endsAt + seconds
-    local secondsLeft = math.max(0, session.endsAt - GetTime())
-    local body = Serialize.encodeOpen(session.id, session.tierCount, secondsLeft, session.items)
-    if body then ns.Comms.Send(C.OPS.OPEN, body) end
+    local endsAt = session.endsAt + seconds
+    local secondsLeft = math.max(0, endsAt - GetTime())
+    local body, err = Serialize.encodeOpen(session.id, session.tierCount, secondsLeft,
+        session.items)
+    if not body then
+        -- Extending locally while the clients keep the old deadline would close their
+        -- windows under an open batch. Refuse, loudly.
+        return false, "the extension could not be encoded (" .. tostring(err) .. "); "
+            .. "the deadline is unchanged."
+    end
+    session.endsAt = endsAt
+    ns.Comms.Send(C.OPS.OPEN, body)
     say("EXTEND", { seconds = seconds, left = secondsLeft })
     fireChanged()
     return true
@@ -713,7 +721,10 @@ function Session.ChangeSetting(key, value)
         end
         kind = "LOOT_MODE"
     elseif key == "qualityThreshold" then
-        value = (tonumber(value) == 3) and 3 or 4
+        value = tonumber(value)
+        if value ~= 3 and value ~= 4 then
+            return false, "the quality threshold is 3 (rare) or 4 (epic)."
+        end
     elseif key == "autoClose" then
         value = value and true or false
     elseif key == "verbosity" then
