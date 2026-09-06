@@ -20,11 +20,9 @@ local Data = ns.Data
 --------------------------------------------------------------------------------
 -- Verification status
 --------------------------------------------------------------------------------
--- The two ORDER tables below were assembled from reference material and have NOT been
--- checked against a live 3.3.5a client. See Data/VERIFY.md.
---
--- `/rls itemclasses` prints the live lists next to these tables so the check is one
--- command in game. Flip this flag when the two agree.
+-- The two ORDER tables below were assembled from reference material and were checked
+-- against a live 3.3.5a client with `/rls itemclasses` on 2026-09-06 by Matt Lyon;
+-- every row matched semantically. See Data/VERIFY.md.
 --
 -- The failure mode is contained by design: Modules/ItemInfo.lua compares the length of
 -- each live list against the length of the matching table, and refuses to map subclasses
@@ -33,7 +31,7 @@ local Data = ns.Data
 -- (Core/Eligibility.lua checks 6 and 7). A wrong order inside a list of the right length
 -- is the case this flag exists for.
 
-Data.SUBCLASS_ORDER_VERIFIED = false
+Data.SUBCLASS_ORDER_VERIFIED = true
 
 --------------------------------------------------------------------------------
 -- Class positions

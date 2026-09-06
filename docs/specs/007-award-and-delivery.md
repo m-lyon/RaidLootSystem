@@ -65,6 +65,18 @@ quietly fails to be awarded is an item nobody notices is missing until the raid 
 Failed awards remain actionable in the results view and in the host panel's on-corpse banner
 until they succeed, are abandoned, or the corpse is gone.
 
+**Awaiting award.** The host panel carries a section listing every won copy the host has not yet
+acted on — the item, the winner, and an **Award** button behaving exactly as the results view's
+does (click for master loot, shift-click for the trade path), plus the failure text where there
+is one. It appears only when something is outstanding, and a copy leaves it the moment it is
+delivered or becomes a pending delivery, which has its own section below.
+
+The results view is not enough on its own: it is a window, the host can close it, and closing it
+used to leave an unawarded item with no route back. This section is keyed off the award records
+rather than the current batch, so a copy left behind two kills ago is still reachable. Those
+records are in memory only, unlike pending deliveries — a `/reload` between resolution and award
+loses them, and the batch is then readable in history but no longer awardable.
+
 ## 5. Trade path and pending deliveries
 
 When the host takes the item into their own bags — deliberately, or because the corpse is about
@@ -94,6 +106,11 @@ Behaviour:
 host records how many of each batch item it holds when the batch opens; a copy counts as taken
 only when the bags hold more than that baseline plus what other pending records already
 account for. Otherwise the copy is looted from the corpse.
+
+This baseline applies to **corpse batches only**. An item-link batch has no corpse: the host
+opened it on an item already in their bags, so that copy *is* the one being awarded and the
+baseline is not charged against it. Other pending records still are, so two copies are never
+promised to the same winner twice.
 
 **Constraint worth stating explicitly:** the 2-hour flag only permits trading to characters who
 were **eligible for that loot at kill time**. A bot summoned in after the boss died cannot

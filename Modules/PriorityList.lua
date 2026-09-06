@@ -116,7 +116,12 @@ end
 -- WoW-facing. Nothing below here runs at file scope.
 --------------------------------------------------------------------------------
 
-local Widgets = ns.Widgets          -- nil under the fixture runner
+-- Resolved in Init, not here: this module draws part of the host panel, but
+-- Modules/ load ahead of UI/ in the .toc, so ns.Widgets does not exist yet at
+-- file scope. Init runs at PLAYER_LOGIN, well after every file has loaded, and
+-- ahead of HostPanel.Init -- the only thing that reaches RefreshSection. It
+-- stays nil under the fixture runner, which never renders.
+local Widgets
 
 local listeners = {}
 local rows = {}
@@ -516,24 +521,26 @@ local function panelRow(panel, i)
     row.name:SetWidth(200)
     row.name:SetJustifyH("LEFT")
 
-    row.remove = Widgets.Button(row, "X", 18, 16, function()
+    row.remove = Widgets.IconButton(row, "remove", 16, 16, function()
         confirm("remove", "Remove " .. row.char .. " from the priority list? Announced and logged.",
             row.char)
     end)
     row.remove:SetPoint("RIGHT", row, "RIGHT", 0, 0)
     Widgets.Tooltip(row.remove, "Remove", "For a character nobody claims any more.")
 
-    row.down = Widgets.Button(row, "v", 18, 16, function()
+    row.down = Widgets.IconButton(row, "down", 18, 16, function()
         confirm("move", string.format("Move %s down one place, to %d? Announced and logged.",
             row.char, row.index + 1), { from = row.index, to = row.index + 1 })
     end)
     row.down:SetPoint("RIGHT", row.remove, "LEFT", -2, 0)
+    Widgets.Tooltip(row.down, "Move down", "Move this character one place down the list.")
 
-    row.up = Widgets.Button(row, "^", 18, 16, function()
+    row.up = Widgets.IconButton(row, "up", 18, 16, function()
         confirm("move", string.format("Move %s up one place, to %d? Announced and logged.",
             row.char, row.index - 1), { from = row.index, to = row.index - 1 })
     end)
     row.up:SetPoint("RIGHT", row.down, "LEFT", -2, 0)
+    Widgets.Tooltip(row.up, "Move up", "Move this character one place up the list.")
 
     row.suicide = Widgets.Button(row, "Bottom", 48, 16, function()
         confirm("suicide", string.format("Move %s to the bottom by hand? Announced and logged.",
@@ -651,6 +658,7 @@ function Priority.Notice()
 end
 
 function Priority.Init()
+    Widgets = ns.Widgets
     ns.Comms.RegisterHandler(C.OPS.SKLIST, onSklist)
     ns.Roster.RegisterListener(function() Priority.SyncRoster() end)
 end

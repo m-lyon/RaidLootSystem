@@ -4,9 +4,8 @@
 CLAUDE.md marks **verify, don't recall**. They were assembled from reference material and
 **have not been checked against a live 3.3.5a server.**
 
-`Data.WEAPONS_VERIFIED` is now `true`: the weapon rows below were checked in game. One flag
-stays `false` until someone works through the last section and flips it:
-`Data.SUBCLASS_ORDER_VERIFIED`.
+`Data.WEAPONS_VERIFIED` is now `true`: the weapon rows below were checked in game.
+`Data.SUBCLASS_ORDER_VERIFIED` is now `true` too — see the last section.
 
 ## Why this matters, and how much
 
@@ -88,7 +87,13 @@ The three class groupings are stable across all of WotLK and are not in doubt.
 3. Add the line to the table above with the date.
 
 
-## The subclass order — `Data/ItemClasses.lua`
+## The subclass order — `Data/ItemClasses.lua` — verified
+
+Checked in game on **2026-09-06** by Matt Lyon: `/rls itemclasses` on this client showed the
+class list with weapons at position 1 and armour at position 2, and every row of the live
+weapon and armour subclass lists matched `Data.WEAPON_SUBCLASSES` / `Data.ARMOR_SUBCLASSES`
+semantically, including the `SHIELD` / `LIBRAM` / `IDOL` / `TOTEM` / `SIGIL` spellings.
+`Data.SUBCLASS_ORDER_VERIFIED` is `true`.
 
 `Data.WEAPON_SUBCLASSES` and `Data.ARMOR_SUBCLASSES` claim to be the order
 `GetAuctionItemSubClasses(1)` and `GetAuctionItemSubClasses(2)` return on a 3.3.5a client.

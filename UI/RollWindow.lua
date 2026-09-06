@@ -925,7 +925,7 @@ local function resultRow(pool, content, i)
     if row then return row end
     row = CreateFrame("Frame", nil, content)
     row:SetHeight(16)
-    row:SetWidth(content:GetWidth())
+    row:SetWidth(content:GetWidth() - Widgets.SCROLLBAR_GUTTER)
     row.left = Widgets.Label(row, "", "GameFontHighlightSmall")
     row.left:SetPoint("LEFT", row, "LEFT", 0, 0)
     row.left:SetJustifyH("LEFT")
@@ -1273,7 +1273,9 @@ local function buildEntryPanel(parent)
 
     -- The buttons hang off the warning line, never off the panel bottom, so they cannot
     -- cover it whatever the grid height works out to.
-    panel.pass = Widgets.Button(panel, "Pass all", 90, BUTTON_H, function() submitGrid(true) end)
+    panel.pass = Widgets.Button(panel, "Pass all", 90, BUTTON_H, function()
+        StaticPopup_Show("RLS_CONFIRM_PASS_ALL")
+    end)
     panel.pass:SetPoint("TOPLEFT", panel.warning, "BOTTOMLEFT", 0, -6)
     Widgets.Tooltip(panel.pass, "Pass all",
         "Clear every tick and submit nothing. That still counts you as in, so the host can close.")
@@ -1301,6 +1303,17 @@ local function buildResultsPanel(parent)
 end
 
 local function build()
+    -- Passing marks you as in for the whole batch, and every tick you had made
+    -- is cleared to get there, so it asks first.
+    StaticPopupDialogs["RLS_CONFIRM_PASS_ALL"] = {
+        text = "Pass on every item in this batch? Your ticks are cleared and you enter "
+            .. "nothing. You can still submit again while the batch is open.",
+        button1 = "Pass all",
+        button2 = CANCEL,
+        OnAccept = function() submitGrid(true) end,
+        timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+    }
+
     frame = Widgets.Window("RaidLootSystemRollWindow", "roll", "Raid Loot System",
         PAD * 2 + HEADER_W + MAX_VISIBLE_COLS * CELL_W + 8, 480)
     frame.titleText:ClearAllPoints()

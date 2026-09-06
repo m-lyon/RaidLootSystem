@@ -97,6 +97,22 @@ function Award.PathFor(record, ctx)
     return nil, "Open the corpse to award from it, or loot the item yourself and award again."
 end
 
+--- How many units of this record's item the host holds that this record may
+-- claim (section 5).
+--
+-- `held` is what the bags hold now, `baseline` what they held when the batch
+-- opened, `claimed` what other pending records already account for.
+--
+-- The baseline is subtracted for a corpse batch: a copy that predates the loot
+-- is not the looted copy. It is NOT subtracted for an item-link batch, which has
+-- no corpse -- there the copy the host already held IS the one being awarded, so
+-- charging it against the baseline leaves the host holding an item the addon
+-- insists is not in their bags.
+function Award.SpareUnits(record, held, baseline, claimed)
+    local base = record.lootSlot and (baseline or 0) or 0
+    return (held or 0) - base - (claimed or 0)
+end
+
 --- The confirmation dialog's text (section 6): the item, the winner, and the path.
 function Award.ConfirmText(record, label, path)
     local who = record.char .. (record.owner and (" (" .. record.owner .. ")") or "")
@@ -182,6 +198,7 @@ end
 --------------------------------------------------------------------------------
 
 Award.bySession = {}           -- sessionId -> itemIdx -> array of records
+local sessionOrder = {}        -- session ids in the order their batches closed
 
 local listeners = {}
 local frame
@@ -265,7 +282,7 @@ local function spareUnits(record)
     if not id then return 0 end
     local base = baseline[record.sessionId] and baseline[record.sessionId][id] or 0
     local claimed = ns.Pending.UnitsHeld(ns.Pending.Records(), id, record)
-    return countInBags(id) - base - claimed
+    return Award.SpareUnits(record, countInBags(id), base, claimed)
 end
 
 --------------------------------------------------------------------------------
@@ -275,6 +292,9 @@ end
 --- Called by Session.Close, host side. Builds the records the results view offers.
 function Award.Begin(session)
     session.awards = Award.Build(session)
+    if Award.bySession[session.id] == nil then
+        sessionOrder[#sessionOrder + 1] = session.id
+    end
     Award.bySession[session.id] = session.awards
     fireChanged()
 end
@@ -287,6 +307,43 @@ end
 
 function Award.Records(sessionId)
     return Award.bySession[sessionId]
+end
+
+--- Test and simulation seam: forget every batch's records, order included.
+function Award.Reset()
+    Award.bySession = {}
+    sessionOrder = {}
+end
+
+--- Award records the host still has to act on: won by someone, but not delivered
+-- and not sitting in Pending, which tracks its own. Oldest batch first, so a copy
+-- left behind two kills ago does not sort below tonight's.
+--
+-- These live in memory only, unlike pending deliveries: a reload between the roll
+-- resolving and the award being made loses them, and the batch is then in history
+-- rather than here (spec 007 section 4).
+function Award.OutstandingRecords()
+    local D = C.DELIVERY
+    local out = {}
+    for _, sessionId in ipairs(sessionOrder) do
+        local awards = Award.bySession[sessionId]
+        if awards then
+            -- Sorted, not pairs(): the table is keyed by itemIdx, and hash order
+            -- would reshuffle the list under the host on every refresh.
+            local idxs = {}
+            for idx in pairs(awards) do idxs[#idxs + 1] = idx end
+            table.sort(idxs)
+            for _, idx in ipairs(idxs) do
+                for _, record in ipairs(awards[idx]) do
+                    if record.delivery ~= D.DELIVERED and record.delivery ~= D.PENDING
+                        and Award.Retryable(record) then
+                        out[#out + 1] = record
+                    end
+                end
+            end
+        end
+    end
+    return out
 end
 
 --- A record's delivery changed. History (008) updates in place; the priority list

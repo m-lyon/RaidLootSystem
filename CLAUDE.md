@@ -22,6 +22,11 @@ with the reasoning.
   names in 3.3.5a with no numeric ids; build the index map from `GetAuctionItemClasses()`.
   CI greps for this too.
 - **`RegisterAddonMessagePrefix` does not exist** in 3.3.5a. Don't add it.
+- **`Modules/` load before `UI/`**, so a module must not capture `ns.Widgets` (or any other UI
+  table) at file scope -- it is still nil there. `Modules/PriorityList.lua` draws the host
+  panel's priority section and resolves it in `Init` instead.
+- **`math.randomseed` does not exist** in 3.3.5a either -- the client seeds its own RNG at
+  startup. `math.random` is fine; guard any seeding call. Spec 000 §7.
 - **`GetMasterLootCandidate(index)` takes one argument** in 3.3.5a, not two.
 - **A tier token is equippable by nobody.** Any candidate or eligibility test that leads with
   "is it equippable" filters the whole raid off the most contested drop in the game. The token
@@ -74,10 +79,10 @@ Add a fixture case for every bug fixed in `Core/`.
   `WEAPONS_VERIFIED` is `true`. [`Data/VERIFY.md`](Data/VERIFY.md) records what was confirmed,
   and the `eligibility` suite pins each line. A row that a raid night contradicts gets a fix, a
   fixture and a line in that table, in that order.
-- **`Data/ItemClasses.lua` ships with `SUBCLASS_ORDER_VERIFIED = false`.** The subclass
-  *positions* were assembled from reference material. `/rls itemclasses` prints the live
-  lists beside them; `Data/VERIFY.md` says what to read. `Modules/ItemInfo.lua` refuses to
-  map subclasses at all when the list lengths disagree, so the failure is loud and open.
+- **`Data/ItemClasses.lua`'s subclass order was checked in game on 2026-09-06** and
+  `SUBCLASS_ORDER_VERIFIED` is `true`. `Data/VERIFY.md` records what was confirmed.
+  `Modules/ItemInfo.lua` still refuses to map subclasses at all when the live and table list
+  lengths disagree, so a future drift is loud and open, not silent.
 - **`Data/TierTokens.lua`'s `TOKEN_IDS` is intentionally empty.** Detection is by trailing word.
   Add an id only for a token observed to be misclassified in game, with the link in a comment —
   a fabricated id silently routes a token to the wrong classes with no fallback behind it.

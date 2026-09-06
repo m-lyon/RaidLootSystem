@@ -277,7 +277,12 @@ loader:RegisterEvent("PLAYER_LOGIN")
 loader:SetScript("OnEvent", function(_, event, addonName)
     if event == "ADDON_LOADED" and addonName == ADDON then
         ns.Database.Load()
-        math.randomseed(time())         -- exactly once, spec 000 section 7
+        -- Spec 000 section 7 asks for one seed at load, but 3.3.5a's Lua
+        -- sandbox does not expose math.randomseed -- the client seeds its own
+        -- RNG at startup. Guarded so the addon still loads where it is absent.
+        if math.randomseed then
+            math.randomseed(time())     -- exactly once, spec 000 section 7
+        end
     elseif event == "PLAYER_LOGIN" then
         ns.Comms.Init()
         ns.History.Init()

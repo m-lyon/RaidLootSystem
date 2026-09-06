@@ -10,19 +10,19 @@ Tick a box when done. Where a check needs a code change afterwards, it says so.
 
 ## 1. Install and load
 
-- [ ] Copy the addon to `Interface/AddOns/RaidLootSystem` on each client. Log in. No Lua errors
+- [x] Copy the addon to `Interface/AddOns/RaidLootSystem` on each client. Log in. No Lua errors
       on load (`/console scriptErrors 1` to be sure).
-- [ ] `/rls status` prints the version, roster size and master looter.
-- [ ] `/rls` opens the hierarchy editor. Claim your character and your bots, drag them into order.
-- [ ] `/reload`. The roster and order survive.
+- [x] `/rls status` prints the version, roster size and master looter.
+- [x] `/rls` opens the hierarchy editor. Claim your character and your bots, drag them into order.
+- [x] `/reload`. The roster and order survive.
 
 ## 2. Data tables (`Data/VERIFY.md` has the detail)
 
 ### Item class order — `SUBCLASS_ORDER_VERIFIED`
 
-- [ ] `/rls itemclasses`. Read the live weapon and armour subclass lists beside the addon's. Every
+- [x] `/rls itemclasses`. Read the live weapon and armour subclass lists beside the addon's. Every
       row must match by position. The last line says whether the mapping is in use.
-- [ ] If they match: set `Data.SUBCLASS_ORDER_VERIFIED = true` in `Data/ItemClasses.lua`.
+- [x] If they match: set `Data.SUBCLASS_ORDER_VERIFIED = true` in `Data/ItemClasses.lua`.
 - [ ] If the lengths differ, filtering is off for the session and the addon says so; fix the
       table order to the live one and re-check.
 
@@ -32,7 +32,7 @@ Done. The facts from `notes.md` are in `Data/VERIFY.md`, the Hunter thrown row i
 is `true`, and the `eligibility` suite pins every confirmed line. Nothing left here unless a raid
 night contradicts one of them.
 
-- [ ] Row 9 of the old doubt list, the relic key spellings `LIBRAM` / `IDOL` / `SIGIL` / `TOTEM`,
+- [x] Row 9 of the old doubt list, the relic key spellings `LIBRAM` / `IDOL` / `SIGIL` / `TOTEM`,
       is confirmed by `/rls itemclasses` above, not by a class check.
 
 ### Tier tokens
@@ -49,7 +49,7 @@ night contradicts one of them.
       the whisper. `C.BOT_EQUIP_COMMAND` sends `equip <item link>`. If the bot rejects the link
       form, change it to the name form; if `equip` is not the verb, change the verb. Note the
       answer in spec 007 §7.
-- [ ] **Bot trade acceptance.** Take an item into your bags (shift-click Award), then Deliver to
+- [x] **Bot trade acceptance.** Take an item into your bags (shift-click Award), then Deliver to
       a bot within 11 yards. If the bot accepts the trade on its own, leave
       `Pending.BOT_TRADE_COMMAND = nil`. If it needs a whisper, set the command there.
 - [ ] Auto-equip fires exactly once per successful bot delivery, never for a real player, never
@@ -59,10 +59,10 @@ night contradicts one of them.
 
 No raid needed. Each run prints `[sim]` lines and ends with "done".
 
-- [ ] `/rls simulate` — the roll window opens, fake players submit and one revises, the batch
+- [x] `/rls simulate` — the roll window opens, fake players submit and one revises, the batch
       closes, results render, "done" prints. No chat line reached a real channel and no addon
       message was sent (nobody else is there to receive one; the chat log shows only `[sim]`).
-- [ ] `/rls simulate scenario=tie` — a visible `50 -> 30 / 50 -> 80 (tie re-roll)` in results.
+- [x] `/rls simulate scenario=tie` — a visible `50 -> 30 / 50 -> 80 (tie re-roll)` in results.
 - [ ] `scenario=duplicate` — two winners on item 1, T1 then T2.
 - [ ] `scenario=unclaimed` — item 2 reads "No entries — master looter's choice".
 - [ ] `scenario=contested` — the host panel's roster health lists Bonk contested by Simdave and
