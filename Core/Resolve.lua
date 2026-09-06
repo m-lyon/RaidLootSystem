@@ -90,11 +90,15 @@ end
 -- inside the group, it never lets a member overtake an entry that already beat it.
 -- @return degraded -- true when maxReroll elapsed and the deterministic order stood in.
 local function resolveBoundaryTies(bucket, k, rng, maxReroll, rollMin, rollMax)
+    -- The group's slot range is fixed by the first, pre-reroll detection, while the
+    -- bucket is still globally sorted. It is never re-derived afterward: a reroll can
+    -- coincidentally match an untouched neighbour's value, and re-scanning raw equality
+    -- at that point would sweep an already-decided entry back into contention.
+    local first, last = boundaryTie(bucket, k)
+    if not first then return false end
+
     local rounds = 0
     while true do
-        local first, last = boundaryTie(bucket, k)
-        if not first then return false end
-
         local group = {}
         for i = first, last do group[#group + 1] = bucket[i] end
 
@@ -115,6 +119,8 @@ local function resolveBoundaryTies(bucket, k, rng, maxReroll, rollMin, rollMax)
         end
         table.sort(group, byCurrentRoll)
         for i = 1, #group do bucket[first + i - 1] = group[i] end
+
+        if bucket[k].cur ~= bucket[k + 1].cur then return false end
     end
 end
 

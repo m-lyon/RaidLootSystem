@@ -323,6 +323,33 @@ return {
                 },
             },
         },
+        {
+            -- Regression: an outright winner (Ann, never part of the original tie
+            -- group) must stay decided even when a later reroll round for the tied
+            -- pair (Bob/Cat) coincidentally lands on Ann's untouched roll. The tie
+            -- group's slot range is fixed at first detection; it must not re-expand
+            -- to sweep Ann back into contention just because raw values collide.
+            name = "a reroll that coincides with an outright winner's roll leaves it alone",
+            input = {
+                kind = "item", tierCount = 3, count = 2,
+                entries = {
+                    entry("Ann", "A", 1), entry("Bob", "B", 1),
+                    entry("Cat", "C", 1), entry("Dan", "D", 1),
+                },
+                rolls = { 90, 70, 70, 50, 90, 90, 95, 10 },
+            },
+            expected = {
+                itemIdx = 1, unclaimed = false, degraded = false,
+                tiersConsulted = 1, rngCalls = 8,
+                awards = { "Ann=90", "Bob=70" },
+                record = {
+                    "Ann t1 L0 rolled roll=90 rr=[] -",
+                    "Bob t1 L0 rolled roll=70 rr=[90,95] -",
+                    "Cat t1 L0 rolled roll=70 rr=[90,10] -",
+                    "Dan t1 L0 rolled roll=50 rr=[] -",
+                },
+            },
+        },
 
         ------------------------------------------------------------------------
         -- Output shape (section 7) and determinism (section 4)

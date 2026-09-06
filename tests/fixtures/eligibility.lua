@@ -12,10 +12,8 @@ end
 
 -- Shorthands. A present, uncontested character and the filter switched on are the
 -- default; a case names only what it changes.
-local function char(class, over)
-    local c = { name = "Bonk", class = class, present = true, contested = false }
-    if over then c.over = true end
-    return c
+local function char(class)
+    return { name = "Bonk", class = class, present = true, contested = false }
 end
 
 local FILTER_ON = { filterEnabled = true }
