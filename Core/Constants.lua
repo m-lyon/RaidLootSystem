@@ -46,6 +46,63 @@ C.OPS = {
 }
 
 --------------------------------------------------------------------------------
+-- Session lifecycle (spec 002)
+--------------------------------------------------------------------------------
+
+C.SESSION_STATE = {
+    OPEN      = "OPEN",
+    RESOLVING = "RESOLVING",
+    CLOSED    = "CLOSED",
+    ABORTED   = "ABORTED",
+}
+
+-- Why a batch ended without a result (spec 002 section 9). Shown in the window,
+-- not only in chat, and written to history so a batch never simply vanishes.
+C.ABORT_REASON = {
+    ML_CHANGED = "ML_CHANGED",
+    HOST_LEFT  = "HOST_LEFT",
+    LOOT_GONE  = "LOOT_GONE",
+    EXPIRED    = "EXPIRED",
+    MANUAL     = "MANUAL",
+    RESOLVE_FAILED = "RESOLVE_FAILED",
+}
+
+C.ABORT_TEXT = {
+    ML_CHANGED = "the master looter changed",
+    HOST_LEFT  = "the host left the raid",
+    LOOT_GONE  = "the loot is no longer there",
+    EXPIRED    = "the batch was left unresolved for too long",
+    MANUAL     = "the host cancelled it",
+    RESOLVE_FAILED = "the batch could not be resolved",
+}
+
+-- Per-copy outcome on the wire (spec 000 section 5, RESULT).
+C.OUTCOME = {
+    WON       = "WON",         -- awarded normally
+    DEGRADED  = "DEGRADED",    -- awarded, but a tie ran out of re-rolls (003 section 6)
+    UNCLAIMED = "UNCLAIMED",   -- nobody entered; master looter's choice
+}
+
+-- Why an entry the host received was not accepted. Counted rather than itemised
+-- on the wire; the submitting client compares counts (spec 002 section 5).
+C.REJECT = {
+    NO_SUCH_ITEM = "NO_SUCH_ITEM",
+    NOT_PUBLISHED = "NOT_PUBLISHED",
+    CONTESTED = "CONTESTED",
+    NOT_PRESENT = "NOT_PRESENT",
+    INELIGIBLE = "INELIGIBLE",
+    DUPLICATE = "DUPLICATE",
+}
+
+C.STATE_COALESCE = 0.5        -- trailing timer on STATE broadcasts, seconds
+C.SYNC_INTERVAL = 5           -- a client sends SYNC at most this often
+C.HOST_LEFT_GRACE = 60        -- seconds past endsAt with no RESULT before a client aborts
+C.BATCH_EXPIRY = 15 * 60      -- an unresolved batch aborts as EXPIRED after this
+
+C.MIN_TIMER_SECONDS = 15
+C.MAX_TIMER_SECONDS = 300
+
+--------------------------------------------------------------------------------
 -- Tiers (spec 000 section 6)
 --------------------------------------------------------------------------------
 
@@ -124,6 +181,7 @@ C.DEFAULTS = {
         timerSeconds     = 180,
         qualityThreshold = 4,
         lootMode         = "ROLL",
+        autoClose        = false,   -- close as soon as everyone expected has submitted
     },
     priority = {
         version = 0,

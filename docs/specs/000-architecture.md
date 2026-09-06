@@ -194,7 +194,7 @@ Payload budget: **180 bytes** per chunk body. Outgoing messages sit in a queue d
 | `HI` | any → all | `addonVersion` | Announce presence and version on load and on roster change |
 | `ROSTER` | client → all | `name=class~name=class~…` (in hierarchy order) | Publish this player's claimed roster |
 | `RREQ` | host → all | *(empty)* | Ask everyone to resend `ROSTER` |
-| `OPEN` | host → all | `sessionId^tierCount^endsAt^item~item…` where item is `idx=itemString=count` | Open a batch |
+| `OPEN` | host → all | `sessionId^tierCount^secondsLeft^item~item…` where item is `idx=itemString=count` | Open a batch |
 | `SUBMIT` | client → host | `sessionId^entry~entry…` where entry is `itemIdx=charName=overrideFlag=star` | Submit or revise entries (`star` is the SK priority pick, 010 §7) |
 | `STATE` | host → all | `sessionId^submittedNames~…^entry~entry…` where entry is `itemIdx=charName=owner=tier` | Authoritative aggregate; drives the live open view |
 | `RESULT` | host → all | `sessionId^result~result…` where result is `itemIdx=winner=tier=roll=outcome` | Resolved batch |
@@ -203,6 +203,11 @@ Payload budget: **180 bytes** per chunk body. Outgoing messages sit in a queue d
 | `CFG` | host → all | `tierCount^timerSeconds^lootMode` | Settings changed between batches |
 | `SKLIST` | host → all | `version^seed^name~name…` | The authoritative priority list, sent immediately after `OPEN` and on request (010 §8) |
 | `SYNC` | client → host | `sessionId` | Request a resend of `OPEN` + `STATE` |
+
+**`secondsLeft`, not `endsAt`.** The host's `endsAt` is built on the client clock, which
+counts from that client's own start, so an absolute deadline means nothing on another machine.
+The wire carries the seconds remaining and each client adds them to its own clock. A resync
+mid-batch (002 §10) therefore lands a late arrival on the same deadline as everyone else.
 
 ### Authority rules
 

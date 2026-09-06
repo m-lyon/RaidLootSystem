@@ -34,9 +34,10 @@ local DATA_FILES = {
 -- Anything here must create no frame and call no WoW API while loading.
 local MODULE_FILES = {
     "Modules/Roster.lua",
+    "Modules/Session.lua",
 }
 
-local SUITES = { "tiers", "serialize", "roster", "eligibility", "resolve" }
+local SUITES = { "tiers", "serialize", "roster", "session", "eligibility", "resolve" }
 
 --------------------------------------------------------------------------------
 -- Comparison and reporting

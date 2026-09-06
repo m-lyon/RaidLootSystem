@@ -55,6 +55,7 @@ fail in a way that looks like a logic bug.
 | `eligibility` | The check order and every reason code, incl. cloaks and tokens | 003 §8 |
 | `resolve` | Tier walking, multi-copy spill, boundary ties, unclaimed, degraded | 003 §9 |
 | `serialize` | Round-trip of every op, chunk split/join, malformed input rejection | 000 §5 |
+| `session` | Submission validation, replacement, the tier snapshot, RESULT/ROLLS records | 002 §5–8 |
 | `priority` | Seed, suicide with absentees, restore, roster churn, replay | 010 §12 |
 | `sk` | SK resolution: tier gating, one-win rule, the star fixed point | 010 §12 |
 

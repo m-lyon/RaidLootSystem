@@ -25,6 +25,10 @@ with the reasoning.
 - **`GetMasterLootCandidate(index)` takes one argument** in 3.3.5a, not two.
 - **Roster events are `RAID_ROSTER_UPDATE` / `PARTY_MEMBERS_CHANGED`**, not
   `GROUP_ROSTER_UPDATE`.
+- **`OPEN` carries seconds remaining, not an absolute `endsAt`.** The client clock is per
+  machine. Spec 000 §5.
+- **An `ML_CHANGED` abort is never broadcast.** The old host is no longer authoritative, so
+  every client would drop the message. Each client aborts on the loot-method event. Spec 002 §9.
 - **All addon messages go through `Modules/Comms.lua`** — 255-byte cap, silent server-side
   throttling, chunking and queueing are handled there. Never call `SendAddonMessage` elsewhere.
 - **Item links contain `|`.** The wire protocol transmits item *strings*, and its delimiters are
@@ -74,11 +78,17 @@ Add a fixture case for every bug fixed in `Core/`.
 
 ## What is and isn't in the tree
 
-Specs 001 and 003 are built. In the tree: `RaidLootSystem.toc`, `RaidLootSystem.lua`,
+Specs 001, 002 and 003 are built. In the tree: `RaidLootSystem.toc`, `RaidLootSystem.lua`,
 `Core/{Constants,Util,Serialize,Tiers,Eligibility,Resolve}.lua`,
-`Modules/{Database,Comms,Roster}.lua`, `UI/{Widgets,HierarchyEditor,Minimap}.lua`, `Libs/`,
-`Data/`, and `tests/` with the `tiers`, `serialize`, `roster`, `eligibility` and `resolve`
-suites plus `tests/purity.sh`.
+`Modules/{Database,Comms,Roster,Session,Client}.lua`,
+`UI/{Widgets,HierarchyEditor,Minimap}.lua`, `Libs/`, `Data/`, and `tests/` with the `tiers`,
+`serialize`, `roster`, `session`, `eligibility` and `resolve` suites plus `tests/purity.sh`.
+
+`Modules/Session.lua` has a pure half above its "WoW-facing" divider, like `Roster.lua`; the
+fixture runner loads both. Keep new pure logic above that line.
+
+Spec 002 waits on 004 for its input: nothing calls `Session.Open` yet, because nothing builds
+the item list.
 
 `Core/Resolve.lua` carries spec 010's SK resolution path (010 §7) because it is the same code
 path. The rest of 010 — `Core/PriorityList`, storage, sync, restore-on-failure — is not written.
