@@ -96,6 +96,10 @@ local WIDTH = 480
 local INNER = WIDTH - 60
 local ROW_H = 20
 local PAD = 16
+-- The scroll bar hangs off this scroll area's own right edge, which by default
+-- lines it up almost flush with the window's border, past the close button.
+-- Trim the viewport a bit further so the bar sits back underneath the button.
+local SCROLL_RIGHT_TRIM = 14
 
 local frame, content
 local settings, candidates, health, priority, live, banner, pending, awaiting
@@ -510,7 +514,10 @@ end
 local function buildPriority(parent)
     local panel = section(parent, "Priority list", 50)
     panel.note = Widgets.Label(panel, "", "GameFontDisableSmall")
-    panel.note:SetPoint("TOPLEFT", panel.title, "BOTTOMLEFT", 0, -4)
+    -- The Verify/Reseed buttons (added later, in Priority.RefreshSection) sit at
+    -- the same height as a tight offset here would put this text; push it down
+    -- a few more pixels so the buttons don't clip it.
+    panel.note:SetPoint("TOPLEFT", panel.title, "BOTTOMLEFT", 0, -8)
     panel.note:SetWidth(INNER - 20)
     panel.note:SetJustifyH("LEFT")
     return panel
@@ -825,7 +832,7 @@ local function build()
 
     local scroll
     scroll, content = Widgets.ScrollArea(frame, "RaidLootSystemHostScroll",
-        INNER + Widgets.SCROLLBAR_GUTTER, 560)
+        INNER + Widgets.SCROLLBAR_GUTTER - SCROLL_RIGHT_TRIM, 560)
     scroll:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, -40)
 
     StaticPopupDialogs["RLS_CONFIRM_ABANDON"] = {

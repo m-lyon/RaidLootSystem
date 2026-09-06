@@ -21,11 +21,11 @@ local LIST_WIDTH = 340
 -- Rows live inside a Widgets.ScrollArea, and its scroll bar overhangs the right
 -- edge of that area. Rows stop a gutter short of it so the row controls -- the
 -- remove button most of all -- are never drawn underneath the bar.
-local SCROLL_WIDTH = LIST_WIDTH - 30
+local SCROLL_WIDTH = LIST_WIDTH - 32
 local ROW_INSET = 4
 local ROW_WIDTH = SCROLL_WIDTH - ROW_INSET - Widgets.SCROLLBAR_GUTTER
 
-local PANEL_GAP = 6
+local PANEL_GAP = 1
 local BOTTOM_MARGIN = 16
 local START_HEIGHT = 470        -- provisional; layoutPanels measures the real one
 
@@ -115,7 +115,10 @@ local function createRow(index)
     row.badge:SetPoint("LEFT", row.name, "RIGHT", 4, 0)
     row.badge:SetWidth(34)
 
-    row.remove = Widgets.IconButton(row, "remove", 20, 20, function()
+    -- UIPanelCloseButton's "X" glyph carries a lot of built-in padding, so at the
+    -- same frame size it reads visibly smaller than the cropped up/down arrows;
+    -- size it up to compensate.
+    row.remove = Widgets.IconButton(row, "remove", 24, 24, function()
         local name = row.charName
         local ok, why = Roster().Remove(name)
         if not ok then ns.Print(why) end
