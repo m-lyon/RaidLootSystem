@@ -16,15 +16,15 @@ local Data = ns.Data
 -- Verification status
 --------------------------------------------------------------------------------
 -- The armour table is settled: it is the mapping specified in spec 004 section 5 and
--- reviewed in PR #1. The WEAPON table is assembled from reference material and has NOT been
--- checked against a live 3.3.5a server. See Data/VERIFY.md before trusting it.
+-- reviewed in PR #1. The WEAPON table's doubtful rows were checked in game on 2026-09-06
+-- (Data/VERIFY.md records what was confirmed); the one wrong row, Hunter thrown, was fixed.
 --
 -- Consequence of an error here is bounded but real: a wrong entry makes one class ineligible
 -- for one weapon category (or wrongly eligible for it). It is not silent -- the roll window
 -- shows the reason code, players can right-click to override any weapon or armour check
 -- (spec 003 section 8), and the raid leader can disable the filter entirely.
 
-Data.WEAPONS_VERIFIED = false
+Data.WEAPONS_VERIFIED = true
 
 --------------------------------------------------------------------------------
 -- Armour
@@ -53,7 +53,7 @@ Data.ARMOR_SLOTS = {
 --------------------------------------------------------------------------------
 -- Weapons
 --------------------------------------------------------------------------------
--- UNVERIFIED. See Data/VERIFY.md. Entries marked (?) there are the ones to check first.
+-- Checked in game; see Data/VERIFY.md for the rows that were confirmed and when.
 
 Data.WEAPONS = {
     WARRIOR = {
@@ -72,7 +72,7 @@ Data.WEAPONS = {
     HUNTER = {
         DAGGER = true, FIST = true, POLEARM = true, STAFF = true,
         AXE_1H = true, AXE_2H = true, SWORD_1H = true, SWORD_2H = true,
-        BOW = true, CROSSBOW = true, GUN = true,
+        BOW = true, CROSSBOW = true, GUN = true, THROWN = true,   -- thrown confirmed in game
     },
     ROGUE = {
         DAGGER = true, FIST = true,
