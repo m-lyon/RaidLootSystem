@@ -16,6 +16,8 @@ Core\Constants.lua
 Core\Util.lua
 Core\Serialize.lua
 Core\Tiers.lua
+Core\Eligibility.lua
+Core\Resolve.lua
 
 Data\TierTokens.lua
 Data\ClassArmor.lua

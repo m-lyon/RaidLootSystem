@@ -74,13 +74,17 @@ Add a fixture case for every bug fixed in `Core/`.
 
 ## What is and isn't in the tree
 
-Spec 001 is built. In the tree: `RaidLootSystem.toc`, `RaidLootSystem.lua`,
-`Core/{Constants,Util,Serialize,Tiers}.lua`, `Modules/{Database,Comms,Roster}.lua`,
-`UI/{Widgets,HierarchyEditor,Minimap}.lua`, `Libs/`, `Data/`, and `tests/` with the `tiers`,
-`serialize` and `roster` suites plus `tests/purity.sh`.
+Specs 001 and 003 are built. In the tree: `RaidLootSystem.toc`, `RaidLootSystem.lua`,
+`Core/{Constants,Util,Serialize,Tiers,Eligibility,Resolve}.lua`,
+`Modules/{Database,Comms,Roster}.lua`, `UI/{Widgets,HierarchyEditor,Minimap}.lua`, `Libs/`,
+`Data/`, and `tests/` with the `tiers`, `serialize`, `roster`, `eligibility` and `resolve`
+suites plus `tests/purity.sh`.
 
-Still to write: `Core/{Eligibility,Resolve,PriorityList}.lua` and every other module in spec
-000 §3. Add each new file to the `.toc` in the load order given there.
+`Core/Resolve.lua` carries spec 010's SK resolution path (010 §7) because it is the same code
+path. The rest of 010 — `Core/PriorityList`, storage, sync, restore-on-failure — is not written.
+
+Still to write: `Core/PriorityList.lua` and every other module in spec 000 §3. Add each new
+file to the `.toc` in the load order given there.
 
 ## Conventions
 
