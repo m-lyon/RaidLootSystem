@@ -509,7 +509,7 @@ function Session.Close()
         ns.Print("the batch could not be resolved: " .. tostring(results)
             .. ". It has been cancelled; nothing was awarded.")
         session.state = C.SESSION_STATE.OPEN      -- so Abort has something to abort
-        Session.Abort(C.ABORT_REASON.MANUAL)
+        Session.Abort(C.ABORT_REASON.RESOLVE_FAILED)
         return false
     end
 

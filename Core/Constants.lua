@@ -64,6 +64,7 @@ C.ABORT_REASON = {
     LOOT_GONE  = "LOOT_GONE",
     EXPIRED    = "EXPIRED",
     MANUAL     = "MANUAL",
+    RESOLVE_FAILED = "RESOLVE_FAILED",
 }
 
 C.ABORT_TEXT = {
@@ -72,6 +73,7 @@ C.ABORT_TEXT = {
     LOOT_GONE  = "the loot is no longer there",
     EXPIRED    = "the batch was left unresolved for too long",
     MANUAL     = "the host cancelled it",
+    RESOLVE_FAILED = "the batch could not be resolved",
 }
 
 -- Per-copy outcome on the wire (spec 000 section 5, RESULT).

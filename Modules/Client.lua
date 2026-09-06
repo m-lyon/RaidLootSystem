@@ -72,6 +72,11 @@ local function onOpen(sender, body)
 
     if previous and previous.id == msg.sessionId then
         -- A resend for SYNC: keep what we have, refresh the deadline and items.
+        -- The host only answers SYNC while it still has this session OPEN (Session.lua
+        -- onSync), so receiving this is proof the batch is not really over even if we
+        -- had locally given up on it (e.g. HOST_LEFT on a lost RESULT).
+        previous.state = C.SESSION_STATE.OPEN
+        previous.abortReason = nil
         previous.endsAt = GetTime() + msg.secondsLeft
         previous.tierCount = msg.tierCount
         previous.items = msg.items
