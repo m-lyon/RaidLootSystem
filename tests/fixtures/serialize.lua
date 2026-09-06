@@ -131,6 +131,11 @@ local function run(input, ns)
     elseif input.kind == "decodeOnly" then
         local msg, why = S[input.decoder](input.body)
         return { ok = msg ~= nil, why = why }
+
+    elseif input.kind == "decodeRolls" then
+        local msg, why = S.decodeRolls(input.body)
+        if not msg then return { ok = false, why = why } end
+        return { ok = true, sessionId = msg.sessionId, rolls = msg.rolls }
     end
     return nil
 end
@@ -362,14 +367,44 @@ return {
             input = {
                 kind = "rolls", sessionId = "Steve-100",
                 rolls = { { itemIdx = 1, char = "Sneaky", tier = 2, roll = 87, listIdx = 0 },
-                          { itemIdx = 1, char = "Smash", tier = 3, roll = 0, listIdx = 0 } },
+                          { itemIdx = 1, char = "Smash", tier = 3, roll = 0, listIdx = 0,
+                            status = "NC" } },
             },
             expected = {
                 ok = true,
-                body = "Steve-100^1=Sneaky=2=87=0~1=Smash=3=0=0",
-                rolls = { { itemIdx = 1, char = "Sneaky", tier = 2, roll = 87, listIdx = 0 },
-                          { itemIdx = 1, char = "Smash", tier = 3, roll = 0, listIdx = 0 } },
+                body = "Steve-100^1=Sneaky=2=87=0==~1=Smash=3=0=0=NC=",
+                rolls = { { itemIdx = 1, char = "Sneaky", tier = 2, roll = 87, listIdx = 0,
+                            status = "", rerolled = {} },
+                          { itemIdx = 1, char = "Smash", tier = 3, roll = 0, listIdx = 0,
+                            status = "NC", rerolled = {} } },
             },
+        },
+        {
+            -- The results table shows "83 -> 47 (tie re-roll)" from this, and marks an
+            -- SK entry the one-win rule removed. Neither is derivable from the roll alone.
+            name = "ROLLS carries re-rolls and the withdrawn status",
+            input = {
+                kind = "rolls", sessionId = "Steve-100",
+                rolls = { { itemIdx = 1, char = "Sneaky", tier = 1, roll = 83, listIdx = 0,
+                            rerolled = { 83, 47 } },
+                          { itemIdx = 2, char = "Bonk", tier = 1, roll = 0, listIdx = 4,
+                            status = "WD" } },
+            },
+            expected = {
+                ok = true,
+                body = "Steve-100^1=Sneaky=1=83=0==83+47~2=Bonk=1=0=4=WD=",
+                rolls = { { itemIdx = 1, char = "Sneaky", tier = 1, roll = 83, listIdx = 0,
+                            status = "", rerolled = { 83, 47 } },
+                          { itemIdx = 2, char = "Bonk", tier = 1, roll = 0, listIdx = 4,
+                            status = "WD", rerolled = {} } },
+            },
+        },
+        {
+            name = "a ROLLS row without the status fields decodes as rolled",
+            input = { kind = "decodeRolls", body = "Steve-100^1=Sneaky=2=87=0" },
+            expected = { ok = true, sessionId = "Steve-100",
+                         rolls = { { itemIdx = 1, char = "Sneaky", tier = 2, roll = 87,
+                                     listIdx = 0, status = "", rerolled = {} } } },
         },
         {
             name = "ABORT round-trips its reason code",

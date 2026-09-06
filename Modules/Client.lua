@@ -26,6 +26,7 @@ local frame
 local lastSync = 0
 local lastHost
 local expectedCount          -- entries in our last SUBMIT, for the section 5 check
+local lastSent = {}          -- the entries themselves, so a refused one can be named
 local warnedForSubmission
 
 function Client.RegisterListener(fn)
@@ -47,6 +48,19 @@ end
 
 function Client.IsOpen()
     return Client.session ~= nil and Client.session.state == C.SESSION_STATE.OPEN
+end
+
+--- The tier count in force: the open batch's frozen count, else the last CFG the host
+-- sent, else nil so callers fall back to their own default.
+function Client.TierCount()
+    if Client.IsOpen() then return Client.session.tierCount end
+    return Client.config and Client.config.tierCount or nil
+end
+
+--- The loot mode the batch runs under, as far as this client knows. Spec 010's SKLIST
+-- is the definitive signal; until it exists the last CFG stands in.
+function Client.LootMode()
+    return Client.config and Client.config.lootMode or C.LOOT_MODE.ROLL
 end
 
 --------------------------------------------------------------------------------
@@ -93,8 +107,9 @@ local function onOpen(sender, body)
         entries = {},          -- itemIdx -> array, from STATE only
         submitted = {},
         state = C.SESSION_STATE.OPEN,
+        lootMode = Client.LootMode(),
     }
-    expectedCount, warnedForSubmission = nil, false
+    expectedCount, lastSent, warnedForSubmission = nil, {}, false
     fireChanged()
 end
 
@@ -111,6 +126,31 @@ local function ownEntryCount(session, me)
         end
     end
     return count
+end
+
+--- Which of the entries we sent are missing from the host's STATE, named.
+local function missingEntries(session, sent, me)
+    local missing = {}
+    local key = me and me:lower() or ""
+    for _, e in ipairs(sent) do
+        local found = false
+        for _, accepted in ipairs(session.entries[e.itemIdx] or {}) do
+            if accepted.owner and accepted.owner:lower() == key
+                and accepted.char:lower() == e.char:lower() then
+                found = true
+                break
+            end
+        end
+        if not found then
+            local item
+            for _, candidate in ipairs(session.items) do
+                if candidate.idx == e.itemIdx then item = candidate end
+            end
+            local label = item and ns.ItemInfo.Get(item.itemString).name or nil
+            missing[#missing + 1] = e.char .. " on " .. (label or ("item " .. e.itemIdx))
+        end
+    end
+    return missing
 end
 
 local function onState(sender, body)
@@ -143,14 +183,21 @@ local function onState(sender, body)
     end
 
     -- Section 5: an entry the host dropped must not be discovered after the roll.
+    -- The refused entries are named (spec 005 section 4); the host does not say why,
+    -- so the likely causes are listed instead. The window shows the list until the
+    -- next submit replaces it.
     if expectedCount and not warnedForSubmission then
-        local mine = ownEntryCount(session, UnitName("player"))
+        local myName = UnitName("player")
+        local mine = ownEntryCount(session, myName)
         if mine < expectedCount then
             warnedForSubmission = true
+            local missing = missingEntries(session, lastSent, myName)
+            session.lastRejected = missing
             ns.Print(string.format(
-                "the host accepted %d of your %d entries. The rest were refused -- "
-                .. "check that those characters are yours, present and not contested.",
-                mine, expectedCount))
+                "the host accepted %d of your %d entries. Refused: %s -- "
+                .. "check that those characters are yours, present, not contested "
+                .. "and can use the item.",
+                mine, expectedCount, table.concat(missing, ", ")))
         end
     end
 
@@ -257,13 +304,22 @@ function Client.Submit(entries)
     if not ok then return false, why end
 
     expectedCount = #entries
+    lastSent = entries
     warnedForSubmission = false
+    session.lastRejected = nil
     return true
 end
 
 --------------------------------------------------------------------------------
 -- Resync (section 10)
 --------------------------------------------------------------------------------
+
+--- The entries of this client's last SUBMIT for the open batch, for the roll window's
+-- dirty check. nil before the first submit of a batch.
+function Client.LastSent()
+    if expectedCount == nil then return nil end
+    return lastSent
+end
 
 --- Ask the host to resend the batch. At most once every C.SYNC_INTERVAL seconds.
 function Client.RequestSync()

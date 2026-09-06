@@ -83,7 +83,7 @@ end
 --
 -- @param raw {
 --   itemString, itemId, name, link,
---   quality, itemLevel, equipLoc,          -- as GetItemInfo returned them
+--   quality, itemLevel, equipLoc, icon,    -- as GetItemInfo returned them
 --   classIndex, subClassIndex,             -- positions, resolved by the index map below
 --   cached = true                          -- false when GetItemInfo returned nil
 -- }
@@ -101,6 +101,7 @@ function ItemInfo.Classify(raw)
         quality    = raw.quality,
         itemLevel  = raw.itemLevel,
         equipLoc   = (raw.equipLoc ~= "" and raw.equipLoc) or nil,
+        icon       = raw.icon,
         special    = false,
     }
 
@@ -210,7 +211,7 @@ function ItemInfo.Get(link)
     end
 
     -- Asking is also what makes the client fetch an item it does not hold.
-    local name, fullLink, quality, itemLevel, _, itemType, itemSubType, _, equipLoc =
+    local name, fullLink, quality, itemLevel, _, itemType, itemSubType, _, equipLoc, icon =
         GetItemInfo(itemString)
 
     local classIndex, subClassIndex
@@ -228,6 +229,7 @@ function ItemInfo.Get(link)
         quality = quality,
         itemLevel = itemLevel,
         equipLoc = equipLoc,
+        icon = icon,
         classIndex = classIndex,
         subClassIndex = subClassIndex,
         cached = name ~= nil,

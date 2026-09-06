@@ -79,6 +79,7 @@ function DB.Host()     return section("host")     end
 function DB.Priority() return section("priority") end
 function DB.History()  return section("history")  end
 function DB.Pending()  return section("pending")  end
+function DB.Scratch()  return section("scratch")  end
 
 --- The tier count to display outside a raid, or before a host announces one.
 function DB.DefaultTierCount()

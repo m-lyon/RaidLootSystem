@@ -38,10 +38,11 @@ local MODULE_FILES = {
     "Modules/ItemInfo.lua",
     "Modules/LootDetect.lua",
     "Modules/Session.lua",
+    "UI/RollWindow.lua",
 }
 
 local SUITES = { "tiers", "serialize", "roster", "session", "eligibility", "resolve",
-                 "iteminfo", "lootdetect" }
+                 "iteminfo", "lootdetect", "rollwindow" }
 
 --------------------------------------------------------------------------------
 -- Comparison and reporting

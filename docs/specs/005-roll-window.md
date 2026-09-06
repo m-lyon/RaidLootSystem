@@ -120,7 +120,10 @@ On `RESULT` + `ROLLS`, the window switches. Per item:
   duplicate drops, both winners in copy order.
 - **Full roll table** — every entry: character, owner, tier, and either the roll (`ROLL`) or the
   list position (`SK`). Sorted by tier, then roll descending or position ascending. The numbers
-  come from `ROLLS`, never from a local re-derivation.
+  come from `ROLLS`, never from a local re-derivation. `ROLLS` therefore carries a per-entry
+  status (rolled / not consulted / withdrawn) and the re-roll list (000 §5); the roll value alone
+  cannot distinguish a not-consulted entry from a withdrawn one, and a client that guessed would
+  mislabel someone's entry.
 - Under `SK`, the winner's row also shows `-> bottom`, and entries removed by the one-win rule or
   by another character's star are marked `withdrawn (won [Item])` (010 §7). An entry that
   silently vanished from the results table is indistinguishable from a bug.
