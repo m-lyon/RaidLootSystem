@@ -933,11 +933,32 @@ local function resultRow(i)
     row.right:SetPoint("RIGHT", row, "RIGHT", -4, 0)
     row.right:SetJustifyH("RIGHT")
     row.right:SetWidth(160)
-    row.award = Widgets.Button(row, "Award", 60, 18, function(self)
-        if ns.Award then ns.Award.Prompt(self.sessionId, self.itemIdx, self.copy) end
+    row.award = Widgets.Button(row, "Award", 64, 18, function(self)
+        if not ns.Award then return end
+        if self.action == "deliver" then
+            local record = ns.Award.Get(self.sessionId, self.itemIdx, self.copy)
+            for _, pending in ipairs(ns.Pending.OutstandingRecords()) do
+                if record and pending.sessionId == record.sessionId
+                    and pending.itemIdx == record.itemIdx and pending.copy == record.copy then
+                    ns.Pending.Deliver(pending)
+                    return
+                end
+            end
+            ns.Print("no pending record for that item; see /rls pending.")
+        else
+            ns.Award.Prompt(self.sessionId, self.itemIdx, self.copy, IsShiftKeyDown())
+        end
     end)
     row.award:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+    row.award:RegisterForClicks("LeftButtonUp")
+    Widgets.Tooltip(row.award, "Award",
+        "Give the item to the winner. Click for the corpse (master loot); shift-click to take "
+        .. "it into your bags and trade it instead.")
     row.award:Hide()
+    row.status = Widgets.Label(row, "", "GameFontHighlightSmall")
+    row.status:SetPoint("RIGHT", row.award, "LEFT", -6, 0)
+    row.status:SetJustifyH("RIGHT")
+    row.status:Hide()
     resultRows[i] = row
     return row
 end
@@ -958,6 +979,7 @@ local function refreshResults(session)
         row.left:SetText(left or "")
         row.right:SetText(right or "")
         row.award:Hide()
+        row.status:Hide()
         row.right:Show()
         row:Show()
         y = y + (height or 16)
@@ -981,10 +1003,35 @@ local function refreshResults(session)
                 or ("roll " .. tostring(w.roll))
             if item.count > 1 then text = text .. "  |cff888888copy " .. w.copy .. "|r" end
             local row = line(text, right)
-            if host then
+            local record = host and ns.Award.Get(session.id, item.idx, w.copy) or nil
+            if record then
+                -- The host's award control (section 5, spec 007): the state, and the
+                -- one action it allows next. Nobody else sees it.
                 row.right:Hide()
                 row.award.sessionId, row.award.itemIdx, row.award.copy = session.id, item.idx, w.copy
-                row.award:Show()
+                local D = C.DELIVERY
+                if record.delivery == D.DELIVERED then
+                    row.status:SetText("|cff66ff66" .. ns.Award.StatusText(record) .. "|r")
+                    row.award:Hide()
+                elseif record.delivery == D.PENDING then
+                    row.status:SetText("|cffffaa00" .. ns.Award.StatusText(record) .. "|r")
+                    row.award.action = "deliver"
+                    row.award:SetText("Deliver")
+                    row.award:Show()
+                elseif record.delivery == D.LOST then
+                    row.status:SetText("|cffff6060" .. ns.Award.StatusText(record) .. "|r")
+                    row.award.action = "award"
+                    row.award:SetText("Retry")
+                    row.award:Show()
+                else
+                    local failed = record.delivery == D.FAILED
+                    row.status:SetText((failed and "|cffff6060" or "|cffaaaaaa")
+                        .. ns.Award.StatusText(record) .. "|r")
+                    row.award.action = "award"
+                    row.award:SetText(failed and "Retry" or "Award")
+                    row.award:Show()
+                end
+                row.status:Show()
             end
         end
         for _, r in ipairs(table_.rows) do

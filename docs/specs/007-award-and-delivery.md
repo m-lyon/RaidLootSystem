@@ -92,6 +92,11 @@ were **eligible for that loot at kill time**. A bot summoned in after the boss d
 receive it even though it won the roll and is standing right there. When a trade is refused,
 report this as a probable cause rather than a generic failure.
 
+**Where the list lives:** the host panel carries a **Pending deliveries** section, and
+`/rls pending` prints the same list numbered for `/rls deliver <n>`. The slash form exists
+because the host panel is only reachable while holding master looter (006 §2), and a host who
+handed it over still has to deliver what is in their bags.
+
 **Delivering:** a **Deliver** button per pending item targets the recipient, opens trade, and
 places the item. For a bot, follow with the whisper needed to make it accept
 (PlayerbotManager's bot command set includes trade handling — see
@@ -136,7 +141,25 @@ SendChatMessage("equip " .. itemLink, "WHISPER", nil, winnerName)
   confirm the argument form (item link vs item name) before shipping, and fail quietly with a
   logged warning rather than spamming a bot with commands it rejects.
 
-## 8. Acceptance criteria
+## 8. Delivery state
+
+Every awarded copy carries one of the states history records (008 §3). `AWAITING` is the state
+between resolution and the host's click; it is kept distinct from `PENDING`, which means the
+host holds the item for a trade, so a batch nobody awarded reads as exactly that afterwards.
+
+| State | Meaning |
+|---|---|
+| `AWAITING` | Resolved, no award attempted yet |
+| `DELIVERED` | In the winner's bags, by either path |
+| `PENDING` | In the host's bags with the 2-hour trade flag; a `Pending` record exists |
+| `FAILED` | The last attempt failed with a named reason (§4); retryable |
+| `LOST` | The corpse is gone and the item was never looted |
+| `UNCLAIMED` | Nobody entered; master looter's choice |
+
+A record's state is the host's and is not transmitted; clients see the host's award controls
+only through the results view on the host's own screen.
+
+## 9. Acceptance criteria
 
 - Awarding a valid corpse-path win moves the item and clears the loot slot, and the results row
   shows delivered.

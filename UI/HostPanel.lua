@@ -98,8 +98,8 @@ local ROW_H = 20
 local PAD = 16
 
 local frame, content
-local settings, candidates, health, priority, live, banner
-local candidateRows, healthRows, liveRows = {}, {}, {}
+local settings, candidates, health, priority, live, banner, pending
+local candidateRows, healthRows, liveRows, pendingRows = {}, {}, {}, {}
 local ticked = {}                   -- itemId -> false when the host unticked it. Keyed by
                                     -- id, not idx: a rebuild renumbers idx.
 local refreshAccumulator = 0
@@ -139,7 +139,7 @@ end
 
 local function layoutSections()
     local y = 0
-    for _, panel in ipairs({ banner, settings, candidates, health, priority, live }) do
+    for _, panel in ipairs({ banner, pending, settings, candidates, health, priority, live }) do
         if panel:IsShown() then
             panel:ClearAllPoints()
             panel:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -y)
@@ -614,6 +614,79 @@ local function refreshCountdown()
 end
 
 --------------------------------------------------------------------------------
+-- Pending deliveries (spec 007 section 5)
+--------------------------------------------------------------------------------
+
+local function buildPending(parent)
+    local panel = section(parent, "Pending deliveries", 60)
+    panel.list = CreateFrame("Frame", nil, panel)
+    panel.list:SetPoint("TOPLEFT", panel.title, "BOTTOMLEFT", 0, -6)
+    panel.list:SetWidth(INNER - 20)
+    panel.list:SetHeight(1)
+    panel:Hide()
+    return panel
+end
+
+local function pendingRow(i)
+    local row = pendingRows[i]
+    if row then return row end
+    row = CreateFrame("Frame", nil, pending.list)
+    row:SetWidth(INNER - 20)
+    row:SetHeight(ROW_H)
+    row.left = Widgets.Label(row, "", "GameFontHighlightSmall")
+    row.left:SetPoint("LEFT", row, "LEFT", 0, 0)
+    row.left:SetWidth(INNER - 190)
+    row.left:SetJustifyH("LEFT")
+    row.deliver = Widgets.Button(row, "Deliver", 64, 18, function()
+        if row.record then ns.Pending.Deliver(row.record) end
+    end)
+    row.deliver:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+    Widgets.Tooltip(row.deliver, "Deliver",
+        "Open a trade with the winner and place the item. They must be within 11 yards.")
+    row.done = Widgets.Button(row, "Done", 44, 18, function()
+        if row.record then
+            StaticPopup_Show("RLS_CONFIRM_DELIVERED", ns.LootDetect.Label({ info = ns.ItemInfo.Get(row.record.itemString) }),
+                row.record.winner, row.record)
+        end
+    end)
+    row.done:SetPoint("RIGHT", row.deliver, "LEFT", -4, 0)
+    Widgets.Tooltip(row.done, "Mark delivered", "You handed it over yourself. Confirmed.")
+    row.left2 = Widgets.Label(row, "", "GameFontHighlightSmall")
+    row.left2:SetPoint("RIGHT", row.done, "LEFT", -6, 0)
+    row.left2:SetJustifyH("RIGHT")
+    pendingRows[i] = row
+    return row
+end
+
+local URGENCY_COLOUR = { ok = "|cffaaaaaa", amber = "|cffffaa00", red = "|cffff4040",
+                         expired = "|cff888888" }
+
+local function refreshPending()
+    local records = ns.Pending.OutstandingRecords()
+    if #records == 0 then
+        pending:Hide()
+        return
+    end
+    pending:Show()
+    local now = time()
+    for i, record in ipairs(records) do
+        local row = pendingRow(i)
+        row.record = record
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", pending.list, "TOPLEFT", 0, -(i - 1) * ROW_H)
+        local info = ns.ItemInfo.Get(record.itemString)
+        row.left:SetText((info.link or info.name or record.itemString) .. " for "
+            .. record.winner .. " |cff888888(" .. tostring(record.owner or "?") .. ")|r")
+        local left, urgency = ns.Pending.TimeLeft(record, now)
+        row.left2:SetText(URGENCY_COLOUR[urgency] .. left .. "|r")
+        row:Show()
+    end
+    for i = #records + 1, #pendingRows do pendingRows[i]:Hide() end
+    pending.list:SetHeight(#records * ROW_H)
+    pending:SetHeight(34 + #records * ROW_H + 8)
+end
+
+--------------------------------------------------------------------------------
 -- Loot still on corpse (section 3, spec 004 section 3)
 --------------------------------------------------------------------------------
 
@@ -656,7 +729,16 @@ local function build()
     scroll, content = Widgets.ScrollArea(frame, "RaidLootSystemHostScroll", INNER + 4, 560)
     scroll:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, -40)
 
+    StaticPopupDialogs["RLS_CONFIRM_DELIVERED"] = {
+        text = "Mark %s as delivered to %s? This updates the history record.",
+        button1 = "Delivered",
+        button2 = CANCEL,
+        OnAccept = function(self) ns.Pending.MarkDelivered(self.data) end,
+        timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+    }
+
     banner = buildBanner(content)
+    pending = buildPending(content)
     settings = buildSettings(content)
     candidates = buildCandidates(content)
     health = buildHealth(content)
@@ -687,6 +769,7 @@ local function build()
         end
         refreshCountdown()
         refreshBanner()
+        refreshPending()
         layoutSections()
     end)
 end
@@ -700,6 +783,7 @@ function HostPanel.Refresh()
     refreshLive()
     refreshCountdown()
     refreshBanner()
+    refreshPending()
     layoutSections()
 end
 

@@ -79,7 +79,7 @@ context, and splitting them loses that.
       awards = {
         { copy=1, char="Bonk", owner="Dave", tier=1, roll=91, listIdx=3,
           priorIndex=3,                    -- SK: index before the suicide, for restore (010 §6)
-          delivery="DELIVERED",            -- DELIVERED | PENDING | FAILED | LOST | UNCLAIMED
+          delivery="DELIVERED",            -- AWAITING | DELIVERED | PENDING | FAILED | LOST | UNCLAIMED (007 §8)
           deliveryPath="MASTER_LOOT",      -- MASTER_LOOT | TRADE
           deliveredAt=1757155390 },
       },

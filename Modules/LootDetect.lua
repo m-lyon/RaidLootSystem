@@ -364,6 +364,11 @@ function LootDetect.ExpectClear(lootSlot)
     if lootSlot then expectedClears[lootSlot] = true end
 end
 
+--- The award never cleared the slot, so a later clear is somebody else's again.
+function LootDetect.UnexpectClear(lootSlot)
+    if lootSlot then expectedClears[lootSlot] = nil end
+end
+
 --- Does `lootSlot` still hold `itemString`? Checked at award time, when a despawned
 -- corpse or a shifted slot index would otherwise send an item to the wrong person.
 function LootDetect.SlotHolds(lootSlot, itemString)

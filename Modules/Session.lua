@@ -639,8 +639,9 @@ function Session.Close()
         }))
     end
 
-    if ns.History then ns.History.Record(session) end
+    -- Award records first, so the history record written next carries them.
     if ns.Award then ns.Award.Begin(session) end
+    if ns.History then ns.History.Record(session) end
 
     fireChanged()
     return true

@@ -15,7 +15,7 @@ layout, pure-core boundary, saved-variable schema and comms protocol.
 | [004](004-loot-detection-and-batching.md) | Loot detection and item classification | `LootDetect`, `ItemInfo`, `Data/*` | 000 | **Built** |
 | [005](005-roll-window.md) | Roll window | `UI/RollWindow` | 000–004 | **Built** |
 | [006](006-host-panel.md) | Host panel | `UI/HostPanel`, `Announce` | 000, 001, 002, 004 | **Built** — the priority-list section is 010's |
-| [007](007-award-and-delivery.md) | Award and delivery | `Award`, `Pending` | 000, 002, 003, 004 | Not started |
+| [007](007-award-and-delivery.md) | Award and delivery | `Award`, `Pending` | 000, 002, 003, 004 | **Built** — the trade-accept whisper and the equip syntax await the server build |
 | [008](008-history-and-export.md) | History and export | `History`, `UI/HistoryBrowser` | 000, 002, 003, 007 | Not started |
 | [009](009-simulation-and-testing.md) | Simulation and testing | `tests/`, `Simulate` | 000 | Partial — `tests/run.lua` and the fixture suites; `Simulate` not started |
 | [010](010-priority-list.md) | Priority list (Suicide Kings) | `Core/PriorityList`, `Modules/PriorityList`, `Core/Resolve` | 000, 001, 002, 003, 007, 008 | Partial — `Core/Resolve`'s SK path only |
