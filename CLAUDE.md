@@ -74,9 +74,13 @@ Add a fixture case for every bug fixed in `Core/`.
 
 ## What is and isn't in the tree
 
-`Libs/` and `Data/` are populated; everything else in spec 000's file layout is still to be
-written. There is no `.toc` yet — the first person to add Lua under `Core/` writes it, in the
-load order given in spec 000 §3.
+Spec 001 is built. In the tree: `RaidLootSystem.toc`, `RaidLootSystem.lua`,
+`Core/{Constants,Util,Serialize,Tiers}.lua`, `Modules/{Database,Comms,Roster}.lua`,
+`UI/{Widgets,HierarchyEditor,Minimap}.lua`, `Libs/`, `Data/`, and `tests/` with the `tiers`,
+`serialize` and `roster` suites plus `tests/purity.sh`.
+
+Still to write: `Core/{Eligibility,Resolve,PriorityList}.lua` and every other module in spec
+000 §3. Add each new file to the `.toc` in the load order given there.
 
 ## Conventions
 

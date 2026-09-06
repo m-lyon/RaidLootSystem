@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Lua 5.1
+        run: sudo apt-get update && sudo apt-get install -y lua5.1
+
+      - name: Fixture suites
+        run: lua5.1 tests/run.lua
+
+      - name: Purity and locale greps
+        run: ./tests/purity.sh
+
+      - name: luacheck
+        continue-on-error: true          # warnings are advisory, spec 009 section 6
+        run: |
+          sudo apt-get install -y luarocks
+          sudo luarocks install luacheck
+          luacheck Core Modules UI tests RaidLootSystem.lua --std lua51 --no-color || true
