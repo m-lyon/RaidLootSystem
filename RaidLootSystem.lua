@@ -143,6 +143,8 @@ local function help()
     ns.Print("  /rls hierarchy    open your hierarchy")
     ns.Print("  /rls host         open the host panel (master looter)")
     ns.Print("  /rls history      open the history browser")
+    ns.Print("  /rls sk list      print the priority list")
+    ns.Print("  /rls sk verify    replay the priority list from its seed and report drift")
     ns.Print("  /rls pending      list items you hold for other characters")
     ns.Print("  /rls deliver <n>  open a trade for pending item n")
     ns.Print("  /rls abandon <n>  give up on pending item n (confirmed)")
@@ -179,6 +181,15 @@ local function dispatch(input)
         ns.HostPanel.Toggle()
     elseif command == "history" then
         ns.HistoryBrowser.Toggle()
+    elseif command == "sk" then
+        local sub = argument:lower()
+        if sub == "verify" then
+            ns.Priority.RunVerify()
+        elseif sub == "list" or sub == "" then
+            ns.Priority.PrintList()
+        else
+            ns.Print("/rls sk list, or /rls sk verify. Seeding and edits are in the host panel.")
+        end
     elseif command == "pending" then
         ns.Pending.PrintList()
     elseif command == "deliver" then
@@ -268,6 +279,7 @@ loader:SetScript("OnEvent", function(_, event, addonName)
         ns.Client.Init()
         ns.Award.Init()
         ns.Pending.Init()
+        ns.Priority.Init()
         ns.RollWindow.Init()
         ns.HostPanel.Init()
         ns.Minimap.Init()

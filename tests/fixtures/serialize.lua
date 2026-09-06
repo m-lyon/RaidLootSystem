@@ -82,6 +82,18 @@ local function run(input, ns)
 
     -- Session payloads, spec 002. Each case encodes, asserts the exact body, then
     -- decodes it back: a change to either side alone fails the case.
+    elseif input.kind == "sklist" then
+        local body = S.encodeSklist(input.version, input.seed, input.order)
+        local msg, why = S.decodeSklist(body)
+        if not msg then return { ok = false, body = body, why = why } end
+        return { ok = true, body = body, version = msg.version, seed = msg.seed, order = msg.order }
+
+    elseif input.kind == "openMode" then
+        local body = S.encodeOpen(input.sessionId, input.tierCount, input.secondsLeft,
+            input.items, input.lootMode)
+        local msg = S.decodeOpen(body)
+        return { body = body, lootMode = msg.lootMode }
+
     elseif input.kind == "open" then
         local body = S.encodeOpen(input.sessionId, input.tierCount, input.secondsLeft,
             input.items)
@@ -405,6 +417,34 @@ return {
             expected = { ok = true, sessionId = "Steve-100",
                          rolls = { { itemIdx = 1, char = "Sneaky", tier = 2, roll = 87,
                                      listIdx = 0, status = "", rerolled = {} } } },
+        },
+        {
+            name = "OPEN carries its loot mode as a trailing field",
+            input = { kind = "openMode", sessionId = "Steve-100", tierCount = 3, secondsLeft = 180,
+                      items = { { idx = 1, itemString = "item:49623", count = 1 } }, lootMode = "SK" },
+            expected = { body = "Steve-100^3^180^1=item:49623=1^SK", lootMode = "SK" },
+        },
+        {
+            name = "an OPEN without a loot mode decodes as ROLL",
+            input = { kind = "openMode", sessionId = "Steve-100", tierCount = 3, secondsLeft = 180,
+                      items = { { idx = 1, itemString = "item:49623", count = 1 } } },
+            expected = { body = "Steve-100^3^180^1=item:49623=1", lootMode = "ROLL" },
+        },
+        {
+            name = "SKLIST round-trips version, seed and order",
+            input = { kind = "sklist", version = 47, seed = 1757155200, order = { "Chop", "Sneaky", "Steve" } },
+            expected = { ok = true, body = "47^1757155200^Chop~Sneaky~Steve", version = 47,
+                         seed = 1757155200, order = { "Chop", "Sneaky", "Steve" } },
+        },
+        {
+            name = "an empty SKLIST is a valid unseeded list",
+            input = { kind = "sklist", version = 0, seed = 0, order = {} },
+            expected = { ok = true, body = "0^0^", version = 0, seed = 0, order = {} },
+        },
+        {
+            name = "an SKLIST naming a character twice is rejected",
+            input = { kind = "decodeOnly", decoder = "decodeSklist", body = "1^5^Ann~ann" },
+            expected = { ok = false, why = "SKLIST lists ann twice" },
         },
         {
             name = "ABORT round-trips its reason code",

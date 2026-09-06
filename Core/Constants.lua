@@ -225,7 +225,7 @@ C.BOT_EQUIP_COMMAND = "equip"
 -- Saved-variable defaults (spec 000 section 4). Database.lua owns the copy.
 --------------------------------------------------------------------------------
 
-C.SCHEMA = 1
+C.SCHEMA = 2                  -- 2: priority.seedChars and priority.log (spec 010 section 9)
 
 C.DEFAULTS = {
     schema = C.SCHEMA,
@@ -248,9 +248,11 @@ C.DEFAULTS = {
         autoClose        = false,   -- close as soon as everyone expected has submitted
     },
     priority = {
-        version = 0,
-        seed    = 0,
-        order   = {},
+        version   = 0,
+        seed      = 0,
+        seedChars = {},           -- the names the seed shuffled, in the order it took them
+        order     = {},
+        log       = {},           -- every mutation since the seed, for verify's replay
     },
     history = {},
     pending = {},

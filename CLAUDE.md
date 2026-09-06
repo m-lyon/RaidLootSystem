@@ -99,11 +99,12 @@ divider; the fixture runner loads all four. Keep new pure logic above that line.
 `Session.Open` is reachable now. Until the host panel (006) exists, `/rls loot`, `/rls start`
 and `/rls roll <link>` are the seam that drives it.
 
-`Core/Resolve.lua` carries spec 010's SK resolution path (010 §7) because it is the same code
-path. The rest of 010 — `Core/PriorityList`, storage, sync, restore-on-failure — is not written.
+Specs 005 through 008 and 010 are built too: `UI/{RollWindow,HostPanel,HistoryBrowser}.lua`,
+`Modules/{Award,Pending,History,PriorityList,Announce}.lua`, `Core/PriorityList.lua`, with the
+`rollwindow`, `announce`, `hostpanel`, `award`, `pending`, `history`, `priority` and `sk` suites.
+The pure list operations are `ns.PriorityList` (Core); the stateful module is `ns.Priority`.
 
-Still to write: `Core/PriorityList.lua` and every other module in spec 000 §3. Add each new
-file to the `.toc` in the load order given there.
+Still to write: `Modules/Simulate.lua` (spec 009 §4).
 
 ## Conventions
 

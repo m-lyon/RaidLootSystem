@@ -398,12 +398,15 @@ function Session.Open(items)
     Session.current = session
     if ns.Award then ns.Award.Snapshot(session) end     -- spec 007: what the host already had
 
-    local body, err = Serialize.encodeOpen(session.id, tierCount, seconds, session.items)
+    local body, err = Serialize.encodeOpen(session.id, tierCount, seconds, session.items,
+        session.lootMode)
     if not body then
         Session.current = nil
         return false, "this loot could not be encoded (" .. tostring(err) .. ")."
     end
     ns.Comms.Send(C.OPS.OPEN, body)
+    -- The list follows OPEN, never inside it (spec 010 section 8).
+    if session.lootMode == C.LOOT_MODE.SK and ns.Priority then ns.Priority.Broadcast() end
 
     local labels = {}
     for i, item in ipairs(session.items) do
@@ -427,7 +430,7 @@ function Session.Extend(seconds)
     local endsAt = session.endsAt + seconds
     local secondsLeft = math.max(0, endsAt - GetTime())
     local body, err = Serialize.encodeOpen(session.id, session.tierCount, secondsLeft,
-        session.items)
+        session.items, session.lootMode)
     if not body then
         -- Extending locally while the clients keep the old deadline would close their
         -- windows under an open batch. Refuse, loudly.
@@ -488,7 +491,8 @@ function Session.DropSlots(goneSlots)
     -- Clients replace their item list on a same-id OPEN (spec 002 section 3), so the
     -- shrunken batch reaches them the same way the original did.
     local secondsLeft = math.max(0, session.endsAt - GetTime())
-    local body = Serialize.encodeOpen(session.id, session.tierCount, secondsLeft, session.items)
+    local body = Serialize.encodeOpen(session.id, session.tierCount, secondsLeft, session.items,
+        session.lootMode)
     if body then ns.Comms.Send(C.OPS.OPEN, body) end
     stateDirty = true
     fireChanged()
@@ -574,8 +578,10 @@ local function onSync(sender, body)
 
     local secondsLeft = math.max(0, session.endsAt - GetTime())
     local body2 = Serialize.encodeOpen(session.id, session.tierCount, secondsLeft,
-        session.items)
+        session.items, session.lootMode)
     if body2 then ns.Comms.Send(C.OPS.OPEN, body2) end
+    -- SYNC resends OPEN, SKLIST and STATE (spec 010 section 8).
+    if session.lootMode == C.LOOT_MODE.SK and ns.Priority then ns.Priority.Broadcast() end
     broadcastState()
     ns.Debug("resent the batch to " .. tostring(sender))
 end
@@ -650,8 +656,10 @@ function Session.Close()
         }))
     end
 
-    -- Award records first, so the history record written next carries them.
+    -- Award records first, then the suicides they earn (spec 010 section 7), so the
+    -- history record written last carries the prior indices.
     if ns.Award then ns.Award.Begin(session) end
+    if ns.Priority then ns.Priority.ApplyAwards(session) end
     if ns.History then ns.History.Record(session) end
 
     fireChanged()

@@ -138,9 +138,11 @@ RaidLootSystemDB = {
   },
 
   priority = {                       -- Suicide Kings list. Every client stores it, not just
-    version = 0,                     -- the host, because every client renders it. Spec 010 §9.
-    seed    = 0,
-    order   = {},                    -- character names, index 1 = highest priority
+    version   = 0,                   -- the host, because every client renders it. Spec 010 §9.
+    seed      = 0,
+    seedChars = {},                  -- the names the seed shuffled, so replay can start there
+    order     = {},                  -- character names, index 1 = highest priority
+    log       = {},                  -- every mutation since the seed; host-side, replayed by verify
   },
 
   history = { --[[ see spec 008 ]] },
@@ -199,14 +201,14 @@ Payload budget: **180 bytes** per chunk body. Outgoing messages sit in a queue d
 | `HI` | any → all | `addonVersion` | Announce presence and version on load and on roster change |
 | `ROSTER` | client → all | `name=class~name=class~…` (in hierarchy order) | Publish this player's claimed roster |
 | `RREQ` | host → all | *(empty)* | Ask everyone to resend `ROSTER` |
-| `OPEN` | host → all | `sessionId^tierCount^secondsLeft^item~item…` where item is `idx=itemString=count` | Open a batch |
+| `OPEN` | host → all | `sessionId^tierCount^secondsLeft^item~item…^lootMode` where item is `idx=itemString=count`; `lootMode` is a trailing field, absent meaning `ROLL` | Open a batch. The batch carries its own mode so a late joiner who never saw `CFG` still renders it right (010 §8) |
 | `SUBMIT` | client → host | `sessionId^entry~entry…` where entry is `itemIdx=charName=overrideFlag=star` | Submit or revise entries (`star` is the SK priority pick, 010 §7) |
 | `STATE` | host → all | `sessionId^submittedNames~…^entry~entry…` where entry is `itemIdx=charName=owner=tier` | Authoritative aggregate; drives the live open view |
 | `RESULT` | host → all | `sessionId^result~result…` where result is `itemIdx=winner=tier=roll=outcome` | Resolved batch |
 | `ROLLS` | host → all | `sessionId^roll~roll…` where roll is `itemIdx=charName=tier=roll=listIdx=status=rerolls` | Full roll record for the results table; `roll` is 0 under SK, `listIdx` is 0 under ROLL. `status` is empty for a rolled entry, `NC` not consulted, `WD` withdrawn (010 §7); `rerolls` is the tie re-roll list joined with `+`. Both exist so the results table can show a not-consulted entry as such and a re-roll inline (005 §5) — neither is derivable from the roll value |
 | `ABORT` | host → all | `sessionId^reasonCode` | Batch cancelled |
 | `CFG` | host → all | `tierCount^timerSeconds^lootMode` | Settings changed between batches |
-| `SKLIST` | host → all | `version^seed^name~name…` | The authoritative priority list, sent immediately after `OPEN` and on request (010 §8) |
+| `SKLIST` | host → all | `version^seed^name~name…` | The authoritative priority list, sent after `OPEN` under SK, after `RESULT` once the suicides are applied, and on `SYNC` (010 §8) |
 | `SYNC` | client → host | `sessionId` | Request a resend of `OPEN` + `STATE` |
 
 **`secondsLeft`, not `endsAt`.** The host's `endsAt` is built on the client clock, which

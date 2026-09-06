@@ -23,6 +23,7 @@ local CORE_FILES = {
     "Core/Tiers.lua",
     "Core/Eligibility.lua",
     "Core/Resolve.lua",
+    "Core/PriorityList.lua",
 }
 
 local DATA_FILES = {
@@ -41,6 +42,7 @@ local MODULE_FILES = {
     "Modules/Award.lua",
     "Modules/Pending.lua",
     "Modules/History.lua",
+    "Modules/PriorityList.lua",
     "Modules/Announce.lua",
     "UI/RollWindow.lua",
     "UI/HostPanel.lua",
@@ -48,7 +50,7 @@ local MODULE_FILES = {
 
 local SUITES = { "tiers", "serialize", "roster", "session", "eligibility", "resolve",
                  "iteminfo", "lootdetect", "rollwindow", "announce", "hostpanel",
-                 "award", "pending", "history" }
+                 "award", "pending", "history", "priority", "sk" }
 
 --------------------------------------------------------------------------------
 -- Comparison and reporting

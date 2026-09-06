@@ -901,6 +901,8 @@ local function refreshEntry(session)
     if session.lastRejected and #session.lastRejected > 0 then
         entryPanel.warning:SetText("|cffff6060The host refused: "
             .. table.concat(session.lastRejected, ", ") .. "|r")
+    elseif session.priorityNotice then
+        entryPanel.warning:SetText("|cffffaa00" .. session.priorityNotice .. "|r")
     else
         entryPanel.warning:SetText("")
     end
