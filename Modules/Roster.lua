@@ -185,6 +185,21 @@ function Roster.ClassOf(name)
     return entry and entry.class or nil
 end
 
+--- Class of any character in the raid, which may belong to another player:
+-- ours first, then whoever published it. The fallback several UI screens need
+-- for characters that are on someone else's roster, not ours.
+function Roster.ClassOfAny(name)
+    local class = Roster.ClassOf(name)
+    if class then return class end
+    local key = name:lower()
+    for _, published in pairs(Roster.published) do
+        for n, entry in pairs(published.chars or {}) do
+            if n:lower() == key then return entry.class end
+        end
+    end
+    return nil
+end
+
 function Roster.SelfName()
     for name, entry in pairs(DB().chars) do
         if entry.isSelf then return name end

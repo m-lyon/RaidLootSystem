@@ -475,20 +475,6 @@ local function rosterRows(session)
     return out
 end
 
---- Class of any character in the raid, for colouring names in the detail and
--- results views. Mine first, then whoever published it.
-local function classOf(char)
-    local class = ns.Roster.ClassOf(char)
-    if class then return class end
-    local key = char:lower()
-    for _, published in pairs(ns.Roster.published) do
-        for name, entry in pairs(published.chars or {}) do
-            if name:lower() == key then return entry.class end
-        end
-    end
-    return nil
-end
-
 --- charName (lower) -> owner, from the last STATE, falling back to the claim index.
 local function ownersFor(session)
     local owners = {}
@@ -504,7 +490,7 @@ local function ownersFor(session)
 end
 
 local function colouredChar(char)
-    return Widgets.ColorName(char, classOf(char))
+    return Widgets.ColorName(char, ns.Roster.ClassOfAny(char))
 end
 
 --- Players the host is waiting on: group members running a compatible addon.

@@ -30,20 +30,6 @@ local frame, content, rows
 
 local function DB() return ns.Database.Priority() end
 
---- The class of a character, which may belong to another player: ours first, then
--- whoever published it. Same fallback the host panel's section uses.
-local function classOf(name)
-    local class = ns.Roster.ClassOf(name)
-    if class then return class end
-    local key = name:lower()
-    for _, published in pairs(ns.Roster.published) do
-        for n, entry in pairs(published.chars or {}) do
-            if n:lower() == key then return entry.class end
-        end
-    end
-    return nil
-end
-
 --- Is SK the mode in force? true, false, or nil when no batch is open.
 --
 -- The host reads its own session, a client reads the one the host sent it. A list
@@ -66,7 +52,7 @@ local function context(order)
         local claim = claims[name:lower()]
         owners[name] = claim and claim.owners[1] or nil
         present[name] = ns.Roster.IsPresent(name) and true or nil
-        classes[name] = classOf(name)
+        classes[name] = ns.Roster.ClassOfAny(name)
         contested[name] = (claim and claim.contested) and true or nil
     end
     return { owners = owners, present = present, classes = classes,
