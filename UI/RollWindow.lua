@@ -329,16 +329,13 @@ function RollWindow.FormatCountdown(seconds)
     return string.format("%d:%02d", math.floor(seconds / 60), seconds % 60)
 end
 
---- Is a list position "near the top" (spec 010 section 11)? The median is taken over
--- the positions of the characters actually in the raid; absent characters do not
--- count towards it, because they are not who you are competing with tonight.
+--- Is a list position "near the top" (spec 010 section 11)?
+--
+-- The rule itself lives in Core/PriorityList so that this window and the list
+-- viewer cannot drift apart on it (spec 011 section 4). Kept here as the name 005
+-- and its fixtures already use.
 function RollWindow.AboveMedian(position, presentPositions)
-    if not position or #presentPositions == 0 then return false end
-    local sorted = {}
-    for i, v in ipairs(presentPositions) do sorted[i] = v end
-    table.sort(sorted)
-    local median = sorted[math.ceil(#sorted / 2)]
-    return position <= median
+    return ns.PriorityList.aboveMedian(position, presentPositions)
 end
 
 --------------------------------------------------------------------------------
@@ -888,6 +885,7 @@ local function refreshEntry(session)
     end
 
     -- Footer.
+    if sk then entryPanel.fullList:Show() else entryPanel.fullList:Hide() end
     local myName = me()
     local localEntries = RollWindow.LocalEntries(scratchFor(session), items)
     local accepted = RollWindow.AcceptedFor(session.entries, myName)
@@ -1279,6 +1277,16 @@ local function buildEntryPanel(parent)
     panel.pass:SetPoint("TOPLEFT", panel.warning, "BOTTOMLEFT", 0, -6)
     Widgets.Tooltip(panel.pass, "Pass all",
         "Clear every tick and submit nothing. That still counts you as in, so the host can close.")
+
+    -- Under SK only: the moment a player wants the whole list is the moment they
+    -- are looking at their own position here and wondering who is above them.
+    panel.fullList = Widgets.Button(panel, "Full list", 80, BUTTON_H, function()
+        ns.PriorityViewer.Show()
+    end)
+    panel.fullList:SetPoint("LEFT", panel.pass, "RIGHT", 6, 0)
+    Widgets.Tooltip(panel.fullList, "Full list",
+        "The whole priority list, in order, read-only.")
+    panel.fullList:Hide()
 
     panel.submit = Widgets.Button(panel, "Submit", 130, BUTTON_H, function() submitGrid(false) end)
     panel.submit:SetPoint("TOPRIGHT", panel.warning, "BOTTOMRIGHT", 0, -6)

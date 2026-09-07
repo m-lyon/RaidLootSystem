@@ -195,10 +195,13 @@ local function dispatch(input)
         local sub = argument:lower()
         if sub == "verify" then
             ns.Priority.RunVerify()
-        elseif sub == "list" or sub == "" then
+        elseif sub == "" then
+            ns.PriorityViewer.Toggle()
+        elseif sub == "list" then
             ns.Priority.PrintList()
         else
-            ns.Print("/rls sk list, or /rls sk verify. Seeding and edits are in the host panel.")
+            ns.Print("/rls sk for the list window, /rls sk list to print it, "
+                .. "/rls sk verify to check it. Seeding and edits are in the host panel.")
         end
     elseif command == "pending" then
         ns.Pending.PrintList()
