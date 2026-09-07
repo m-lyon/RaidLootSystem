@@ -272,6 +272,68 @@ function PriorityList.replay(seed, chars, events)
     return order, problems
 end
 
+--------------------------------------------------------------------------------
+-- The viewer (spec 011)
+--------------------------------------------------------------------------------
+
+--- Is a list position "near the top" (spec 010 section 11)? The median is taken
+-- over the positions of the characters actually in the raid; absent characters do
+-- not count towards it, because they are not who you are competing with tonight.
+--
+-- One definition, used by both the roll window rows and the list viewer. Two
+-- copies would drift, and the drift is invisible until two players compare
+-- screens on the same night (spec 011 section 4).
+function PriorityList.aboveMedian(position, presentPositions)
+    if not position or not presentPositions or #presentPositions == 0 then return false end
+    local sorted = {}
+    for i, v in ipairs(presentPositions) do sorted[i] = v end
+    table.sort(sorted)
+    local median = sorted[math.ceil(#sorted / 2)]
+    return position <= median
+end
+
+--- The rows the read-only viewer draws (spec 011 section 4).
+--
+-- Every WoW-facing lookup is resolved by the caller and passed in, so the whole
+-- row model is arithmetic over plain tables and the viewer itself holds no logic.
+--
+-- @param order array of character names, in list order
+-- @param ctx   { owners = { [char] = owner }, present = { [char] = true },
+--                classes = { [char] = "WARRIOR" }, contested = { [char] = true },
+--                me = "Playername" }
+-- @return array of { position, char, owner, class, isSelf, contested, present,
+--         aboveMedian }
+function PriorityList.viewRows(order, ctx)
+    order = order or {}
+    ctx = ctx or {}
+    local owners, present = ctx.owners or {}, ctx.present or {}
+    local classes, contested = ctx.classes or {}, ctx.contested or {}
+    local me = keyOf(ctx.me)
+
+    -- The median is over who is here, so it needs a pass of its own first.
+    local presentPositions = {}
+    for i = 1, #order do
+        if present[order[i]] then presentPositions[#presentPositions + 1] = i end
+    end
+
+    local rows = {}
+    for i = 1, #order do
+        local char = order[i]
+        local owner = owners[char]
+        rows[i] = {
+            position = i,
+            char = char,
+            owner = owner,
+            class = classes[char],
+            isSelf = me ~= nil and owner ~= nil and keyOf(owner) == me,
+            contested = contested[char] == true,
+            present = present[char] == true,
+            aboveMedian = PriorityList.aboveMedian(i, presentPositions),
+        }
+    end
+    return rows
+end
+
 --- Positions where two orders disagree.
 function PriorityList.diff(a, b)
     local out = {}

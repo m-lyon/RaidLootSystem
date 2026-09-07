@@ -43,6 +43,7 @@ UI\RollWindow.lua
 UI\HostPanel.lua
 UI\HierarchyEditor.lua
 UI\HistoryBrowser.lua
+UI\PriorityViewer.lua
 UI\Minimap.lua
 
 RaidLootSystem.lua

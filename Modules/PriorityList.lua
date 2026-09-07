@@ -629,14 +629,7 @@ function Priority.RefreshSection(panel)
         row.position:SetText(tostring(i))
         local claim = claims[name:lower()]
         local owner = claim and claim.owners[1] or nil
-        local class = ns.Roster.ClassOf(name)
-        if not class then
-            for _, published in pairs(ns.Roster.published) do
-                for n, entry in pairs(published.chars or {}) do
-                    if n:lower() == name:lower() then class = entry.class end
-                end
-            end
-        end
+        local class = ns.Roster.ClassOfAny(name)
         local label = Widgets.ColorName(name, class) .. " |cff888888(" .. tostring(owner or "unclaimed") .. ")|r"
         if owner and me and owner:lower() == me:lower() then label = label .. " |cffaaaaaa*|r" end
         if claim and claim.contested then label = label .. " |cffff4040contested|r" end

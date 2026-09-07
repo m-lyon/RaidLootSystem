@@ -111,6 +111,11 @@ The pure list operations are `ns.PriorityList` (Core); the stateful module is `n
 
 Spec 009's `Modules/Simulate.lua` is built too. Every module in spec 000 §3 now exists.
 
+Spec 011 adds `UI/PriorityViewer.lua` beyond 000 §3: the read-only priority list every player
+can open with `/rls sk`. Its row model is `PriorityList.viewRows` in `Core/`, and
+`PriorityList.aboveMedian` is the single definition of the near-the-top rule --
+`RollWindow.AboveMedian` delegates to it so the two screens cannot disagree.
+
 ## Conventions
 
 - Semver in the `.toc`, `0.x` until it has survived a real raid night.

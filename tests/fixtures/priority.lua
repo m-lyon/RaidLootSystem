@@ -95,6 +95,29 @@ local function run(input, ns)
         return P.SeedCandidates(input.claims)
     elseif input.op == "differs" then
         return P.Differs(input.stored, input.received)
+
+    elseif input.op == "median" then
+        return PL.aboveMedian(input.position, input.present)
+    elseif input.op == "medianAgrees" then
+        -- 005 kept the name; 011 moved the rule. They must not drift apart.
+        local same = true
+        for position = 1, input.upTo do
+            if PL.aboveMedian(position, input.present)
+                ~= ns.RollWindow.AboveMedian(position, input.present) then
+                same = false
+            end
+        end
+        return same
+    elseif input.op == "viewRows" then
+        local out = {}
+        for i, row in ipairs(PL.viewRows(input.order, input.ctx)) do
+            out[i] = string.format("%d %s %s%s%s%s", row.position, row.char,
+                row.owner or "unclaimed",
+                row.isSelf and " self" or "",
+                row.contested and " contested" or "",
+                row.present and (row.aboveMedian and " top" or " here") or " absent")
+        end
+        return out
     end
     error("unknown op: " .. tostring(input.op))
 end
@@ -406,6 +429,50 @@ return {
         { name = "the same version and order does not differ",
           input = { op = "differs", stored = { version = 3, order = ORDER }, received = { version = 3, order = { "Ann", "Bob", "Cat", "Dan", "Eve" } } },
           expected = false },
+        ----------------------------------------------------------------------
+        -- The viewer (spec 011 sections 4 and 8)
+        ----------------------------------------------------------------------
+        {
+            -- Six of ten absent: the median is over the four who are here, at
+            -- positions 2, 4, 6 and 8, so it sits at 4 and rows 1-4 are "top".
+            name = "the median is taken over present positions only",
+            input = { op = "viewRows", order = { "C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8", "C9", "C10" }, ctx = {
+                present = { C2 = true, C4 = true, C6 = true, C8 = true },
+                owners = { C2 = "Steve", C4 = "Dave" }, me = "steve",
+                contested = { C4 = true },
+            } },
+            expected = {
+                "1 C1 unclaimed absent", "2 C2 Steve self top", "3 C3 unclaimed absent",
+                "4 C4 Dave contested top", "5 C5 unclaimed absent", "6 C6 unclaimed here",
+                "7 C7 unclaimed absent", "8 C8 unclaimed here", "9 C9 unclaimed absent",
+                "10 C10 unclaimed absent",
+            },
+        },
+        { name = "an empty order gives no rows rather than erroring",
+          input = { op = "viewRows", order = {}, ctx = {} },
+          expected = {} },
+        { name = "no ctx at all still reports every position, unclaimed and absent",
+          input = { op = "viewRows", order = { "Ann", "Bob" } },
+          expected = { "1 Ann unclaimed absent", "2 Bob unclaimed absent" } },
+        { name = "an odd present-count puts the median on the middle position",
+          input = { op = "median", position = 3, present = { 1, 3, 5 } },
+          expected = true },
+        { name = "the position below an odd median is not near the top",
+          input = { op = "median", position = 5, present = { 1, 3, 5 } },
+          expected = false },
+        { name = "an even present-count takes the lower of the two middle positions",
+          input = { op = "median", position = 4, present = { 2, 4, 6, 8 } },
+          expected = true },
+        { name = "the upper middle of an even present-count is not near the top",
+          input = { op = "median", position = 6, present = { 2, 4, 6, 8 } },
+          expected = false },
+        { name = "nobody present means nothing is near the top",
+          input = { op = "median", position = 1, present = {} },
+          expected = false },
+        { name = "the roll window and the core rule agree at every position",
+          input = { op = "medianAgrees", upTo = 12, present = { 2, 3, 5, 8, 11 } },
+          expected = true },
+
         { name = "the same version with another order differs",
           input = { op = "differs", stored = { version = 3, order = ORDER }, received = { version = 3, order = { "Bob", "Ann", "Cat", "Dan", "Eve" } } },
           expected = true },
