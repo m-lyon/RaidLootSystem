@@ -1,14 +1,13 @@
 -- UI/HierarchyEditor.lua
 --
 -- The hierarchy editor (spec 001 section 7): one ordered list of the player's
--- characters, with tier bands drawn between rows so the ranking is concrete.
+-- characters, with the Rest cut-off drawn between rows so the ranking is concrete.
 
 local ADDON, ns = ...
 
 ns.HierarchyEditor = {}
 local Editor = ns.HierarchyEditor
 
-local C = ns.Constants
 local Tiers = ns.Tiers
 local Util = ns.Util
 local Widgets = ns.Widgets
@@ -228,24 +227,21 @@ function Editor.Refresh()
 
         y = y + ROW_HEIGHT + ROW_GAP
 
-        -- A band separator wherever the next position falls into another tier.
+        -- One separator, at the Rest cut-off. The per-tier rules above it drew a
+        -- line after every one of the top rows to repeat the tier already on the
+        -- row's own badge; the cut-off is the only boundary that changes what a
+        -- position means, since below it ordering stops mattering at all.
         local nextTier = Tiers.forPosition(i + 1, tierCount)
-        if i < #order and nextTier ~= tier then
+        if i < #order and Tiers.isRest(nextTier, tierCount) and not Tiers.isRest(tier, tierCount) then
             bandIndex = bandIndex + 1
             local band = bands[bandIndex]
             if not band then
                 band = createBand()
                 bands[bandIndex] = band
             end
-            local heavy = Tiers.isRest(nextTier, tierCount)
-            band.line:SetHeight(heavy and 2 or 1)
-            if heavy then
-                band.line:SetTexture(0.9, 0.7, 0.2, 0.9)
-                band.text:SetText("|cffe6b422Rest below|r")
-            else
-                band.line:SetTexture(0.5, 0.5, 0.5, 0.6)
-                band.text:SetText("|cff888888" .. Tiers.label(tier, tierCount) .. "|r")
-            end
+            band.line:SetHeight(2)
+            band.line:SetTexture(0.9, 0.7, 0.2, 0.9)
+            band.text:SetText("|cffe6b422Rest below|r")
             band:ClearAllPoints()
             band:SetPoint("TOPLEFT", content, "TOPLEFT", ROW_INSET, -y)
             band:Show()
@@ -306,54 +302,56 @@ end
 local function buildManualPanel(parent)
     local panel = Widgets.Panel(parent, 0.75)
     panel:SetWidth(LIST_WIDTH)
-    panel:SetHeight(76)
+    panel:SetHeight(92)
     panel:Hide()
 
     local title = Widgets.Label(panel, "Add a character by name", "GameFontNormalSmall")
     title:SetPoint("TOPLEFT", panel, "TOPLEFT", 10, -8)
 
+    -- There is no class picker. A class the player types is unverifiable, and a
+    -- wrong one is invisible until the roll window filters the character off an
+    -- item they could have used. The class is looked up instead, and the add is
+    -- refused when nothing on this client knows it (spec 001 section 4).
+    local hint = Widgets.Label(panel,
+        "The class is read from the group, a published roster, or your guild roster.",
+        "GameFontDisableSmall")
+    hint:SetPoint("TOPLEFT", panel, "TOPLEFT", 10, -24)
+    hint:SetWidth(LIST_WIDTH - 20)
+    hint:SetJustifyH("LEFT")
+
     local nameBox = Widgets.EditBox(panel, 150, 20)
-    nameBox:SetPoint("TOPLEFT", panel, "TOPLEFT", 10, -26)
-
-    local dropdown = CreateFrame("Frame", "RaidLootSystemClassDropdown", panel, "UIDropDownMenuTemplate")
-    dropdown:SetPoint("LEFT", nameBox, "RIGHT", -8, -2)
-    panel.class = C.CLASSES[1]
-
-    local function onSelect(self)
-        panel.class = self.value
-        UIDropDownMenu_SetSelectedValue(dropdown, self.value)
-        UIDropDownMenu_SetText(dropdown, self.value)
-    end
-
-    UIDropDownMenu_Initialize(dropdown, function()
-        for _, class in ipairs(C.CLASSES) do
-            local info = UIDropDownMenu_CreateInfo()
-            info.text, info.value, info.func = class, class, onSelect
-            UIDropDownMenu_AddButton(info)
-        end
-    end)
-    UIDropDownMenu_SetWidth(dropdown, 110)
-    UIDropDownMenu_SetSelectedValue(dropdown, panel.class)
-    UIDropDownMenu_SetText(dropdown, panel.class)
+    nameBox:SetPoint("TOPLEFT", hint, "BOTTOMLEFT", 0, -6)
 
     local add = Widgets.Button(panel, "Add", 70, 20, function()
         local name = Util.titleCase(nameBox:GetText() or "")
-        local ok, why = Roster().Add(name, panel.class, false)
+        local ok, classOrWhy, from = Roster().AddByName(name)
         if not ok then
-            ns.Print(why)
+            ns.Print(classOrWhy)
         else
+            ns.Print(string.format("%s added as %s, from %s.", name, classOrWhy, from))
             nameBox:SetText("")
             panel:Hide()
         end
         Editor.Refresh()
     end)
-    add:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 10, 8)
+    add:SetPoint("TOPLEFT", nameBox, "BOTTOMLEFT", 0, -8)
 
     local cancel = Widgets.Button(panel, "Cancel", 70, 20, function() panel:Hide() end)
     cancel:SetPoint("LEFT", add, "RIGHT", 6, 0)
 
     nameBox:SetScript("OnEnterPressed", function() add:Click() end)
-    return trackPanel(panel)
+
+    -- The buttons hang off the name box rather than the panel's bottom edge, and
+    -- the panel takes its height from where they landed: the hint above wraps to
+    -- one line or two depending on UI scale, and a fixed height ran the name box
+    -- through the buttons whenever it took two.
+    panel:SetScript("OnShow", function(self)
+        local top, bottom = self:GetTop(), add:GetBottom()
+        if top and bottom then self:SetHeight(top - bottom + 8) end
+        layoutPanels()
+    end)
+    panel:SetScript("OnHide", layoutPanels)
+    return panel
 end
 
 --------------------------------------------------------------------------------
@@ -465,6 +463,9 @@ local function build()
 
     local addManual = Widgets.Button(frame, "Add by name", 100, 22, function()
         if transferPanel then transferPanel:Hide() end
+        -- The guild roster is the only source that answers for an offline character,
+        -- and it is only populated once asked for.
+        if IsInGuild() then GuildRoster() end
         if manualPanel:IsShown() then manualPanel:Hide() else manualPanel:Show() end
     end)
     addManual:SetPoint("LEFT", addGroup, "RIGHT", 6, 0)

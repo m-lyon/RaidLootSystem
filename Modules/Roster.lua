@@ -79,6 +79,32 @@ function Roster.MarkSelf(chars, playerName)
 end
 
 --------------------------------------------------------------------------------
+-- Pure: inferring a class (section 4)
+--
+-- A class is only ever recorded because something in the game said so. Nothing
+-- asks the player to type one: a character typed in as the wrong class filters
+-- itself off every item it could have used, or onto items it cannot equip, and
+-- the roll window has no way to tell that from a real answer.
+--------------------------------------------------------------------------------
+
+--- The first source that names a class for this character.
+--
+-- @param candidates array of { from, class }, most directly observed first;
+--        entries with no class, or a class this build does not know, are skipped
+--        rather than trusted -- a lookup that has drifted returns nil or a
+--        localised string, and either must fail loudly instead of writing a
+--        nonsense class into the roster.
+-- @return class, source description; or nil when nothing knows
+function Roster.KnownClass(candidates)
+    for _, candidate in ipairs(candidates or {}) do
+        if VALID_CLASS[candidate.class or ""] then
+            return candidate.class, candidate.from
+        end
+    end
+    return nil
+end
+
+--------------------------------------------------------------------------------
 -- Pure: the claim index (section 5)
 --
 -- A conflict is two different players publishing the same character name. The
@@ -210,15 +236,7 @@ end
 -- ours first, then whoever published it. The fallback several UI screens need
 -- for characters that are on someone else's roster, not ours.
 function Roster.ClassOfAny(name)
-    local class = Roster.ClassOf(name)
-    if class then return class end
-    local key = name:lower()
-    for _, published in pairs(Roster.published) do
-        for n, entry in pairs(published.chars or {}) do
-            if n:lower() == key then return entry.class end
-        end
-    end
-    return nil
+    return Roster.ClassOf(name) or Roster.PublishedClassOf(name)
 end
 
 function Roster.SelfName()
@@ -312,6 +330,82 @@ function Roster.AddTarget()
     local name = UnitName("target")
     local _, class = UnitClass("target")
     return Roster.Add(name, class, UnitIsUnit("target", "player"))
+end
+
+--------------------------------------------------------------------------------
+-- Adding by name (section 4)
+--
+-- Every source below observed the class in game. The guild roster is the only one
+-- that answers for a character who is offline right now, which is the whole reason
+-- adding by name exists -- an alt you can target or group with is already covered
+-- by Add target and Add group.
+--------------------------------------------------------------------------------
+
+--- Class recorded for this character in another player's published roster. They
+-- captured it from the game the same way we would have.
+function Roster.PublishedClassOf(name)
+    local key = name:lower()
+    for _, published in pairs(Roster.published) do
+        for n, entry in pairs(published.chars or {}) do
+            if n:lower() == key then return entry.class end
+        end
+    end
+    return nil
+end
+
+--- Class from the guild roster, which lists offline members too.
+--
+-- The 11th return of `GetGuildRosterInfo` is the enUS class token in 3.3.5a (the
+-- 5th is the localised display name -- never that one). It is validated by the
+-- caller rather than trusted: if that position ever moves, the lookup reports "not
+-- known" and the add is refused, instead of silently writing whatever came back.
+function Roster.GuildClassOf(name)
+    if not IsInGuild() then return nil end
+    local key = name:lower()
+    for i = 1, GetNumGuildMembers() do
+        local member, _, _, _, _, _, _, _, _, _, class = GetGuildRosterInfo(i)
+        if not member then break end
+        if member:lower() == key then return class end
+    end
+    return nil
+end
+
+--- Everything on this client that can name the character's class, best first.
+function Roster.ClassSources(name)
+    local key = name:lower()
+    local sources = {}
+
+    for _, member in ipairs(Roster.GroupMembers()) do
+        if member.name and member.name:lower() == key then
+            sources[#sources + 1] = { from = "the group", class = member.class }
+        end
+    end
+    sources[#sources + 1] = { from = "a published roster", class = Roster.PublishedClassOf(name) }
+    sources[#sources + 1] = { from = "your guild roster", class = Roster.GuildClassOf(name) }
+    return sources
+end
+
+--- Add a character typed in by name, inferring the class (section 4).
+--
+-- Refuses rather than guessing. The player has no way to assert a class here, so a
+-- roster entry always carries a class something in the game reported.
+-- @return true plus the class and where it came from, or nil plus a reason
+function Roster.AddByName(name)
+    if type(name) ~= "string" or Util.trim(name) == "" then return nil, "no name given" end
+    name = Util.trim(name)
+    if Roster.PositionOf(name) then return nil, name .. " is already in your roster" end
+
+    local class, from = Roster.KnownClass(Roster.ClassSources(name))
+    if not class then
+        return nil, string.format("%s's class is not known on this client. Target them and use "
+            .. "Add target, add them from the group, or bring them online in your guild - the "
+            .. "class is never typed in, so it cannot be wrong.", name)
+    end
+
+    local me = UnitName("player")
+    local ok, why = Roster.Add(name, class, me ~= nil and name:lower() == me:lower())
+    if not ok then return nil, why end
+    return true, class, from
 end
 
 --- Add everyone in the group who is not already claimed by another player.
