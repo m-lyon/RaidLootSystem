@@ -214,21 +214,28 @@ local function awardFor(record)
     return ns.Award.Get(record.sessionId, record.itemIdx, record.copy)
 end
 
---- The delivery happened: by our trade, or by the host's own hand.
-function Pending.MarkDelivered(record)
+--- The delivery happened: by our trade, by the host's own hand, or because the
+-- host is the winner and it was already where it needed to be.
+function Pending.MarkDelivered(record, path)
     if record.delivered then return end
+    path = path or C.DELIVERY_PATH.TRADE
     record.delivered = true
     record.deliveredAt = time()
     local award = awardFor(record)
     if award then
-        ns.Award.MarkDelivered(award, C.DELIVERY_PATH.TRADE)
+        ns.Award.MarkDelivered(award, path)
     else
         -- After a reload there is no award record: history and the list are told from here.
-        ns.Print(string.format("%s delivered to %s.", labelFor(record.itemString), record.winner))
+        if path == C.DELIVERY_PATH.SELF then
+            ns.Print(string.format("%s is yours -- you won it, so it is recorded as delivered.",
+                labelFor(record.itemString)))
+        else
+            ns.Print(string.format("%s delivered to %s.", labelFor(record.itemString), record.winner))
+        end
         if ns.History then
             ns.History.UpdateDeliveryFromAward({ sessionId = record.sessionId, itemIdx = record.itemIdx,
                 copy = record.copy, delivery = C.DELIVERY.DELIVERED,
-                deliveryPath = C.DELIVERY_PATH.TRADE, deliveredAt = record.deliveredAt })
+                deliveryPath = path, deliveredAt = record.deliveredAt })
         end
         if ns.Priority then ns.Priority.OnPendingChanged(record, "delivered") end
     end
@@ -283,6 +290,14 @@ function Pending.Deliver(record)
     if record.delivered then
         ns.Print("that item was already delivered.")
         return false
+    end
+    -- You cannot trade with yourself, and you do not need to: a record whose winner
+    -- is the character being played is already delivered. This is reachable on a
+    -- record written before the host logged into the winner, and on any record the
+    -- award path did not catch (spec 007 section 5).
+    if ns.Award.IsSelfDelivery(record.winner, UnitName("player")) then
+        Pending.MarkDelivered(record, C.DELIVERY_PATH.SELF)
+        return true
     end
     local unit = unitFor(record.winner)
     if not unit then

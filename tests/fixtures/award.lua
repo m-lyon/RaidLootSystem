@@ -65,6 +65,9 @@ local function run(input, ns)
 
     elseif input.op == "retryable" then
         return Award.Retryable(input.record)
+
+    elseif input.op == "self" then
+        return Award.IsSelfDelivery(input.char, input.player)
     end
     error("unknown op: " .. tostring(input.op))
 end
@@ -231,6 +234,28 @@ return {
         { name = "an awaiting record says so",
           input = { op = "status", record = { char = "Bonk", delivery = "AWAITING" } },
           expected = "not awarded yet" },
+
+        -- Winning your own item (section 5): no trade, no pending clock.
+        { name = "the character being played is the winner",
+          input = { op = "self", char = "Steve", player = "Steve" },
+          expected = true },
+        { name = "the winner is matched case-insensitively",
+          input = { op = "self", char = "steve", player = "Steve" },
+          expected = true },
+        { name = "the host's own bot is not the host",
+          input = { op = "self", char = "Bonk", player = "Steve" },
+          expected = false },
+        { name = "no player name means no self delivery",
+          input = { op = "self", char = "Steve" },
+          expected = false },
+        { name = "an item you won yourself is kept, not delivered by trade",
+          input = { op = "status",
+                    record = { char = "Steve", delivery = "DELIVERED", deliveryPath = "SELF" } },
+          expected = "kept -- you won it" },
+        { name = "the self confirmation promises no trade",
+          input = { op = "confirm", record = { char = "Steve" }, label = "[Shard]", path = "SELF" },
+          expected = "Take [Shard] for yourself?\n\n"
+              .. "You won it, so it is delivered the moment it reaches your bags." },
 
         -- Auto-equip (section 7)
         { name = "a delivered item to the host's own bot earns an equip whisper",

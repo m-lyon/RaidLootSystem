@@ -19,6 +19,7 @@ bot to equip it, and tracking anything that ends up stuck in the host's bags.
 |---|---|---|
 | **Master loot** *(primary)* | Corpse-path batch, loot source still valid, winner in range | One click. Item goes corpse → winner. Binds to the winner. **No deadline.** |
 | **Trade** *(fallback)* | Item-link batches, despawned corpses, out-of-range winners, host wants to move on | Host holds the item. Binds to the **host**, tradeable to kill-eligible players for **2 hours**. |
+| **Self** *(degenerate trade)* | The winner is the character the host is playing | The item is already in the winner's bags. Delivered on arrival; no pending record, no clock. §5. |
 
 The master-loot path is the default because it has no clock attached. The trade path is a fully
 supported escape hatch, not an error state — but it starts a countdown, so it is always
@@ -121,6 +122,22 @@ report this as a probable cause rather than a generic failure.
 `/rls pending` prints the same list numbered for `/rls deliver <n>`. The slash form exists
 because the host panel is only reachable while holding master looter (006 §2), and a host who
 handed it over still has to deliver what is in their bags.
+
+**Winning your own item.** When the winner is the character the host is *playing*, there is no
+delivery to make: taking the item into their bags put it in the winner's bags. The trade path
+short-circuits — no pending record, no two-hour clock, the award goes straight to `DELIVERED`
+with `deliveryPath = SELF`, and the results row reads *"kept — you won it"*. `Deliver` on any
+record that slipped through (one written before the host logged into the winner) does the same
+rather than opening a trade.
+
+The test is against `UnitName("player")` at the moment of delivery, never a flag stored on the
+record: the same character is "you" or "one of your bots" depending on who is logged in, and a
+host who wins on their main and logs onto an alt must not be told the item is undeliverable.
+Without this the host is told *"Steve is not in your group"* — true, unhelpful, and it strands
+the item in the pending list until the window expires.
+
+The master-loot path needs no equivalent: the host is their own master-loot candidate and
+`GiveMasterLoot` to themselves works.
 
 **Delivering:** a **Deliver** button per pending item targets the recipient, opens trade, and
 places the item. For a bot, follow with the whisper needed to make it accept
