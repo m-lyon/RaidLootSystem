@@ -148,7 +148,7 @@ local function build()
     rows = {}
 
     frame = Widgets.Window("RaidLootSystemPriorityViewer", "sklist",
-        "Raid Loot System -- Priority list", LIST_WIDTH + 40, WINDOW_HEIGHT)
+        "Raid Loot System - Priority list", LIST_WIDTH + 40, WINDOW_HEIGHT)
 
     frame.header = Widgets.Label(frame, "", "GameFontNormalSmall")
     frame.header:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, -40)

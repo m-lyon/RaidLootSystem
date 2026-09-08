@@ -196,7 +196,7 @@ local function onState(sender, body)
             local missing = missingEntries(session, lastSent, myName)
             session.lastRejected = missing
             ns.Print(string.format(
-                "the host accepted %d of your %d entries. Refused: %s -- "
+                "the host accepted %d of your %d entries. Refused: %s - "
                 .. "check that those characters are yours, present, not contested "
                 .. "and can use the item.",
                 mine, expectedCount, table.concat(missing, ", ")))

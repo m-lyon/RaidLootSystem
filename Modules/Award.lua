@@ -137,11 +137,11 @@ function Award.FailureText(code, record)
     elseif code == C.AWARD_FAILURE.SOURCE_INVALID then
         return "The corpse is gone."
     elseif code == C.AWARD_FAILURE.SLOT_NOT_CLEARED then
-        return "Award didn't complete -- check " .. who .. "'s bags."
+        return "Award didn't complete - check " .. who .. "'s bags."
     elseif code == C.AWARD_FAILURE.NO_LOOT_METHOD then
         return "The loot method is no longer master loot; the item goes through a trade."
     elseif code == C.AWARD_FAILURE.NOT_LOOTED then
-        return "The item did not reach your bags -- full bags, or the loot was not confirmed."
+        return "The item did not reach your bags - full bags, or the loot was not confirmed."
     elseif code == C.AWARD_FAILURE.TRADE_EXPIRED then
         return "The two-hour trade window ran out; the item is bound to you."
     end
@@ -161,7 +161,7 @@ end
 function Award.StatusText(record)
     local D = C.DELIVERY
     if record.delivery == D.DELIVERED then
-        if record.deliveryPath == C.DELIVERY_PATH.SELF then return "kept -- you won it" end
+        if record.deliveryPath == C.DELIVERY_PATH.SELF then return "kept - you won it" end
         return record.deliveryPath == C.DELIVERY_PATH.TRADE and "delivered by trade" or "delivered"
     elseif record.delivery == D.PENDING then
         return "in your bags, to trade"
@@ -423,7 +423,7 @@ function Award.MarkDelivered(record, path)
     record.failure = nil
     record.deliveredAt = time()
     if record.deliveryPath == C.DELIVERY_PATH.SELF then
-        ns.Print(string.format("%s is yours -- you won it, so it is recorded as delivered.",
+        ns.Print(string.format("%s is yours - you won it, so it is recorded as delivered.",
             labelFor(record)))
     else
         ns.Print(string.format("%s delivered to %s.", labelFor(record), record.char))

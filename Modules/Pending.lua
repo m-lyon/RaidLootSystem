@@ -123,10 +123,10 @@ function Pending.ReminderLines(records, now, label)
         local left = Pending.TimeLeft(r, now)
         local who = r.winner .. (r.owner and (" (" .. r.owner .. ")") or "")
         if left == "expired" then
-            lines[#lines + 1] = string.format("%s for %s -- the trade window has EXPIRED; "
+            lines[#lines + 1] = string.format("%s for %s - the trade window has EXPIRED; "
                 .. "it is bound to you.", label(r.itemString), who)
         else
-            lines[#lines + 1] = string.format("%s for %s -- %s left to trade it.",
+            lines[#lines + 1] = string.format("%s for %s - %s left to trade it.",
                 label(r.itemString), who, left)
         end
     end
@@ -227,7 +227,7 @@ function Pending.MarkDelivered(record, path)
     else
         -- After a reload there is no award record: history and the list are told from here.
         if path == C.DELIVERY_PATH.SELF then
-            ns.Print(string.format("%s is yours -- you won it, so it is recorded as delivered.",
+            ns.Print(string.format("%s is yours - you won it, so it is recorded as delivered.",
                 labelFor(record.itemString)))
         else
             ns.Print(string.format("%s delivered to %s.", labelFor(record.itemString), record.winner))
@@ -416,7 +416,7 @@ function Pending.PrintList()
         local left, urgency = Pending.TimeLeft(r, now)
         local colour = urgency == "red" and "|cffff4040" or urgency == "amber" and "|cffffaa00"
             or urgency == "expired" and "|cff888888" or "|cffaaaaaa"
-        ns.Print(string.format("  %d. %s for %s (%s) -- %s%s|r", i, labelFor(r.itemString),
+        ns.Print(string.format("  %d. %s for %s (%s) - %s%s|r", i, labelFor(r.itemString),
             r.winner, r.owner or "?", colour, left))
     end
     ns.Print("/rls deliver <n> opens the trade; /rls abandon <n> gives up on one.")

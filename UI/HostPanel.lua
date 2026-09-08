@@ -52,9 +52,9 @@ end
 function HostPanel.TierExplanation(tierCount, lootMode)
     if (tierCount or 0) > 0 then return "" end
     if lootMode == C.LOOT_MODE.SK then
-        return "No tiers -- the priority list decides every item."
+        return "No tiers - the priority list decides every item."
     end
-    return "Flat roll -- no priorities."
+    return "Flat roll - no priorities."
 end
 
 --- One row per raid member: their addon version, or "not running".
@@ -484,7 +484,7 @@ local function refreshHealth()
     else
         for _, name in ipairs(contested) do
             local claim = Roster.claims[name:lower()]
-            line("|cffff4040Contested:|r " .. name .. " -- claimed by "
+            line("|cffff4040Contested:|r " .. name .. " - claimed by "
                 .. table.concat(claim and claim.owners or {}, ", "))
         end
     end
@@ -818,7 +818,7 @@ local function refreshBanner()
     local labels = {}
     for i, item in ipairs(items) do labels[i] = ns.LootDetect.Label(item) end
     banner.text:SetText("|cffffaa00Still on the corpse:|r " .. table.concat(labels, " ")
-        .. "  -- a despawned corpse takes them with it.")
+        .. "  - a despawned corpse takes them with it.")
     banner:Show()
 end
 

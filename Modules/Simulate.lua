@@ -419,7 +419,7 @@ end
 local function guarded(fn, ...)
     local ok, err = pcall(fn, ...)
     if not ok then
-        say("|cffff6060error:|r " .. tostring(err) .. " -- stopping the simulation.")
+        say("|cffff6060error:|r " .. tostring(err) .. " - stopping the simulation.")
         finish()
     end
     return ok

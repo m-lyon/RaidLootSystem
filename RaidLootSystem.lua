@@ -44,7 +44,7 @@ local function status()
     end
 
     local host = ns.Session.HostName()
-    ns.Print("master looter: " .. (host or "nobody -- the group is not on master loot")
+    ns.Print("master looter: " .. (host or "nobody - the group is not on master loot")
         .. (ns.Session.IsHost() and " (you host)" or ""))
 
     local session = ns.Client.session
@@ -89,7 +89,7 @@ local function lootList()
         ns.Print(#items .. " candidate(s):")
         for i = 1, #items do
             local item = items[i]
-            local marker = item.info and item.info.special and "  [unclassified -- anyone may enter]" or ""
+            local marker = item.info and item.info.special and "  [unclassified - anyone may enter]" or ""
             ns.Print(string.format("  %d. %s%s%s", i, ns.LootDetect.Label(item),
                 item.count > 1 and (" x" .. item.count) or "", marker))
         end
@@ -99,7 +99,7 @@ local function lootList()
     for _, skip in ipairs(LootDetect.skipped) do
         local why = ns.LootDetect.SKIP_TEXT[skip.reason] or skip.reason
         ns.Print("  not offered (" .. why .. "): " .. ns.LootDetect.Label(skip)
-            .. " -- /rls roll <link> to roll for it anyway.")
+            .. " - /rls roll <link> to roll for it anyway.")
     end
 end
 

@@ -103,8 +103,8 @@ return {
                   expiresAt = T + 7100, delivered = true },
             } },
             expected = {
-                "[item:1] for Bonk (Dave) -- the trade window has EXPIRED; it is bound to you.",
-                "[item:2] for Ann (Anna) -- 1h 59m left to trade it.",
+                "[item:1] for Bonk (Dave) - the trade window has EXPIRED; it is bound to you.",
+                "[item:2] for Ann (Anna) - 1h 59m left to trade it.",
             },
         },
         {

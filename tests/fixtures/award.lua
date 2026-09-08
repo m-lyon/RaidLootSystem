@@ -215,7 +215,7 @@ return {
           expected = "Bonk is out of range. Bring them closer and retry." },
         { name = "SLOT_NOT_CLEARED points at the winner's bags",
           input = { op = "failure", code = "SLOT_NOT_CLEARED", record = CORPSE },
-          expected = "Award didn't complete -- check Bonk's bags." },
+          expected = "Award didn't complete - check Bonk's bags." },
         { name = "SOURCE_INVALID is the corpse",
           input = { op = "failure", code = "SOURCE_INVALID", record = CORPSE },
           expected = "The corpse is gone." },
@@ -251,7 +251,7 @@ return {
         { name = "an item you won yourself is kept, not delivered by trade",
           input = { op = "status",
                     record = { char = "Steve", delivery = "DELIVERED", deliveryPath = "SELF" } },
-          expected = "kept -- you won it" },
+          expected = "kept - you won it" },
         { name = "the self confirmation promises no trade",
           input = { op = "confirm", record = { char = "Steve" }, label = "[Shard]", path = "SELF" },
           expected = "Take [Shard] for yourself?\n\n"

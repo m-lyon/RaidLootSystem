@@ -307,7 +307,7 @@ end
 -- @param wonLabel   label of the item the character won instead, for a withdrawn row
 function RollWindow.RowText(row, isSK, tierLabel, wonLabel)
     if row.status == C.ROLL_STATUS.NOT_CONSULTED then
-        return tierLabel .. " -- not consulted"
+        return tierLabel .. " - not consulted"
     elseif row.status == C.ROLL_STATUS.WITHDRAWN then
         return "withdrawn (won " .. (wonLabel or "another item") .. ")"
     end
@@ -992,7 +992,7 @@ function RollWindow.RenderResults(content, pool, view)
             20, "GameFontNormal")
 
         if table_.unclaimed then
-            line("   |cff888888No entries -- master looter's choice|r", "")
+            line("   |cff888888No entries - master looter's choice|r", "")
         end
         for _, w in ipairs(table_.winners) do
             local text = "   |cff66ff66Winner|r " .. colouredChar(w.char)
@@ -1089,7 +1089,7 @@ function RollWindow.Refresh()
     if not frame or not frame:IsShown() then return end
     local session = currentSession()
     if not session then
-        frame.titleText:SetText("Raid Loot System -- no batch")
+        frame.titleText:SetText("Raid Loot System - no batch")
         frame.status:SetText("")
         frame.counter:SetText("")
         entryPanel:Hide()
@@ -1099,7 +1099,7 @@ function RollWindow.Refresh()
     end
 
     local hostLabel = session.host and (session.host .. "'s batch") or "Batch"
-    frame.titleText:SetText(string.format("%s -- %d item%s", hostLabel, #session.items,
+    frame.titleText:SetText(string.format("%s - %d item%s", hostLabel, #session.items,
         #session.items == 1 and "" or "s"))
 
     local inCount, total, outstanding = RollWindow.Outstanding(expectedPlayers(), session.submitted)
