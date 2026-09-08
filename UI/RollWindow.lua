@@ -98,7 +98,7 @@ function RollWindow.CellState(info, char, tick, config)
         elseif state.override then
             state.text = "Entered with the eligibility filter overridden."
         elseif info.special then
-            state.text = "Eligibility filter off for this item -- check yourself."
+            state.text = "Eligibility filter off for this item - check yourself."
         end
     else
         state.enterable = false
@@ -674,7 +674,7 @@ local function createColumn()
         GameTooltip:SetHyperlink(item.itemString)
         local info = infoFor(session, item)
         if info and info.special then
-            GameTooltip:AddLine("Eligibility filter off -- check yourself.", 1, 0.8, 0, true)
+            GameTooltip:AddLine("Eligibility filter off - check yourself.", 1, 0.8, 0, true)
         end
         GameTooltip:AddLine("Click to see who has entered. Shift-click to link it in chat.",
             0.6, 0.6, 0.6, true)

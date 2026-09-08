@@ -188,7 +188,7 @@ return {
                 published = { Steve = { order = { "Sneaky" } },
                               Dave = { order = { "Sneaky" } } },
             },
-            expected = "contested -- Dave and Steve both claim Sneaky",
+            expected = "contested - Dave and Steve both claim Sneaky",
         },
 
         -- Export and import, section 8.

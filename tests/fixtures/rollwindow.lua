@@ -162,7 +162,7 @@ return {
             name = "a contested character carries the contest reason",
             input = { op = "cell", info = PLATE,
                       char = char("Smash", "WARRIOR", { contested = true,
-                          contestReason = "contested -- Steve and Dave both claim Smash" }),
+                          contestReason = "contested - Steve and Dave both claim Smash" }),
                       config = { filterEnabled = true } },
             expected = { enterable = false, ticked = false, override = false, star = false,
                          reason = "CONTESTED", overridable = false,

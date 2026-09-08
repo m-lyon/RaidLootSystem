@@ -116,7 +116,7 @@ function Roster.BuildClaims(published)
     return claims
 end
 
---- "contested -- Steve and Dave both claim Sneaky" (section 5).
+--- "contested - Steve and Dave both claim Sneaky" (section 5).
 function Roster.ContestReason(claim)
     local owners = claim.owners
     local list
@@ -125,7 +125,7 @@ function Roster.ContestReason(claim)
     else
         list = table.concat(owners, ", ", 1, #owners - 1) .. " and " .. owners[#owners]
     end
-    return "contested -- " .. list .. " both claim " .. claim.name
+    return "contested - " .. list .. " both claim " .. claim.name
 end
 
 --------------------------------------------------------------------------------
