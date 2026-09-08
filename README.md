@@ -8,8 +8,8 @@ the whole drop table goes up for roll at once — you tick which of your charact
 the highest roll in the highest priority tier wins. The master looter hands the item over with
 one click, and the winning bot is told to equip it.
 
-> **Status: design complete, implementation not started.**
-> Read [`docs/DESIGN.md`](docs/DESIGN.md) — that's the document to review and argue with.
+> **Status: 0.x, implemented, not yet survived a real raid night.**
+> Read [`docs/DESIGN.md`](docs/DESIGN.md) for the player-facing intent behind it.
 
 ---
 
@@ -48,11 +48,16 @@ Then `/reload` or restart the client.
 5. **The result is public** — every entry, every tier, every roll. The master looter clicks once
    to hand the item over.
 
+Everything above, and quite a bit more, is also reachable from chat. See
+[`docs/COMMANDS.md`](docs/COMMANDS.md) for the full `/rls` command reference, or just type
+`/rls help` in game.
+
 ## Documentation
 
 | Document | Audience |
 |---|---|
 | [`docs/DESIGN.md`](docs/DESIGN.md) | Players. What it does and why. Start here. |
+| [`docs/COMMANDS.md`](docs/COMMANDS.md) | Players. Every `/rls` chat command, grouped by what you're trying to do. |
 | [`docs/proposals/`](docs/proposals/) | Players. Questions the group decides, and the reasoning |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | What was deliberately left out, and why |
 | [`docs/specs/`](docs/specs/) | Implementers. Numbered, self-contained feature specs |
