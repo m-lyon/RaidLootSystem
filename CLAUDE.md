@@ -68,7 +68,6 @@ with the reasoning.
   wins what; only the order suicides are applied in. Spec 010 §7.
 - **`itemLevel` / `quality` / `equipLoc` are logged on every item under both modes.** Nothing in
   v1 reads them; they cannot be backfilled once the client cache is cold.
-
 ## Testing
 
 `lua tests/run.lua` runs the pure-core fixture suites with no dependencies beyond a Lua 5.1
@@ -124,6 +123,36 @@ Spec 011 adds `UI/PriorityViewer.lua` beyond 000 §3: the read-only priority lis
 can open with `/rls sk`. Its row model is `PriorityList.viewRows` in `Core/`, and
 `PriorityList.aboveMedian` is the single definition of the near-the-top rule --
 `RollWindow.AboveMedian` delegates to it so the two screens cannot disagree.
+
+**Spec 012 (campaigns) is specified and not built.** It lands in two commits, in this order:
+
+1. **The rename**, 012 §2 — `batch`/`session` become `round` across code, wire and docs, including
+   `Modules/Session.lua` -> `Modules/Round.lua` and the filenames of specs 002 and 004. No
+   behavioural change; `lua tests/run.lua` and `tests/purity.sh` green either side.
+2. **The feature** — `Modules/Campaign.lua`, `UI/Campaigns.lua`, `schema` 3 with no migration
+   (defaults are rebuilt), the `CINV` op, and campaign ids on `HI` / `ROSTER` / `OPEN` / `SKLIST` /
+   `CFG`. `host` and `priority` stop existing at the top level of the saved variables and move onto
+   each campaign; read them through `Campaign.Active()`.
+
+Do not start the feature before the rename has landed on its own.
+
+The rules that are easiest to get wrong when building it, each with its spec section:
+
+- **A campaign-bearing message is applied to the campaign it names, if you are a member of it;
+  otherwise it is dropped and logged.** Exceptions are `CINV` and `OPEN` only. This one rule is
+  what stops a foreign master looter's `SKLIST` from replacing your priority list and wiping its
+  log — the bug the whole spec exists to fix. 012 §10.
+- **A pending delivery carries its `campaignId`** and a restore-on-failure targets *that*
+  campaign's list, never the active one. The 2-hour trade window routinely outlives a campaign
+  switch, and restoring into the wrong list is invisible by inspection. 012 §14.
+- **`roster.defaultHierarchy` resolves nothing.** It seeds new campaigns and is never consulted for
+  a tier, an entry or an award. The ordering that counts lives on the campaign. 012 §7.
+- **Joining is invitation-only and stores nothing on refusal.** No ambient detection, no
+  ignore-list, no durations. Re-inviting is the whole recovery mechanism, and adding state to
+  "remember" a refusal reintroduces every question that design removed. 012 §6.
+- **`round` never means a tie re-roll iteration** — those stay `rerolls`. And some uses of
+  "session" mean a *login* session (002 §11's once-per-sender warning); the §2 sweep leaves those
+  alone. 012 §2.
 
 ## Conventions
 

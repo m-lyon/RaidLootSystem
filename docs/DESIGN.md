@@ -1,8 +1,9 @@
 # Raid Loot System — Design
 
-> **Status:** design agreed, not yet implemented. This document is for players to read and
-> review. It describes *what the addon does and why*, not how it is built. Implementation
-> detail lives in [`docs/specs/`](specs/).
+> **Status:** built, `0.x`. Campaigns (§2) are specified but **not yet implemented** — everything
+> else here describes the addon as it stands. This document is for players to read and review. It
+> describes *what the addon does and why*, not how it is built. Implementation detail lives in
+> [`docs/specs/`](specs/).
 
 ---
 
@@ -19,11 +20,33 @@ this order". Raid Loot System is built around exactly that idea.
 
 ## 2. Core concepts
 
+### Campaigns
+
+Everything below happens inside a **campaign** — a named group you raid with. Your priority list,
+the raid leader's settings, and each person's ordering all belong to one campaign and are invisible
+to every other.
+
+Most people only ever have one, and never think about it again. It exists because a second one is
+sometimes genuinely wanted:
+
+> Tuesday's 25-man is one campaign. The Sunday alt run, where everyone brings different characters
+> and yours is led by a priest rather than a mage, is another. A friend's guild you occasionally
+> guest in is a third.
+
+A campaign has **no end**. There is no "start tonight's session" and nothing to close down at the
+end of the evening — you switch between campaigns, and each one is exactly where you left it. A
+priority list that reset weekly would defeat the point of having one.
+
+**You join by invitation.** The master looter presses a button, everyone gets a prompt, and you
+choose whether to join and which of your characters to bring. Nothing joins you to a campaign
+automatically, and being in a raid with somebody does not put you in theirs — which is what stops a
+guest night with strangers from overwriting the list your own group has spent a month building.
+
 ### Characters and rosters
 
 Every player declares a **roster** — the characters they own and speak for. That includes the
 character they personally play and every bot under their control. Rosters are self-declared
-and account-wide: you set yours up once and it follows you.
+and account-wide: you set yours up once and it follows you, into every campaign.
 
 A character can only belong to one roster. If two people claim the same bot, the addon shows
 the conflict rather than quietly picking a side.
@@ -35,8 +58,14 @@ your characters you most want geared.
 
 > Steve's hierarchy: **1.** Mage (his own character) · **2.** Rogue · **3.** Warrior · **4.** Warlock
 
-You set this once, and you can change it whenever you like. It applies to every item, every
-raid, until you change it.
+**Your ordering belongs to the campaign, not to you globally**, and so does the choice of which
+characters you bring at all. Steve's mage leads in the Tuesday raid; in the alt run he leaves the
+mage at home entirely and his warlock is first. Without that, the character you actually main in an
+alt run would compete in the bottom tier of its own raid.
+
+You keep a **default ordering** that new campaigns start from, so joining one is usually a matter
+of glancing at the list and pressing Confirm. It is a starting point and nothing else — no item is
+ever awarded on it.
 
 ### Tiers, and how many of them count
 
@@ -90,6 +119,10 @@ armour type) is on the roadmap if this turns out to sting in practice.
 
 **Before the raid.** Each player opens the hierarchy editor, claims their characters, and drags
 them into their preferred order. This is a one-time setup; most nights nobody touches it.
+
+**Once, on the group's first night.** The master looter invites the raid to the campaign, everyone
+presses Join and confirms which characters they are bringing. Nobody does this again unless someone
+new turns up.
 
 **The boss dies.** The master looter opens the corpse. Raid Loot System notices the epics and
 opens a **batch** — a single roll covering everything the boss dropped at once, rather than
@@ -188,15 +221,26 @@ has been seeded, and like the tier count it changes only between batches, with a
 The tier count can be changed mid-raid, but only between batches, never while a roll is open —
 and the change is announced.
 
+**Every setting here belongs to the campaign**, so a Sunday alt run with a flat tier count of 0 and
+a 60-second timer keeps those numbers, and switching back to Tuesday restores Tuesday's without
+anyone touching a slider.
+
+The raid leader also creates campaigns, renames them, and invites the raid to one.
+
 ## 7. What each player controls
 
-- Their roster and its ordering.
+- Which campaigns they are in, and which one is currently active.
+- Their roster — the characters they claim.
+- Their ordering **within each campaign**, and which of their characters that campaign includes.
+- Their default ordering, which new campaigns start from.
 - Whether the "can actually use it" filter is applied to their entries.
 - Whether bots are automatically told to equip what they win.
 - Minimap button and window positions.
 
 Rosters and hierarchies can be exported to a text string and imported elsewhere, so a
-reinstall doesn't mean retyping nine characters in order.
+reinstall doesn't mean retyping nine characters in order. A whole campaign can be exported the same
+way — that is how somebody who has lost their saved variables gets the group's real priority list
+back, rather than starting a second one by accident.
 
 ## 8. History
 
@@ -216,8 +260,9 @@ An alternative to rolling, chosen by the group in
 [proposal 001](proposals/001-loot-fairness.md). Off until the raid leader seeds the list and
 switches the mode on.
 
-**The list.** One ordered list containing **every character** in every roster — yours and
-everyone's bots. It is shuffled once, from a published seed, and then it lives forever.
+**The list.** One ordered list containing **every character** in every roster in this campaign —
+yours and everyone's bots. It is shuffled once, from a published seed, and then it lives forever.
+Each campaign has its own; a suicide in one never moves anything in another.
 
 **Winning an item.** Tier gating works exactly as before: a T1 entry still beats a T2 entry,
 always. But inside a tier, there is no roll — **the character highest on the list wins.** That
@@ -303,8 +348,10 @@ reasoning attached, so we don't re-argue them every month.
 
 | Term | Meaning |
 |---|---|
+| **Campaign** | A named group you raid with. Holds its own priority list, settings and hierarchies. Never ends |
 | **Roster** | The set of characters one player owns and speaks for |
-| **Hierarchy** | A player's ordering of their roster, highest priority first |
+| **Hierarchy** | A player's ordering of their roster within one campaign, highest priority first |
+| **Default ordering** | The template new campaigns start from. Never used to award anything |
 | **Tier** | A priority band derived from hierarchy position and the raid's tier count |
 | **Rest** | The single bottom tier holding everything below the cut-off, all equal |
 | **Tier count** | How many hierarchy positions are treated as distinct tiers. Raid leader's setting |

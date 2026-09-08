@@ -67,13 +67,39 @@ Three ways to add a character to your roster:
 2. **Add all in group** — bulk-add every raid/party member not already claimed by someone else.
    Skips anyone already in another player's published roster; reports how many were skipped and
    why.
-3. **Manual entry** — type a name and pick a class, for characters not currently online.
+3. **Add by name** — type a name, for a character not currently online. The class is **inferred,
+   never typed**.
 
 `isSelf` is set automatically for `UnitName("player")` and cannot be set manually. The player's
 own character is added on first run if the roster is empty.
 
 Class is captured as the **enUS file name** (`"DEATHKNIGHT"`, `"MAGE"`, …) from
 `UnitClass`/`GetRaidRosterInfo`, never the localised display string.
+
+**No screen asks the player for a class.** A typed class cannot be checked against anything, and
+a wrong one is invisible: the character quietly filters off every item it could have used, or
+onto items it cannot equip, and the roll window has no way to tell that from a real answer. An
+entry that binds someone's loot to a claim needs a source better than a dropdown that defaulted
+to Death Knight.
+
+So **Add by name** resolves the class from the sources that observed one, most directly first:
+
+| Source | Reaches | Notes |
+|---|---|---|
+| The current group | Anyone in the raid or party | `UnitClass` / `GetRaidRosterInfo`. |
+| A published roster (§5) | Characters another player has claimed | They captured it from the game the same way. |
+| The guild roster | **Offline** guild members | `GetGuildRosterInfo(i)`, **11th** return — the enUS token. The 5th is the localised display name; never that one. |
+
+The guild roster is the only source that answers for a character who is offline, which is the
+whole reason this entry point exists — an alt you can target or group with is already covered by
+the other two. `GuildRoster()` is requested when the panel opens, since the roster is not
+populated until asked for.
+
+Every candidate is **validated against `C.CLASSES` before it is believed**. If that 11th return
+ever moves, the lookup yields nil or a localised string, both of which fail the check and refuse
+the add — the same "loud, not silent" stance `Modules/ItemInfo.lua` takes on subclass drift
+(000 §7). When nothing knows the class, the add is refused and says how to make it knowable.
+It never falls back to asking.
 
 ## 5. Publishing and conflicts
 
@@ -119,18 +145,24 @@ A single window, opened from the minimap button or `/rls`.
 - Presence dot (in raid / not in raid)
 - A remove button
 
-**Tier bands** are drawn as labelled separators between rows — a horizontal rule after position
-1 labelled `T1`, after position 2 labelled `T2`, and a heavier rule at the Rest cut-off. This
-is what makes the abstract ranking concrete, and it is the main reason the editor is a list
-rather than a settings table.
+**The Rest cut-off** is drawn as a heavy gold rule between rows, labelled `Rest below`. This is
+what makes the abstract ranking concrete, and it is the main reason the editor is a list rather
+than a settings table: above the rule every position is its own tier and moving up one place is
+a real change; below it ordering stops mattering, and everyone rolls as equals.
+
+There is **one** rule, and only that one. Earlier builds drew a labelled separator at every tier
+boundary — after position 1 labelled `T1`, after position 2 labelled `T2`, and so on — which is
+a line after every row down to the cut-off, each repeating the badge already sitting on that
+row. The cut-off is the only boundary that changes what a position *means*.
 
 **Reordering** is drag-and-drop on the row handle. PlayerbotManager implements exactly this
 pattern in its Class/Raid/Group tabs; match its interaction feel. Keyboard fallback: up/down
 buttons on the focused row.
 
-**Live tier count.** When in a raid with an active host, the editor draws its bands against the
-raid's tier count and redraws them when it changes (`CFG`). Outside a raid it falls back to the
-client's own stored default so the bands are never blank.
+**Live tier count.** When in a raid with an active host, the editor draws its badges and cut-off
+against the raid's tier count and redraws them when it changes (`CFG`). Outside a raid it falls
+back to the client's own stored default so neither is ever blank. At a count of 0 (flat roll)
+there is no cut-off to draw and every badge reads `Flat`.
 
 The count itself is **not printed** on this screen. It is a host setting nobody but the host can
 change (006 §3), and stating a number a player cannot act on next to a list they reorder invited

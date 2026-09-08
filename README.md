@@ -10,6 +10,9 @@ one click, and the winning bot is told to equip it.
 
 > **Status: 0.x, implemented, not yet survived a real raid night.**
 > Read [`docs/DESIGN.md`](docs/DESIGN.md) for the player-facing intent behind it.
+>
+> **Campaigns** — separate groups, each with their own priority list — are specified in
+> [spec 012](docs/specs/012-campaigns.md) and **not yet built**. See [Campaigns](#campaigns) below.
 
 ---
 
@@ -159,6 +162,47 @@ touch.
   (claimed by more than one player) and group members nobody has claimed yet.
 - **Something in the priority list looks wrong.** `/rls sk verify` checks it against its seed
   and tells you if it's drifted; ask your raid leader to correct it from the host panel.
+
+## Campaigns
+
+> **Specified, not yet built.** [Spec 012](docs/specs/012-campaigns.md) is the full design;
+> [DESIGN §2](docs/DESIGN.md#2-core-concepts) is the player-facing version. Nothing below works in
+> the current build — today there is exactly one implicit campaign and no way to have a second.
+
+A **campaign** is a named group you raid with. It owns the priority list, the raid leader's
+settings, and each person's ordering — and none of that is visible to any other campaign.
+
+Most groups need exactly one and never think about it again. You want a second when the people or
+the characters change in a way that shouldn't share a priority list:
+
+| Situation | Why a separate campaign |
+|---|---|
+| Sunday alt run | Different characters lead. Your ordering and the list are genuinely different. |
+| Guesting in another guild | Their list is theirs. Yours stays untouched. |
+| A splinter group with its own rules | Its own tier count, timer and loot mode. |
+
+Two properties worth knowing up front:
+
+- **A campaign never ends.** There's no session to start or close down at the end of the night.
+  You switch between campaigns, and each is exactly where you left it.
+- **You only join by invitation.** The master looter presses a button, you get a prompt, and you
+  choose whether to join and which of your characters to bring. Nothing joins you automatically —
+  which is what stops a guest night with strangers from overwriting the list your own group has
+  spent a month building.
+
+Planned commands:
+
+| Command | What it will do |
+|---|---|
+| `/rls campaign` | List your campaigns, marking the active one. |
+| `/rls campaign new <label>` | Create one, then pick which characters you're bringing. |
+| `/rls campaign switch <n>` | Change the active campaign. |
+| `/rls campaign invite` | Master looter only — invite the raid to join this campaign. |
+| `/rls campaign export` / `import <string>` | Move a whole campaign between clients. |
+
+> **If you ever lose your saved variables,** import a campaign string from somebody else in the
+> group rather than creating a new campaign. Same id, same list, continuity intact. Creating a
+> fresh one silently starts a second priority list that looks completely normal.
 
 ## Documentation
 

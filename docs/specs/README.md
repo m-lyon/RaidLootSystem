@@ -10,7 +10,7 @@ layout, pure-core boundary, saved-variable schema and comms protocol.
 |---|---|---|---|---|
 | [000](000-architecture.md) | Architecture | *(all)* | — | — |
 | [001](001-roster-and-hierarchy.md) | Roster and hierarchy | `Roster`, `Core/Tiers`, `UI/HierarchyEditor` | 000 | **Built** |
-| [002](002-session-protocol.md) | Session protocol | `Session`, `Client`, `Comms` | 000, 001 | **Built** |
+| [002](002-session-protocol.md) | Round protocol | `Session`, `Client`, `Comms` | 000, 001 | **Built** |
 | [003](003-resolution-engine.md) | Resolution engine | `Core/Resolve`, `Core/Eligibility` | 000, 001 | **Built** |
 | [004](004-loot-detection-and-batching.md) | Loot detection and item classification | `LootDetect`, `ItemInfo`, `Data/*` | 000 | **Built** |
 | [005](005-roll-window.md) | Roll window | `UI/RollWindow` | 000–004 | **Built** |
@@ -20,9 +20,15 @@ layout, pure-core boundary, saved-variable schema and comms protocol.
 | [009](009-simulation-and-testing.md) | Simulation and testing | `tests/`, `Simulate` | 000 | **Built** |
 | [010](010-priority-list.md) | Priority list (Suicide Kings) | `Core/PriorityList`, `Modules/PriorityList`, `Core/Resolve` | 000, 001, 002, 003, 007, 008 | **Built** |
 | [011](011-priority-list-viewer.md) | Priority list viewer | `UI/PriorityViewer`, `Core/PriorityList` | 000, 001, 005, 010 | **Built** |
+| [012](012-campaigns.md) | Campaigns | `Campaign`, `UI/Campaigns`, *(most others)* | 000–008, 010, 011 | **Specified** |
 
 Status is the state of the tree, not of the spec. A spec is written before it is built; a
 **Built** row means the module exists, is loaded by the `.toc` and has fixture coverage.
+
+> **012 renames `batch`/`session` to `round`** across code, wire and docs. That rename is a
+> standalone commit landing before any campaign work — see [012 §2](012-campaigns.md). The rows
+> above still carry the pre-rename filenames and module names, and change with it: 002 becomes
+> `002-round-protocol.md` and 004 becomes `004-loot-detection-and-rounds.md`.
 
 ## Suggested build order
 
