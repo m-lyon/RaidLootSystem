@@ -347,7 +347,7 @@ local Widgets = ns.Widgets          -- nil under the fixture runner, which never
 local HEADER_W = 150           -- the frozen row header
 local CELL_W = 56
 local ROW_H = 26
-local COL_HEADER_H = 48
+local COL_HEADER_H = 40
 local MAX_VISIBLE_COLS = 6     -- past this the columns scroll (section 3)
 local DETAIL_H = 84
 local TOGGLE_GAP = 22          -- below the grid; the horizontal slider lives in it
@@ -642,6 +642,9 @@ local function onColumnClick(column)
     selectColumn(column.itemIdx)
 end
 
+-- The column is the icon and nothing else. A name under it never fitted a 56px
+-- cell -- "Shadowfrost..." told nobody which shard it was -- and the hover tooltip
+-- is the item's own, which says it in full.
 local function createColumn()
     local column = CreateFrame("Button", nil, colHeaderContent)
     column:SetWidth(CELL_W)
@@ -655,17 +658,13 @@ local function createColumn()
     column.icon = column:CreateTexture(nil, "ARTWORK")
     column.icon:SetWidth(32)
     column.icon:SetHeight(32)
-    column.icon:SetPoint("TOP", column, "TOP", 0, -4)
+    column.icon:SetPoint("CENTER", column, "CENTER", 0, 0)
 
     column.count = Widgets.Label(column, "", "GameFontNormalSmall")
     column.count:SetPoint("BOTTOMRIGHT", column.icon, "BOTTOMRIGHT", 2, -2)
 
     column.special = Widgets.Label(column, "|cffffcc00*|r", "GameFontNormal")
     column.special:SetPoint("TOPLEFT", column.icon, "TOPLEFT", -6, 4)
-
-    column.caption = Widgets.Label(column, "", "GameFontHighlightSmall")
-    column.caption:SetPoint("TOP", column.icon, "BOTTOM", 0, -1)
-    column.caption:SetWidth(CELL_W - 4)
 
     column:SetScript("OnEnter", function(self)
         local session = currentSession()
@@ -730,9 +729,6 @@ local function refreshEntry(session)
         column.icon:SetTexture(info and info.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
         column.count:SetText(item.count > 1 and ("x" .. item.count) or "")
         if info and info.special then column.special:Show() else column.special:Hide() end
-        local caption = info and info.name or "..."
-        if #caption > 9 then caption = caption:sub(1, 8) .. "." end
-        column.caption:SetText(caption)
         if item.idx == selectedIdx then column.selected:Show() else column.selected:Hide() end
         column:Show()
     end
@@ -1403,11 +1399,17 @@ function RollWindow.NeedsAttention()
     return true
 end
 
---- Is there a batch live, or a result still current, worth opening the window on?
+--- Does the roll window own the minimap button and a bare `/rls` right now?
+--
+-- Only while a batch is live, or while the results of one are still on screen. A
+-- concluded batch hands the button back to the hierarchy: results open themselves
+-- when they land, and once the player has closed them the window is stale -- the
+-- history browser is where an old batch is read, not here (spec 005 section 2).
 function RollWindow.HasContent()
     local session = currentSession()
-    return session ~= nil and (session.state == C.SESSION_STATE.OPEN
-        or session.state == C.SESSION_STATE.CLOSED)
+    if not session then return false end
+    if session.state == C.SESSION_STATE.OPEN then return true end
+    return session.state == C.SESSION_STATE.CLOSED and RollWindow.IsShown()
 end
 
 local function onClientChanged(session)
