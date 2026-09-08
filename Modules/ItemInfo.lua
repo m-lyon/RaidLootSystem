@@ -322,7 +322,7 @@ function ItemInfo.DumpClasses()
     end
 
     local function dump(classIndex, ours, label)
-        ns.Print(label .. " subclasses -- live, then Data/ItemClasses.lua:")
+        ns.Print(label .. " subclasses - live, then Data/ItemClasses.lua:")
         local subs = { GetAuctionItemSubClasses(classIndex) }
         local rows = math.max(#subs, #ours)
         for j = 1, rows do
@@ -333,7 +333,7 @@ function ItemInfo.DumpClasses()
 
     dump(Data.CLASS_INDEX.WEAPON, Data.WEAPON_SUBCLASSES, "weapon")
     dump(Data.CLASS_INDEX.ARMOR, Data.ARMOR_SUBCLASSES, "armour")
-    ns.Print("mapping is " .. (mapUsable and "in use" or "OFF -- the lengths disagree")
+    ns.Print("mapping is " .. (mapUsable and "in use" or "OFF - the lengths disagree")
         .. "; Data.SUBCLASS_ORDER_VERIFIED is "
         .. tostring(Data.SUBCLASS_ORDER_VERIFIED) .. ".")
 end

@@ -28,6 +28,10 @@ with the reasoning.
 - **`math.randomseed` does not exist** in 3.3.5a either -- the client seeds its own RNG at
   startup. `math.random` is fine; guard any seeding call. Spec 000 §7.
 - **`GetMasterLootCandidate(index)` takes one argument** in 3.3.5a, not two.
+- **No screen asks the player to type or pick a class.** A typed class cannot be checked, and a
+  wrong one silently filters a character off items they could have used. Class comes from the
+  group, a published roster, or the guild roster, and an add whose class nothing knows is
+  refused. Spec 001 §4.
 - **A tier token is equippable by nobody.** Any candidate or eligibility test that leads with
   "is it equippable" filters the whole raid off the most contested drop in the game. The token
   check runs first, and it runs on the *name*, so a cold item cache does not lose it. Spec 004
@@ -86,6 +90,11 @@ Add a fixture case for every bug fixed in `Core/`.
 - **`Data/TierTokens.lua`'s `TOKEN_IDS` is intentionally empty.** Detection is by trailing word.
   Add an id only for a token observed to be misclassified in game, with the link in a comment —
   a fabricated id silently routes a token to the wrong classes with no fallback behind it.
+- **`GetGuildRosterInfo(i)`'s 11th return is the enUS class token** in 3.3.5a (the 5th is the
+  localised display name). Read off ElvUI's 3.3.5a backport in this install, not confirmed in
+  game. `Roster.GuildClassOf` validates what comes back against `C.CLASSES`, so a wrong position
+  refuses the add rather than writing a bogus class -- but the position itself still wants a
+  raid-night check.
 - **The exact mod-playerbots `equip` command syntax** (spec 007) is still unconfirmed against
   the server build.
 

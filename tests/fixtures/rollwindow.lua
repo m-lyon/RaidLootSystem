@@ -305,7 +305,7 @@ return {
                 winners = { "1:Steve(Steve)" },
                 rows = { "T1 Steve(Steve) 83 -> 47 -> 90 (tie re-roll) WON",
                          "T1 Chop(Dave) 83 -> 47 -> 12 (tie re-roll)",
-                         "T3 Smash(Steve) T3 -- not consulted" },
+                         "T3 Smash(Steve) T3 - not consulted" },
             },
         },
         {

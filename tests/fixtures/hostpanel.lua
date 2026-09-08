@@ -72,10 +72,10 @@ return {
 
         { name = "a tier count of zero explains the flat roll",
           input = { op = "tierNote", tierCount = 0, lootMode = "ROLL" },
-          expected = "Flat roll -- no priorities." },
+          expected = "Flat roll - no priorities." },
         { name = "a tier count of zero under SK explains the list decides",
           input = { op = "tierNote", tierCount = 0, lootMode = "SK" },
-          expected = "No tiers -- the priority list decides every item." },
+          expected = "No tiers - the priority list decides every item." },
         { name = "a positive tier count needs no note",
           input = { op = "tierNote", tierCount = 3, lootMode = "ROLL" }, expected = "" },
 

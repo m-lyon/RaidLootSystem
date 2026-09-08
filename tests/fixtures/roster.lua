@@ -34,6 +34,10 @@ local function run(input, ns)
         for i = 1, #order do classes[i] = chars[order[i]].class end
         return { ok = true, text = text, order = order, classes = classes }
 
+    elseif input.kind == "knownClass" then
+        local class, from = Roster.KnownClass(input.candidates)
+        return { class = class or "", from = from or "" }
+
     elseif input.kind == "markSelf" then
         local chars = {}
         for name, entry in pairs(input.chars) do chars[name] = { isSelf = entry.isSelf } end
@@ -118,6 +122,33 @@ return {
             name = "an empty roster validates",
             input = { kind = "validate", order = {}, chars = {} },
             expected = { ok = true },
+        },
+
+        -- Inferring a class rather than being told one, section 4.
+        {
+            name = "the most directly observed source wins",
+            input = { kind = "knownClass", candidates = {
+                { from = "the group", class = "MAGE" },
+                { from = "your guild roster", class = "ROGUE" } } },
+            expected = { class = "MAGE", from = "the group" },
+        },
+        {
+            name = "a source with nothing to say is skipped, not trusted",
+            input = { kind = "knownClass", candidates = {
+                { from = "a published roster" },
+                { from = "your guild roster", class = "WARRIOR" } } },
+            expected = { class = "WARRIOR", from = "your guild roster" },
+        },
+        {
+            name = "a localised class name is refused, so a drifted lookup fails loudly",
+            input = { kind = "knownClass", candidates = {
+                { from = "your guild roster", class = "Death Knight" } } },
+            expected = { class = "", from = "" },
+        },
+        {
+            name = "nothing knowing the class is not an answer",
+            input = { kind = "knownClass", candidates = {} },
+            expected = { class = "", from = "" },
         },
 
         -- The "you" marker follows the character being played, section 2.

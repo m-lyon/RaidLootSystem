@@ -77,9 +77,9 @@ local function tierList(tierCount)
 end
 
 local FORMATS = {
-    -- Rolling: [Item A] [Item B] [Item C] -- 3:00
+    -- Rolling: [Item A] [Item B] [Item C] - 3:00
     OPEN = function(a)
-        return "Rolling: " .. table.concat(a.labels or {}, " ") .. " -- " .. clock(a.seconds)
+        return "Rolling: " .. table.concat(a.labels or {}, " ") .. " - " .. clock(a.seconds)
     end,
 
     -- Botty [T2, 83] wins [Item A]          (ROLL)
@@ -98,13 +98,13 @@ local FORMATS = {
         return text
     end,
 
-    -- [Item B] -- no entries, master looter's choice
+    -- [Item B] - no entries, master looter's choice
     UNCLAIMED = function(a)
-        return a.label .. " -- no entries, master looter's choice"
+        return a.label .. " - no entries, master looter's choice"
     end,
 
     DEGRADED = function(a)
-        return a.label .. " -- tie re-rolls exhausted, the order was decided without one"
+        return a.label .. " - tie re-rolls exhausted, the order was decided without one"
     end,
 
     -- Botty rolled 83 [T2] on [Item A]
@@ -112,11 +112,11 @@ local FORMATS = {
         return a.char .. " rolled " .. a.roll .. " [" .. a.tierLabel .. "] on " .. a.label
     end,
 
-    -- Botty and Sneaky tied on 83 -- rerolling: Botty 47, Sneaky 90
+    -- Botty and Sneaky tied on 83 - rerolling: Botty 47, Sneaky 90
     TIE = function(a)
         local parts = {}
         for i, r in ipairs(a.rerolls or {}) do parts[i] = r.char .. " " .. r.roll end
-        return joinNames(a.names or {}) .. " tied on " .. a.roll .. " -- rerolling: "
+        return joinNames(a.names or {}) .. " tied on " .. a.roll .. " - rerolling: "
             .. table.concat(parts, ", ")
     end,
 
@@ -132,9 +132,9 @@ local FORMATS = {
         return a.label .. " is no longer on the corpse and has left the batch"
     end,
 
-    -- Entry timer extended by 60 seconds -- 1:32 left
+    -- Entry timer extended by 60 seconds - 1:32 left
     EXTEND = function(a)
-        return "Entry timer extended by " .. a.seconds .. " seconds -- " .. clock(a.left) .. " left"
+        return "Entry timer extended by " .. a.seconds .. " seconds - " .. clock(a.left) .. " left"
     end,
 
     -- Tier count is now 2 (T1, T2, Rest)

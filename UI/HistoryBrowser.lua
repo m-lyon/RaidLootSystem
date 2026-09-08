@@ -340,7 +340,7 @@ local function characterSummary()
     for _, w in ipairs(won) do
         lines[#lines + 1] = string.format("%s  %s  %s / %s%s", formatDate(w.timestamp),
             nameOf(w.itemString), w.zone or "?", w.source or "?",
-            w.delivery and (" -- " .. w.delivery:lower()) or "")
+            w.delivery and (" - " .. w.delivery:lower()) or "")
     end
     if #lines == 0 then lines[1] = char .. " has not been awarded anything." end
     showText(summaryPanel, string.format("%s: %d item(s) won", char, #won), table.concat(lines, "\n"))
@@ -352,7 +352,7 @@ end
 
 local function build()
     frame = Widgets.Window("RaidLootSystemHistoryBrowser", "history",
-        "Raid Loot System -- History", WIDTH, START_HEIGHT)
+        "Raid Loot System - History", WIDTH, START_HEIGHT)
 
     filters = buildFilters(frame)
     filters:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, -40)
