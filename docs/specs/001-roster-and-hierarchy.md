@@ -128,9 +128,14 @@ rather than a settings table.
 pattern in its Class/Raid/Group tabs; match its interaction feel. Keyboard fallback: up/down
 buttons on the focused row.
 
-**Live tier count.** When in a raid with an active host, the editor shows the raid's tier count
-and redraws bands when it changes (`CFG`). Outside a raid it shows the client's own stored
-default so the display is never blank.
+**Live tier count.** When in a raid with an active host, the editor draws its bands against the
+raid's tier count and redraws them when it changes (`CFG`). Outside a raid it falls back to the
+client's own stored default so the bands are never blank.
+
+The count itself is **not printed** on this screen. It is a host setting nobody but the host can
+change (006 §3), and stating a number a player cannot act on next to a list they reorder invited
+the reading that the hierarchy owns it. The bands carry everything the player needs: where the
+cuts fall for the count in force right now.
 
 **Editing during an open batch** is allowed, but the editor displays a warning that entries
 already submitted are locked to the tiers they had at submit time (see 002 §6).

@@ -116,6 +116,10 @@ end
 --- The confirmation dialog's text (section 6): the item, the winner, and the path.
 function Award.ConfirmText(record, label, path)
     local who = record.char .. (record.owner and (" (" .. record.owner .. ")") or "")
+    if path == C.DELIVERY_PATH.SELF then
+        return string.format("Take %s for yourself?\n\n"
+            .. "You won it, so it is delivered the moment it reaches your bags.", label)
+    end
     if path == C.DELIVERY_PATH.MASTER_LOOT then
         return string.format("Give %s to %s?\n\nFrom the corpse. It binds to %s.",
             label, who, record.char)
@@ -157,6 +161,7 @@ end
 function Award.StatusText(record)
     local D = C.DELIVERY
     if record.delivery == D.DELIVERED then
+        if record.deliveryPath == C.DELIVERY_PATH.SELF then return "kept -- you won it" end
         return record.deliveryPath == C.DELIVERY_PATH.TRADE and "delivered by trade" or "delivered"
     elseif record.delivery == D.PENDING then
         return "in your bags, to trade"
@@ -166,6 +171,24 @@ function Award.StatusText(record)
         return "lost: the corpse is gone"
     end
     return "not awarded yet"
+end
+
+--------------------------------------------------------------------------------
+-- Pure: delivering to yourself (section 5)
+--------------------------------------------------------------------------------
+
+--- Is the winner the character the host is playing right now?
+--
+-- Then there is no delivery left to make: the item reached the winner's bags the
+-- moment the host took it. Trading is not merely unnecessary, it is impossible --
+-- `InitiateTrade` has no unit to target and the host is told they are "not in your
+-- group", which is true and useless.
+--
+-- Playing an alt makes this true of a character it was false of an hour ago, so it
+-- is asked at delivery time and never cached on the record.
+function Award.IsSelfDelivery(char, playerName)
+    return type(char) == "string" and type(playerName) == "string"
+        and char:lower() == playerName:lower()
 end
 
 --------------------------------------------------------------------------------
@@ -399,7 +422,12 @@ function Award.MarkDelivered(record, path)
     record.deliveryPath = path or record.deliveryPath
     record.failure = nil
     record.deliveredAt = time()
-    ns.Print(string.format("%s delivered to %s.", labelFor(record), record.char))
+    if record.deliveryPath == C.DELIVERY_PATH.SELF then
+        ns.Print(string.format("%s is yours -- you won it, so it is recorded as delivered.",
+            labelFor(record)))
+    else
+        ns.Print(string.format("%s delivered to %s.", labelFor(record), record.char))
+    end
     deliveryChanged(record, previous)
     autoEquip(record)
 end
@@ -412,6 +440,12 @@ end
 --- The item is in the host's bags for this copy: record it, once.
 local function becomePending(record)
     local previous = record.delivery
+    if Award.IsSelfDelivery(record.char, UnitName("player")) then
+        -- The host won it themselves. It is in the winner's bags already, so there
+        -- is nothing to hold pending and no two-hour clock to start.
+        Award.MarkDelivered(record, C.DELIVERY_PATH.SELF)
+        return
+    end
     local existing = ns.Pending.Find(record)
     if existing and existing.expired then
         fail(record, C.AWARD_FAILURE.TRADE_EXPIRED)
@@ -552,6 +586,12 @@ function Award.Prompt(sessionId, itemIdx, copy, forceTrade)
     end
     if why == C.AWARD_FAILURE.NO_LOOT_METHOD then
         ns.Print(Award.FailureText(why, record))
+    end
+    -- Taking your own win into your own bags is the whole delivery; the dialog says
+    -- that rather than promising a trade that cannot happen (section 5).
+    if path == C.DELIVERY_PATH.TRADE
+        and Award.IsSelfDelivery(record.char, UnitName("player")) then
+        path = C.DELIVERY_PATH.SELF
     end
 
     StaticPopup_Show("RLS_CONFIRM_AWARD", Award.ConfirmText(record, labelFor(record), path),

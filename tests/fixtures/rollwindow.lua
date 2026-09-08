@@ -162,11 +162,11 @@ return {
             name = "a contested character carries the contest reason",
             input = { op = "cell", info = PLATE,
                       char = char("Smash", "WARRIOR", { contested = true,
-                          contestReason = "contested -- Steve and Dave both claim Smash" }),
+                          contestReason = "contested - Steve and Dave both claim Smash" }),
                       config = { filterEnabled = true } },
             expected = { enterable = false, ticked = false, override = false, star = false,
                          reason = "CONTESTED", overridable = false,
-                         text = "contested -- Steve and Dave both claim Smash" },
+                         text = "contested - Steve and Dave both claim Smash" },
         },
         {
             name = "a special item is open to everyone, with the caveat shown",
@@ -174,7 +174,7 @@ return {
                       config = { filterEnabled = true } },
             expected = { enterable = true, ticked = false, override = false, star = false,
                          reason = "", overridable = false,
-                         text = "Eligibility filter off for this item -- check yourself." },
+                         text = "Eligibility filter off for this item - check yourself." },
         },
         {
             name = "the filter switched off admits a mage to plate",

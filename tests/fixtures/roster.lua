@@ -34,6 +34,17 @@ local function run(input, ns)
         for i = 1, #order do classes[i] = chars[order[i]].class end
         return { ok = true, text = text, order = order, classes = classes }
 
+    elseif input.kind == "markSelf" then
+        local chars = {}
+        for name, entry in pairs(input.chars) do chars[name] = { isSelf = entry.isSelf } end
+        local changed = Roster.MarkSelf(chars, input.player)
+        local marked = {}
+        for name, entry in pairs(chars) do
+            if entry.isSelf then marked[#marked + 1] = name end
+        end
+        table.sort(marked)
+        return { changed = changed, marked = marked }
+
     elseif input.kind == "import" then
         -- On success the second return is the chars map, not a reason.
         local order, second = Roster.ParseImport(input.text)
@@ -109,6 +120,33 @@ return {
             expected = { ok = true },
         },
 
+        -- The "you" marker follows the character being played, section 2.
+        {
+            name = "logging in on an alt moves the you marker onto it",
+            input = { kind = "markSelf", player = "Sneaky",
+                      chars = { Steve = { isSelf = true }, Sneaky = { isSelf = false },
+                                Smash = { isSelf = false } } },
+            expected = { changed = true, marked = { "Sneaky" } },
+        },
+        {
+            name = "the marker is matched case-insensitively and reports no change",
+            input = { kind = "markSelf", player = "steve",
+                      chars = { Steve = { isSelf = true }, Sneaky = { isSelf = false } } },
+            expected = { changed = false, marked = { "Steve" } },
+        },
+        {
+            name = "a character outside the roster leaves nobody marked",
+            input = { kind = "markSelf", player = "Ghost",
+                      chars = { Steve = { isSelf = true }, Sneaky = { isSelf = false } } },
+            expected = { changed = true, marked = {} },
+        },
+        {
+            name = "a roster that never had a marker gains one",
+            input = { kind = "markSelf", player = "Smash",
+                      chars = { Steve = {}, Smash = {} } },
+            expected = { changed = true, marked = { "Smash" } },
+        },
+
         -- The claim index, section 5.
         {
             name = "one owner per character leaves nothing contested",
@@ -150,7 +188,7 @@ return {
                 published = { Steve = { order = { "Sneaky" } },
                               Dave = { order = { "Sneaky" } } },
             },
-            expected = "contested -- Dave and Steve both claim Sneaky",
+            expected = "contested - Dave and Steve both claim Sneaky",
         },
 
         -- Export and import, section 8.

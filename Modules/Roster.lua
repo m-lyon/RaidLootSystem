@@ -57,6 +57,27 @@ function Roster.Validate(order, chars)
     return true
 end
 
+--- Point the "you" marker at the character being played (section 2, invariant 3).
+--
+-- The roster is saved per account, so the marker belongs to whoever is logged in
+-- now -- not to whichever character happened to be logged in when the roster was
+-- built. A character absent from the roster leaves every entry unmarked, which the
+-- invariant allows.
+--
+-- @return true when something changed, so the caller can redraw
+function Roster.MarkSelf(chars, playerName)
+    local key = type(playerName) == "string" and playerName:lower() or nil
+    local changed = false
+    for name, entry in pairs(chars or {}) do
+        local isSelf = key ~= nil and name:lower() == key
+        if (entry.isSelf == true) ~= isSelf then
+            entry.isSelf = isSelf
+            changed = true
+        end
+    end
+    return changed
+end
+
 --------------------------------------------------------------------------------
 -- Pure: the claim index (section 5)
 --
@@ -95,7 +116,7 @@ function Roster.BuildClaims(published)
     return claims
 end
 
---- "contested -- Steve and Dave both claim Sneaky" (section 5).
+--- "contested - Steve and Dave both claim Sneaky" (section 5).
 function Roster.ContestReason(claim)
     local owners = claim.owners
     local list
@@ -104,7 +125,7 @@ function Roster.ContestReason(claim)
     else
         list = table.concat(owners, ", ", 1, #owners - 1) .. " and " .. owners[#owners]
     end
-    return "contested -- " .. list .. " both claim " .. claim.name
+    return "contested - " .. list .. " both claim " .. claim.name
 end
 
 --------------------------------------------------------------------------------
@@ -328,6 +349,16 @@ function Roster.EnsureSelf()
     if name and class then Roster.Add(name, class, true) end
 end
 
+--- Move the "you" marker onto the character being played. Called at login, because
+-- the roster outlives any one character: adding an alt from your main and then
+-- logging into that alt must not leave "you" on the main.
+function Roster.SyncSelf()
+    if not Roster.MarkSelf(DB().chars, UnitName("player")) then return false end
+    -- isSelf is local knowledge and is not transmitted, so nothing is republished.
+    fireChanged()
+    return true
+end
+
 --------------------------------------------------------------------------------
 -- Presence (section 6). Cached: the roll window queries this per character per
 -- item, so it must not scan the raid each time.
@@ -517,6 +548,7 @@ function Roster.Init()
     end)
 
     Roster.EnsureSelf()
+    Roster.SyncSelf()
     Roster.RefreshPresence()
     Roster.Publish()
 end

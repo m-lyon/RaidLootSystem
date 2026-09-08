@@ -40,16 +40,18 @@ local function Roster() return ns.Roster end
 -- Tier count in force
 --
 -- In a raid with an active host this is the raid's count; outside one it is the
--- client's stored default, so the display is never blank.
+-- client's stored default, so the bands are never blank. The number itself is a
+-- host setting and is not shown here (spec 001 section 7); only the bands it draws
+-- are, which is what a player reorders against.
 --------------------------------------------------------------------------------
 
 local function activeTierCount()
     local client = ns.Client
     if client and client.TierCount then
         local count = client.TierCount()
-        if count then return count, "set by the raid" end
+        if count then return count end
     end
-    return ns.Database.DefaultTierCount(), "your default, no raid host"
+    return ns.Database.DefaultTierCount()
 end
 
 local function batchIsOpen()
@@ -177,9 +179,8 @@ function Editor.Refresh()
 
     local roster = ns.Database.Roster()
     local order, chars = roster.order, roster.chars
-    local tierCount, source = activeTierCount()
+    local tierCount = activeTierCount()
 
-    frame.tierText:SetText(string.format("Tier count: %d  (%s)", tierCount, source))
     frame.warning:SetText(batchIsOpen()
         and "|cffffcc00A roll is open. Entries you already submitted keep the tiers they had at submit time.|r"
         or "")
@@ -440,13 +441,10 @@ local function build()
     frame = Widgets.Window("RaidLootSystemHierarchyEditor", "hierarchy",
         "Raid Loot System - Your hierarchy", LIST_WIDTH + 40, START_HEIGHT)
 
-    frame.tierText = Widgets.Label(frame, "", "GameFontNormalSmall")
-    frame.tierText:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, -40)
-
     local hint = Widgets.Label(frame,
         "Drag a row, or use the arrows, to set which characters you most want geared.",
         "GameFontDisableSmall")
-    hint:SetPoint("TOPLEFT", frame.tierText, "BOTTOMLEFT", 0, -4)
+    hint:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, -40)
     hint:SetWidth(LIST_WIDTH)
     hint:SetJustifyH("LEFT")
 

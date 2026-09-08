@@ -18,8 +18,12 @@ gets used hundreds of times; it is the addon's centre of gravity.
 The window has an **entry mode** (batch is `OPEN`) and a **results mode** (batch is `CLOSED`).
 It switches in place rather than opening a second frame, so people's eyes stay in one location.
 
-It opens automatically on `OPEN` and can be reopened from the minimap button or `/rls` while a
-batch is live or while its results are the most recent.
+It opens automatically on `OPEN`, and again on `CLOSED` when the results land. The minimap
+button and a bare `/rls` reach it **only while a batch is live, or while its results are still on
+screen**; once the player closes a concluded batch the button goes back to the hierarchy editor.
+A concluded batch has nothing left to do in it, and leaving it on the button meant every click
+for the rest of the night reopened a stale result. Old batches are read in the history browser
+(008), which is what that screen is for.
 
 ## 3. Entry mode: the grid
 

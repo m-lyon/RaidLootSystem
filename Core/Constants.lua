@@ -199,7 +199,9 @@ C.DELIVERY = {
     UNCLAIMED = "UNCLAIMED",
 }
 
-C.DELIVERY_PATH = { MASTER_LOOT = "MASTER_LOOT", TRADE = "TRADE" }
+-- SELF is the trade path with no trade in it: the host won their own item, so
+-- taking it into their bags already delivered it (spec 007 section 5).
+C.DELIVERY_PATH = { MASTER_LOOT = "MASTER_LOOT", TRADE = "TRADE", SELF = "SELF" }
 
 -- Named failure states (spec 007 section 4). Every one is visible and retryable.
 C.AWARD_FAILURE = {
