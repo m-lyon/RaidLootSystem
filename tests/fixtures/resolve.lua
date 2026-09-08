@@ -79,14 +79,14 @@ local function run(input, ns)
         if input.kind == "raw" then return result end
         return project(result, calls())
 
-    elseif input.kind == "batch" then
+    elseif input.kind == "round" then
         local rng, calls = scripted(input.rolls or {})
         local items, entriesByItem = {}, {}
         for i, spec in ipairs(input.items) do
             items[i] = { idx = spec.idx, itemString = "item:" .. spec.idx, count = spec.count or 1 }
             entriesByItem[spec.idx] = spec.entries
         end
-        local results = Resolve.batch(items, entriesByItem, optsFor(input, rng))
+        local results = Resolve.round(items, entriesByItem, optsFor(input, rng))
 
         local out = { rngCalls = calls() }
         for i, result in ipairs(results) do
@@ -483,9 +483,9 @@ return {
             },
         },
         {
-            name = "SK batch: a winner is withdrawn from the rest of the batch",
+            name = "SK round: a winner is withdrawn from the rest of the round",
             input = {
-                kind = "batch", tierCount = 3, lootMode = "SK", priority = SK_LIST,
+                kind = "round", tierCount = 3, lootMode = "SK", priority = SK_LIST,
                 items = SIX_BY_SIX, rolls = {},
             },
             expected = {
@@ -510,7 +510,7 @@ return {
         {
             name = "SK star: the starred item is taken and the other is still awarded",
             input = {
-                kind = "batch", tierCount = 3, lootMode = "SK", priority = SK_LIST,
+                kind = "round", tierCount = 3, lootMode = "SK", priority = SK_LIST,
                 stars = { Ann = 4 },
                 items = {
                     { idx = 1, entries = { entry("Ann", "A", 1), entry("Cat", "C", 1) } },
@@ -527,7 +527,7 @@ return {
         {
             name = "SK star on an item the character would not have won changes nothing",
             input = {
-                kind = "batch", tierCount = 3, lootMode = "SK", priority = SK_LIST,
+                kind = "round", tierCount = 3, lootMode = "SK", priority = SK_LIST,
                 stars = { Cat = 1 },
                 items = {
                     { idx = 1, entries = { entry("Ann", "A", 1), entry("Cat", "C", 1) } },
@@ -542,9 +542,9 @@ return {
             },
         },
         {
-            name = "ROLL batch items are fully independent",
+            name = "ROLL round items are fully independent",
             input = {
-                kind = "batch", tierCount = 3,
+                kind = "round", tierCount = 3,
                 items = {
                     { idx = 1, entries = { entry("Ann", "A", 1), entry("Bob", "B", 1) } },
                     { idx = 2, entries = { entry("Ann", "A", 1), entry("Bob", "B", 1) } },

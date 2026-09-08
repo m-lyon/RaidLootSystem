@@ -1,7 +1,7 @@
 -- tests/fixtures/announce.lua
 --
 -- Spec 006 section 4: the formats, which verbosity emits which kind, and the exact
--- lines a resolved batch produces.
+-- lines a resolved round produces.
 
 local ns = ...
 
@@ -11,13 +11,13 @@ local function run(input, ns)
         return A.Emits(input.level, input.verbosity)
     elseif input.op == "format" then
         return A.Format(input.kind, input.args)
-    elseif input.op == "batch" then
-        return A.BatchLines(input.items, input.results, input.opts)
+    elseif input.op == "round" then
+        return A.RoundLines(input.items, input.results, input.opts)
     end
     error("unknown op: " .. tostring(input.op))
 end
 
--- A two-item ROLL batch: item 1 had a boundary tie; item 2 nobody entered.
+-- A two-item ROLL round: item 1 had a boundary tie; item 2 nobody entered.
 local ITEMS = { { idx = 1, itemString = "item:1", label = "[Item A]" },
                 { idx = 2, itemString = "item:2", label = "[Item B]" } }
 local RESULTS = {
@@ -93,7 +93,7 @@ return {
           expected = "Entry timer extended by 60 seconds - 1:32 left" },
         { name = "an abort carries its reason",
           input = { op = "format", kind = "ABORT", args = { reasonText = "the host cancelled it" } },
-          expected = "Batch cancelled: the host cancelled it" },
+          expected = "Round cancelled: the host cancelled it" },
         { name = "a lost copy with survivors",
           input = { op = "format", kind = "LOOT_LOST", args = { label = "[Item A]", count = 1, remaining = true } },
           expected = "[Item A]: 1 copy is no longer on the corpse; the roll continues on what is left" },
@@ -101,22 +101,22 @@ return {
           input = { op = "format", kind = "NOPE", args = {} }, expected = nil },
 
         {
-            -- Acceptance: verbosity Off produces zero chat output across a full batch.
-            name = "a batch at OFF says nothing",
-            input = { op = "batch", items = ITEMS, results = RESULTS,
+            -- Acceptance: verbosity Off produces zero chat output across a full round.
+            name = "a round at OFF says nothing",
+            input = { op = "round", items = ITEMS, results = RESULTS,
                       opts = { verbosity = "OFF", tierCount = 3 } },
             expected = {},
         },
         {
-            name = "a batch at SUMMARY says the winner and the unclaimed item only",
-            input = { op = "batch", items = ITEMS, results = RESULTS,
+            name = "a round at SUMMARY says the winner and the unclaimed item only",
+            input = { op = "round", items = ITEMS, results = RESULTS,
                       opts = { verbosity = "SUMMARY", tierCount = 3 } },
             expected = { "Botty [T2, 83] wins [Item A]",
                          "[Item B] - no entries, master looter's choice" },
         },
         {
-            name = "a batch at VERBOSE adds every roll and the tie, in order",
-            input = { op = "batch", items = ITEMS, results = RESULTS,
+            name = "a round at VERBOSE adds every roll and the tie, in order",
+            input = { op = "round", items = ITEMS, results = RESULTS,
                       opts = { verbosity = "VERBOSE", tierCount = 3 } },
             expected = { "Botty rolled 83 [T2] on [Item A]",
                          "Sneaky rolled 83 [T2] on [Item A]",
@@ -126,7 +126,7 @@ return {
         },
         {
             name = "under SK the win line shows the position and VERBOSE adds no rolls",
-            input = { op = "batch", opts = { verbosity = "VERBOSE", tierCount = 3, isSK = true },
+            input = { op = "round", opts = { verbosity = "VERBOSE", tierCount = 3, isSK = true },
                       items = { { idx = 1, itemString = "item:1", label = "[Item A]" } },
                       results = { {
                           itemIdx = 1, unclaimed = false, degraded = false,
@@ -138,7 +138,7 @@ return {
         },
         {
             name = "a degraded item says so after the winner",
-            input = { op = "batch", opts = { verbosity = "SUMMARY", tierCount = 3 },
+            input = { op = "round", opts = { verbosity = "SUMMARY", tierCount = 3 },
                       items = { { idx = 1, itemString = "item:1", label = "[Item A]" } },
                       results = { {
                           itemIdx = 1, unclaimed = false, degraded = true,

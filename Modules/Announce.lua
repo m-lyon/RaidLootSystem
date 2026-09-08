@@ -3,7 +3,7 @@
 -- Chat output (spec 006 section 4). Only the host announces; clients never write to
 -- raid chat. Every line goes through one formatter here, so the prefix and the
 -- item-link handling are consistent, and every line goes through one queue, so a
--- verbose batch drains rather than tripping the client's chat throttle.
+-- verbose round drains rather than tripping the client's chat throttle.
 --
 -- Everything above the "WoW-facing" divider is pure and fixture-tested by the
 -- `announce` suite: the formats, and which verbosity level emits which kind.
@@ -25,7 +25,7 @@ Announce.LEVEL = { OFF = 0, SUMMARY = 1, VERBOSE = 2 }
 
 local LEVEL_OF_VERBOSITY = { OFF = 0, SUMMARY = 1, VERBOSE = 2 }
 
---- The level each kind of line needs. Summary is the batch's shape and outcome;
+--- The level each kind of line needs. Summary is the round's shape and outcome;
 -- verbose adds every roll and every tie.
 Announce.KIND_LEVEL = {
     OPEN       = 1,
@@ -121,7 +121,7 @@ local FORMATS = {
     end,
 
     ABORT = function(a)
-        return "Batch cancelled: " .. (a.reasonText or a.reason or "?")
+        return "Round cancelled: " .. (a.reasonText or a.reason or "?")
     end,
 
     LOOT_LOST = function(a)
@@ -129,7 +129,7 @@ local FORMATS = {
             return string.format("%s: %d cop%s no longer on the corpse; the roll continues on what is left",
                 a.label, a.count, a.count == 1 and "y is" or "ies are")
         end
-        return a.label .. " is no longer on the corpse and has left the batch"
+        return a.label .. " is no longer on the corpse and has left the round"
     end,
 
     -- Entry timer extended by 60 seconds - 1:32 left
@@ -164,14 +164,14 @@ function Announce.Format(kind, args)
     return format(args or {})
 end
 
---- The lines a resolved batch produces at a given verbosity, in the order they are
--- said. Pure, so the exact chat output of a batch is fixture-testable.
+--- The lines a resolved round produces at a given verbosity, in the order they are
+-- said. Pure, so the exact chat output of a round is fixture-testable.
 --
--- @param items     the batch items, with `label` already resolved by the caller
+-- @param items     the round items, with `label` already resolved by the caller
 -- @param results   Core/Resolve results, parallel to items
 -- @param opts      { verbosity, isSK, tierCount }
 -- @return array of strings (without the prefix)
-function Announce.BatchLines(items, results, opts)
+function Announce.RoundLines(items, results, opts)
     opts = opts or {}
     local Tiers = ns.Tiers
     local lines = {}
@@ -280,7 +280,7 @@ function Announce.Emit(kind, args)
     return Announce.Say(text, kind)
 end
 
---- Say several pre-formatted lines (from BatchLines). Already gated by verbosity.
+--- Say several pre-formatted lines (from RoundLines). Already gated by verbosity.
 function Announce.SayAll(lines)
     for _, line in ipairs(lines) do enqueue(Announce.PREFIX .. line, Announce.Channel()) end
 end

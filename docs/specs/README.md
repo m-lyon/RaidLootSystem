@@ -10,9 +10,9 @@ layout, pure-core boundary, saved-variable schema and comms protocol.
 |---|---|---|---|---|
 | [000](000-architecture.md) | Architecture | *(all)* | — | — |
 | [001](001-roster-and-hierarchy.md) | Roster and hierarchy | `Roster`, `Core/Tiers`, `UI/HierarchyEditor` | 000 | **Built** |
-| [002](002-session-protocol.md) | Round protocol | `Session`, `Client`, `Comms` | 000, 001 | **Built** |
+| [002](002-round-protocol.md) | Round protocol | `Round`, `Client`, `Comms` | 000, 001 | **Built** |
 | [003](003-resolution-engine.md) | Resolution engine | `Core/Resolve`, `Core/Eligibility` | 000, 001 | **Built** |
-| [004](004-loot-detection-and-batching.md) | Loot detection and item classification | `LootDetect`, `ItemInfo`, `Data/*` | 000 | **Built** |
+| [004](004-loot-detection-and-rounds.md) | Loot detection and item classification | `LootDetect`, `ItemInfo`, `Data/*` | 000 | **Built** |
 | [005](005-roll-window.md) | Roll window | `UI/RollWindow` | 000–004 | **Built** |
 | [006](006-host-panel.md) | Host panel | `UI/HostPanel`, `Announce` | 000, 001, 002, 004 | **Built** — the priority-list section is 010's |
 | [007](007-award-and-delivery.md) | Award and delivery | `Award`, `Pending` | 000, 002, 003, 004 | **Built** — the trade-accept whisper and the equip syntax await the server build |
@@ -25,10 +25,10 @@ layout, pure-core boundary, saved-variable schema and comms protocol.
 Status is the state of the tree, not of the spec. A spec is written before it is built; a
 **Built** row means the module exists, is loaded by the `.toc` and has fixture coverage.
 
-> **012 renames `batch`/`session` to `round`** across code, wire and docs. That rename is a
-> standalone commit landing before any campaign work — see [012 §2](012-campaigns.md). The rows
-> above still carry the pre-rename filenames and module names, and change with it: 002 becomes
-> `002-round-protocol.md` and 004 becomes `004-loot-detection-and-rounds.md`.
+> **012's rename has landed** — see [012 §2](012-campaigns.md). One loot source's roll is a
+> `round` everywhere in code, wire and docs, and the rows above carry the renamed filenames and
+> module names: 002 is now `002-round-protocol.md` and 004 is `004-loot-detection-and-rounds.md`.
+> The campaign feature itself is still unbuilt.
 
 ## Suggested build order
 

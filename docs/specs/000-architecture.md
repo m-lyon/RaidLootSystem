@@ -61,9 +61,9 @@ RaidLootSystem/
     Comms.lua                 -- addon-message transport: queue, chunk, throttle
     Roster.lua                -- claims, conflicts, raid presence
     ItemInfo.lua              -- WoW item lookups -> Core itemInfo tables
-    LootDetect.lua            -- loot window scanning, batch candidate items
-    Session.lua               -- HOST side: batch lifecycle, authority, resolution
-    Client.lua                -- CLIENT side: batch state mirror, submissions
+    LootDetect.lua            -- loot window scanning, round candidate items
+    Round.lua               -- HOST side: round lifecycle, authority, resolution
+    Client.lua                -- CLIENT side: round state mirror, submissions
     Award.lua                 -- GiveMasterLoot, failures, trade fallback, auto-equip
     Pending.lua               -- undelivered items and their 2h countdown
     History.lua               -- record, retain, export
@@ -148,8 +148,8 @@ RaidLootSystemDB = {
   history = { --[[ see spec 008 ]] },
   pending = { --[[ see spec 007 ]] },
 
-  scratch = {                        -- unsent roll-window ticks, so a /reload mid-batch
-    sessionId = "",                  -- keeps them (005 §6). Reset when the batch changes.
+  scratch = {                        -- unsent roll-window ticks, so a /reload mid-round
+    roundId = "",                  -- keeps them (005 §6). Reset when the round changes.
     ticks     = {},                  -- itemIdx -> charName -> { override, star }
   },
 }
@@ -201,20 +201,20 @@ Payload budget: **180 bytes** per chunk body. Outgoing messages sit in a queue d
 | `HI` | any → all | `addonVersion` | Announce presence and version on load and on roster change |
 | `ROSTER` | client → all | `name=class~name=class~…` (in hierarchy order) | Publish this player's claimed roster |
 | `RREQ` | host → all | *(empty)* | Ask everyone to resend `ROSTER` |
-| `OPEN` | host → all | `sessionId^tierCount^secondsLeft^item~item…^lootMode` where item is `idx=itemString=count`; `lootMode` is a trailing field, absent meaning `ROLL` | Open a batch. The batch carries its own mode so a late joiner who never saw `CFG` still renders it right (010 §8) |
-| `SUBMIT` | client → host | `sessionId^entry~entry…` where entry is `itemIdx=charName=overrideFlag=star` | Submit or revise entries (`star` is the SK priority pick, 010 §7) |
-| `STATE` | host → all | `sessionId^submittedNames~…^entry~entry…` where entry is `itemIdx=charName=owner=tier` | Authoritative aggregate; drives the live open view |
-| `RESULT` | host → all | `sessionId^result~result…` where result is `itemIdx=winner=tier=roll=outcome` | Resolved batch |
-| `ROLLS` | host → all | `sessionId^roll~roll…` where roll is `itemIdx=charName=tier=roll=listIdx=status=rerolls` | Full roll record for the results table; `roll` is 0 under SK, `listIdx` is 0 under ROLL. `status` is empty for a rolled entry, `NC` not consulted, `WD` withdrawn (010 §7); `rerolls` is the tie re-roll list joined with `+`. Both exist so the results table can show a not-consulted entry as such and a re-roll inline (005 §5) — neither is derivable from the roll value |
-| `ABORT` | host → all | `sessionId^reasonCode` | Batch cancelled |
-| `CFG` | host → all | `tierCount^timerSeconds^lootMode` | Settings changed between batches |
+| `OPEN` | host → all | `roundId^tierCount^secondsLeft^item~item…^lootMode` where item is `idx=itemString=count`; `lootMode` is a trailing field, absent meaning `ROLL` | Open a round. The round carries its own mode so a late joiner who never saw `CFG` still renders it right (010 §8) |
+| `SUBMIT` | client → host | `roundId^entry~entry…` where entry is `itemIdx=charName=overrideFlag=star` | Submit or revise entries (`star` is the SK priority pick, 010 §7) |
+| `STATE` | host → all | `roundId^submittedNames~…^entry~entry…` where entry is `itemIdx=charName=owner=tier` | Authoritative aggregate; drives the live open view |
+| `RESULT` | host → all | `roundId^result~result…` where result is `itemIdx=winner=tier=roll=outcome` | Resolved round |
+| `ROLLS` | host → all | `roundId^roll~roll…` where roll is `itemIdx=charName=tier=roll=listIdx=status=rerolls` | Full roll record for the results table; `roll` is 0 under SK, `listIdx` is 0 under ROLL. `status` is empty for a rolled entry, `NC` not consulted, `WD` withdrawn (010 §7); `rerolls` is the tie re-roll list joined with `+`. Both exist so the results table can show a not-consulted entry as such and a re-roll inline (005 §5) — neither is derivable from the roll value |
+| `ABORT` | host → all | `roundId^reasonCode` | Round cancelled |
+| `CFG` | host → all | `tierCount^timerSeconds^lootMode` | Settings changed between rounds |
 | `SKLIST` | host → all | `version^seed^name~name…` | The authoritative priority list, sent after `OPEN` under SK, after `RESULT` once the suicides are applied, and on `SYNC` (010 §8) |
-| `SYNC` | client → host | `sessionId` | Request a resend of `OPEN` + `STATE` |
+| `SYNC` | client → host | `roundId` | Request a resend of `OPEN` + `STATE` |
 
 **`secondsLeft`, not `endsAt`.** The host's `endsAt` is built on the client clock, which
 counts from that client's own start, so an absolute deadline means nothing on another machine.
 The wire carries the seconds remaining and each client adds them to its own clock. A resync
-mid-batch (002 §10) therefore lands a late arrival on the same deadline as everyone else.
+mid-round (002 §10) therefore lands a late arrival on the same deadline as everyone else.
 
 ### Authority rules
 

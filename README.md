@@ -62,7 +62,7 @@ For *why* the addon works this way, see [`docs/DESIGN.md`](docs/DESIGN.md) — t
 references below point there.
 
 Typing `/rls` with nothing after it does the useful thing for the moment: it opens the **roll
-window** if a batch is open, or your **hierarchy** if nothing is happening right now. `/rls
+window** if a round is open, or your **hierarchy** if nothing is happening right now. `/rls
 help` (or any command it doesn't recognise) prints the same list you see here, in-game.
 
 ### Every player
@@ -71,27 +71,27 @@ These work for anyone running the addon, whether or not you're the master looter
 
 | Command | What it does |
 |---|---|
-| `/rls` | Roll window if a batch is open, otherwise your hierarchy. |
+| `/rls` | Roll window if a round is open, otherwise your hierarchy. |
 | `/rls window` | Open the roll window directly. |
 | `/rls hierarchy` | Open your hierarchy — add characters and drag them into priority order. See [DESIGN §2](docs/DESIGN.md#2-core-concepts). |
-| `/rls history` | Open the history browser — every past batch: what dropped, who entered, who won. See [DESIGN §8](docs/DESIGN.md#8-history). |
+| `/rls history` | Open the history browser — every past round: what dropped, who entered, who won. See [DESIGN §8](docs/DESIGN.md#8-history). |
 | `/rls status` | Print your addon version, roster size, who's hosting, and any roster conflicts. |
 | `/rls publish` | Resend your roster to the raid, in case someone's copy is stale. |
 | `/rls request` | Ask everyone in the raid to resend their roster. |
-| `/rls sync` | Ask the master looter to resend the currently open batch, if your window looks stuck or empty. Rate-limited — you'll be told to wait if you just asked. |
+| `/rls sync` | Ask the master looter to resend the currently open round, if your window looks stuck or empty. Rate-limited — you'll be told to wait if you just asked. |
 | `/rls itemclasses` | Print your client's item-class ordering. Only useful when helping verify [`Data/ItemClasses.lua`](Data/ItemClasses.lua) against a live client. |
 | `/rls debug` | Toggle extra diagnostic chat messages for this session. Off by default; not needed for normal play. |
 
 ### During a roll
 
-Once the master looter opens a batch, one grid covers every item on the corpse. Tick which of
+Once the master looter opens a round, one grid covers every item on the corpse. Tick which of
 your characters want which item and submit — see [DESIGN
 §3](docs/DESIGN.md#3-a-raid-night-end-to-end) for the full walkthrough.
 
 | Command | What it does |
 |---|---|
-| `/rls window` | Bring the roll window back if you closed it while a batch is still open. |
-| `/rls sync` | Ask the host to resend the batch if your window is out of sync. |
+| `/rls window` | Bring the roll window back if you closed it while a round is still open. |
+| `/rls sync` | Ask the host to resend the round if your window is out of sync. |
 
 ### Suicide Kings
 
@@ -129,13 +129,13 @@ you'll get an error message back if you're not.
 
 | Command | What it does |
 |---|---|
-| `/rls host` | Open the host panel: raid-wide settings, Suicide Kings list management, batch controls. |
+| `/rls host` | Open the host panel: raid-wide settings, Suicide Kings list management, round controls. |
 | `/rls loot` | List what's on the open corpse that's worth rolling for, and why anything was skipped (below the quality bar, no addon data, etc). |
-| `/rls start` | Open a batch covering everything `/rls loot` found. |
-| `/rls roll <link>` | Open a batch for one specific item — for something `/rls loot` didn't pick up, or a non-corpse award. Example: `/rls roll [Shadowmourne]`. |
-| `/rls close` | Resolve the open batch right now, instead of waiting for the entry timer. |
-| `/rls cancel` | Cancel the open batch outright — nothing is awarded. |
-| `/rls tiers <0-5>` | Set how many priority tiers count for the raid; everything below shares an equal-chance "Rest" tier. Takes effect on the next batch, not the current one. See [DESIGN §2](docs/DESIGN.md#2-core-concepts). |
+| `/rls start` | Open a round covering everything `/rls loot` found. |
+| `/rls roll <link>` | Open a round for one specific item — for something `/rls loot` didn't pick up, or a non-corpse award. Example: `/rls roll [Shadowmourne]`. |
+| `/rls close` | Resolve the open round right now, instead of waiting for the entry timer. |
+| `/rls cancel` | Cancel the open round outright — nothing is awarded. |
+| `/rls tiers <0-5>` | Set how many priority tiers count for the raid; everything below shares an equal-chance "Rest" tier. Takes effect on the next round, not the current one. See [DESIGN §2](docs/DESIGN.md#2-core-concepts). |
 | `/rls quality <3\|4>` | Set the quality bar the corpse scan applies — `3` for rare and up, `4` for epic only. |
 
 ### Trying it out solo
@@ -144,8 +144,8 @@ You don't need a raid, or even a group, to see the pipeline work.
 
 | Command | What it does |
 |---|---|
-| `/rls simulate` | Run a full loot batch against fake items and fake raiders, right now, solo. |
-| `/rls simulate items=N players=N scenario=name` | Same, with the batch size, roster size, or scenario controlled. `/rls simulate list` prints the available scenario names. |
+| `/rls simulate` | Run a full loot round against fake items and fake raiders, right now, solo. |
+| `/rls simulate items=N players=N scenario=name` | Same, with the round size, roster size, or scenario controlled. `/rls simulate list` prints the available scenario names. |
 | `/rls simulate stop` | End a running simulation and restore your real roster and settings. |
 
 See [spec 009](docs/specs/009-simulation-and-testing.md) for what a simulation does and doesn't
@@ -156,7 +156,7 @@ touch.
 - **Nothing happens when you type `/rls`.** Check the addon actually loaded: `/rls status`
   should print a version number. If it doesn't, confirm the folder is
   `Interface/AddOns/RaidLootSystem/RaidLootSystem.toc` and `/reload`.
-- **Your roll window looks empty or stale during a live batch.** `/rls sync` asks the host to
+- **Your roll window looks empty or stale during a live round.** `/rls sync` asks the host to
   resend it.
 - **A character can't be entered on your own roster.** `/rls status` lists contested characters
   (claimed by more than one player) and group members nobody has claimed yet.
@@ -183,7 +183,7 @@ the characters change in a way that shouldn't share a priority list:
 
 Two properties worth knowing up front:
 
-- **A campaign never ends.** There's no session to start or close down at the end of the night.
+- **A campaign never ends.** There is nothing to start or close down at the end of the night.
   You switch between campaigns, and each is exactly where you left it.
 - **You only join by invitation.** The master looter presses a button, you get a prompt, and you
   choose whether to join and which of your characters to bring. Nothing joins you automatically —

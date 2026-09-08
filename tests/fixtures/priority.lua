@@ -217,7 +217,7 @@ return {
 
         {
             -- The review case. Ann suicides from 1 with Bob and Dan at home and lands at
-            -- 5; Cat (now at 1) wins the next batch with everyone present, which shifts
+            -- 5; Cat (now at 1) wins the next round with everyone present, which shifts
             -- Ann to 4; Ann's trade expires. The recorded indices {1,3,5} no longer
             -- cover Ann, and restore must say so rather than do nothing.
             name = "restore refuses when the list has moved since the suicide",
@@ -291,7 +291,7 @@ return {
         },
 
         ----------------------------------------------------------------------
-        -- A batch's suicides (section 7)
+        -- A round's suicides (section 7)
         ----------------------------------------------------------------------
         {
             name = "suicides apply once per winner in award order",

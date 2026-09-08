@@ -252,7 +252,7 @@ function ItemInfo.Request(link, callback)
     if frame then frame:Show() end
 end
 
---- The batch form: `callback(list)` fires once, when every link has an itemInfo.
+--- The round form: `callback(list)` fires once, when every link has an itemInfo.
 -- Order is preserved, because the loot slots are ordered.
 function ItemInfo.RequestAll(links, callback)
     local results, outstanding, finished = {}, #links, false

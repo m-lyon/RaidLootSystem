@@ -101,7 +101,7 @@ strategic layer that guild write-ups describe.
 Classic SK resolves one item at a time, by hand. We resolve a whole boss at once, which creates a
 problem: your mage has one position but six items to want.
 
-1. **One win per character per batch.** A character that wins is withdrawn from the rest of that
+1. **One win per character per round.** A character that wins is withdrawn from the rest of that
    boss's items. Without this, being top of the list and ticking everything wins you everything,
    for the price of one suicide.
 2. **The priority pick.** Each character stars **one** of its ticked items. If it would win more

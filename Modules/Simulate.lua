@@ -2,7 +2,7 @@
 --
 -- `/rls simulate` (spec 009 section 4): the whole pipeline, run solo inside the game.
 -- A loopback transport stands in for SendAddonMessage, fake players publish rosters
--- and submit entries, and the real host code (Session, Resolve, Award records,
+-- and submit entries, and the real host code (Round, Resolve, Award records,
 -- History) and the real local mirror (Client, the roll window) execute unchanged.
 -- Only the wire, the chat, the group and the award click are faked.
 --
@@ -10,7 +10,7 @@
 -- `simulate` suite: the scenarios, the players and items they build, and the entries
 -- each fake player submits.
 --
--- Guard rails (section 4): refused while a real batch is open; never a real addon
+-- Guard rails (section 4): refused while a real round is open; never a real addon
 -- message, chat line or whisper; history records tagged `simulated`; the priority
 -- list is a copy that is discarded; GiveMasterLoot is never called.
 
@@ -79,9 +79,9 @@ Simulate.SCENARIOS = {
     contested = "two players claiming the same character",
     token     = "a tier token and its class filtering",
     special   = "an unclassifiable item with the filter off",
-    abort     = "the master looter changing mid-batch",
+    abort     = "the master looter changing mid-round",
     chunked   = "a payload large enough to need multi-chunk transport",
-    sk        = "a seeded priority list deciding a batch with no rolls",
+    sk        = "a seeded priority list deciding a round with no rolls",
     star      = "a character that would win two items taking its starred one",
     absent    = "a suicide with absent characters holding their indices",
     restore   = "a failed delivery returning a character to its prior index",
@@ -258,7 +258,7 @@ local timeline = {}            -- { at, fn }
 local clock = 0
 local wire = {}                -- loopback deliveries waiting for the next tick
 local saved = {}               -- overridden functions and values, restored on finish
-local lastSeenSession
+local lastSeenRound
 local summary = {}
 
 local function say(text)
@@ -310,7 +310,7 @@ local function installOverrides()
     override(ns.Announce, "transport", function(text, channel, target)
         say("|cffaaaaaa" .. channel .. (target and (" to " .. target) or "") .. ":|r " .. text)
     end)
-    override(ns.Session, "HostName", function() return Simulate.hostName end)
+    override(ns.Round, "HostName", function() return Simulate.hostName end)
     Simulate.hostName = me
 
     -- The group: this player plus every fake player and every fake character.
@@ -331,8 +331,8 @@ local function installOverrides()
 
     -- The award click: no GiveMasterLoot, no trade. Delivered on the spot, or failed
     -- terminally for the restore scenario.
-    override(ns.Award, "Prompt", function(sessionId, itemIdx, copy)
-        local record = ns.Award.Get(sessionId, itemIdx, copy)
+    override(ns.Award, "Prompt", function(roundId, itemIdx, copy)
+        local record = ns.Award.Get(roundId, itemIdx, copy)
         if not record then return false end
         if plan.failDelivery and not Simulate.failedOne then
             Simulate.failedOne = true
@@ -350,7 +350,7 @@ local function installOverrides()
 
     if plan.rolls then
         local i = 0
-        override(ns.Session, "rng", function(lo, hi)
+        override(ns.Round, "rng", function(lo, hi)
             i = i + 1
             local v = plan.rolls[i]
             if v == nil then return math.random(lo, hi) end
@@ -371,11 +371,11 @@ local function publishFakes()
     end
 end
 
-local function submitFakes(session, which)
+local function submitFakes(round, which)
     for _, player in ipairs(plan.players) do
         local entries = which == "revise" and plan.revise[player.name] or plan.entries[player.name]
         if entries then
-            local body = ns.Serialize.encodeSubmit(session.id, entries)
+            local body = ns.Serialize.encodeSubmit(round.id, entries)
             fakeSend(player.name, C.OPS.SUBMIT, body)
         end
     end
@@ -402,13 +402,13 @@ local function finish()
     restoreAll()
     for _, name in ipairs({ "Simdave", "Simanna", "Simerin", "Simkate", "Simoli" }) do
         ns.Roster.published[name] = nil
-        ns.Session.peers[name] = nil
+        ns.Round.peers[name] = nil
     end
     ns.Roster.RefreshPresence()
     ns.Roster.Publish()
     -- The abort scenario changed hands; the remembered host must be the real one
-    -- again before any real batch opens, or a roster event would abort it.
-    ns.Session.CheckHost()
+    -- again before any real round opens, or a roster event would abort it.
+    ns.Round.CheckHost()
     ns.Client.CheckHost()
     if ns.HostPanel and ns.HostPanel.IsShown() then ns.HostPanel.Refresh() end
     frame:Hide()
@@ -436,12 +436,12 @@ function Simulate.Stop()
     return true
 end
 
-local function awardAll(session)
+local function awardAll(round)
     local delivered, failed = 0, 0
-    for _, item in ipairs(session.items) do
-        for copy = 1, #(session.awards and session.awards[item.idx] or {}) do
-            ns.Award.Prompt(session.id, item.idx, copy)
-            local record = ns.Award.Get(session.id, item.idx, copy)
+    for _, item in ipairs(round.items) do
+        for copy = 1, #(round.awards and round.awards[item.idx] or {}) do
+            ns.Award.Prompt(round.id, item.idx, copy)
+            local record = ns.Award.Get(round.id, item.idx, copy)
             if record and record.delivery == C.DELIVERY.DELIVERED then delivered = delivered + 1
             else failed = failed + 1 end
         end
@@ -454,42 +454,42 @@ local function awardAll(session)
 end
 
 --- The local mirror changed: the fake players react to what it shows.
-local function onMirror(session)
-    if not Simulate.active or not session then return end
-    if session.state == C.SESSION_STATE.OPEN and lastSeenSession ~= session.id then
-        lastSeenSession = session.id
-        say(string.format("batch %s is open on %d item(s); fake players submit in a second.",
-            session.id, #session.items))
-        at(1, function() submitFakes(session, "submit") end)
+local function onMirror(round)
+    if not Simulate.active or not round then return end
+    if round.state == C.ROUND_STATE.OPEN and lastSeenRound ~= round.id then
+        lastSeenRound = round.id
+        say(string.format("round %s is open on %d item(s); fake players submit in a second.",
+            round.id, #round.items))
+        at(1, function() submitFakes(round, "submit") end)
         at(2, function()
             if next(plan.revise) then
                 say("a fake player revises.")
-                submitFakes(session, "revise")
+                submitFakes(round, "revise")
             end
         end)
         if plan.hostChange then
             at(plan.hostChange, function()
-                say("the master looter changes hands mid-batch.")
+                say("the master looter changes hands mid-round.")
                 Simulate.hostName = plan.players[1].name
-                ns.Session.CheckHost()
+                ns.Round.CheckHost()
                 ns.Client.CheckHost()
                 at(1, finish)
             end)
         else
             at(4, function()
-                local host = ns.Session.current
-                if host and host.state == C.SESSION_STATE.OPEN then
+                local host = ns.Round.current
+                if host and host.state == C.ROUND_STATE.OPEN then
                     say(string.format("%d of %d fake players in; closing.",
-                        #ns.Session.SubmittedNames(host), #plan.players))
-                    ns.Session.Close()
+                        #ns.Round.SubmittedNames(host), #plan.players))
+                    ns.Round.Close()
                 end
             end)
         end
-    elseif session.state == C.SESSION_STATE.CLOSED and session.rolls and not Simulate.awarded then
+    elseif round.state == C.ROUND_STATE.CLOSED and round.rolls and not Simulate.awarded then
         Simulate.awarded = true
-        local host = ns.Session.current
+        local host = ns.Round.current
         local lines = {}
-        for _, r in ipairs(session.results) do
+        for _, r in ipairs(round.results) do
             lines[#lines + 1] = string.format("item %d: %s", r.itemIdx,
                 r.outcome == C.OUTCOME.UNCLAIMED and "unclaimed" or (r.winner .. " (" .. r.outcome .. ")"))
         end
@@ -498,8 +498,8 @@ local function onMirror(session)
             if host then awardAll(host) end
             at(1, finish)
         end)
-    elseif session.state == C.SESSION_STATE.ABORTED then
-        summary[#summary + 1] = "aborted: " .. tostring(session.abortReason) .. "."
+    elseif round.state == C.ROUND_STATE.ABORTED then
+        summary[#summary + 1] = "aborted: " .. tostring(round.abortReason) .. "."
     end
 end
 
@@ -508,9 +508,9 @@ local function onUpdate(_, elapsed)
 
     -- Deliver the fake wire.
     if #wire > 0 then
-        local batch = wire
+        local round = wire
         wire = {}
-        for _, w in ipairs(batch) do
+        for _, w in ipairs(round) do
             if not Simulate.active then return end
             guarded(ns.Comms.Receive, w.prefix, w.message, w.channel, w.sender)
         end
@@ -535,13 +535,13 @@ function Simulate.Run(argument)
         say("a simulation is already running.")
         return false
     end
-    local real = ns.Session.current
-    if real and real.state == C.SESSION_STATE.OPEN then
-        say("refused: a real batch is open.")
+    local real = ns.Round.current
+    if real and real.state == C.ROUND_STATE.OPEN then
+        say("refused: a real round is open.")
         return false
     end
     if ns.Client.IsOpen() then
-        say("refused: a real batch is open on this client.")
+        say("refused: a real round is open on this client.")
         return false
     end
 
@@ -556,12 +556,12 @@ function Simulate.Run(argument)
     if not frame then
         frame = CreateFrame("Frame", "RaidLootSystemSimulateFrame")
         frame:SetScript("OnUpdate", onUpdate)
-        ns.Client.RegisterListener(function(session) guarded(onMirror, session) end)
+        ns.Client.RegisterListener(function(round) guarded(onMirror, round) end)
     end
 
     Simulate.active = true
     Simulate.awarded, Simulate.failedOne = false, false
-    lastSeenSession = nil
+    lastSeenRound = nil
     summary = {}
     clock, timeline, wire = 0, {}, {}
     ns.Comms.Reset()
@@ -592,9 +592,9 @@ function Simulate.Run(argument)
             rows[#rows + 1] = { quantity = item.quantity, info = ns.ItemInfo.Get(item.link) }
         end
         local items = ns.LootDetect.Collapse(rows)
-        local ok, err = ns.Session.Open(items)
+        local ok, err = ns.Round.Open(items)
         if not ok then
-            say("could not open the batch: " .. tostring(err))
+            say("could not open the round: " .. tostring(err))
             finish()
         end
     end)

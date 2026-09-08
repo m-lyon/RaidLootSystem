@@ -1,7 +1,7 @@
 -- tests/fixtures/history.lua
 --
 -- The pure half of Modules/History.lua (spec 008): the record built from a host
--- session and from a client mirror, upsert, pruning, delivery updated in place,
+-- round and from a client mirror, upsert, pruning, delivery updated in place,
 -- filtering, the per-character summary, and both exports.
 
 local ns = ...
@@ -12,22 +12,22 @@ local function run(input, ns)
     local H = ns.History
 
     if input.op == "host" then
-        return H.FromHost(input.session, input.ctx)
+        return H.FromHost(input.round, input.ctx)
     elseif input.op == "client" then
-        return H.FromClient(input.session, input.ctx)
+        return H.FromClient(input.round, input.ctx)
     elseif input.op == "upsert" then
         local records = input.records
         local _, added = H.Upsert(records, input.record)
         local keys = {}
         for i, r in ipairs(records) do
-            keys[i] = r.sessionId .. (r.recordedAsHost and "/host" or "/client") .. ":" .. tostring(r.tag)
+            keys[i] = r.roundId .. (r.recordedAsHost and "/host" or "/client") .. ":" .. tostring(r.tag)
         end
         return { added = added, keys = keys }
     elseif input.op == "prune" then
         local kept, removed, unexported = H.Prune(input.records, input.now, input.opts)
         local k, r = {}, {}
-        for i, rec in ipairs(kept) do k[i] = rec.sessionId end
-        for i, rec in ipairs(removed) do r[i] = rec.sessionId end
+        for i, rec in ipairs(kept) do k[i] = rec.roundId end
+        for i, rec in ipairs(removed) do r[i] = rec.roundId end
         return { kept = k, removed = r, unexported = unexported }
     elseif input.op == "delivery" then
         local records = input.records
@@ -36,7 +36,7 @@ local function run(input, ns)
         for _, rec in ipairs(records) do
             for _, item in ipairs(rec.items) do
                 for _, a in ipairs(item.awards) do
-                    awards[#awards + 1] = string.format("%s/%d/%d %s %s", rec.sessionId,
+                    awards[#awards + 1] = string.format("%s/%d/%d %s %s", rec.roundId,
                         item.itemIdx, a.copy, a.delivery, tostring(a.priorIndex))
                 end
             end
@@ -44,7 +44,7 @@ local function run(input, ns)
         return { updated = updated ~= nil, awards = awards, count = #records }
     elseif input.op == "filter" then
         local out = {}
-        for i, r in ipairs(H.Filter(input.records, input.filter)) do out[i] = r.sessionId end
+        for i, r in ipairs(H.Filter(input.records, input.filter)) do out[i] = r.roundId end
         return out
     elseif input.op == "summary" then
         local out = {}
@@ -71,9 +71,9 @@ local function run(input, ns)
     error("unknown op: " .. tostring(input.op))
 end
 
--- A resolved host session: two items, one with a re-roll and a not-consulted entry,
+-- A resolved host round: two items, one with a re-roll and a not-consulted entry,
 -- one unclaimed; the winner's award delivered.
-local HOST_SESSION = {
+local HOST_ROUND = {
     id = "Steve-100", host = "Steve", state = "CLOSED", tierCount = 3,
     openedAt = T, closedAt = T + 180, lootMode = "ROLL",
     priorityAtOpen = { version = 3, order = { "Bonk", "Steve" } },
@@ -107,7 +107,7 @@ local HOST_CTX = { now = T + 200, zone = "Icecrown Citadel", source = "Lord Marr
                    raid = { "Steve", "Dave" }, timerSeconds = 180, qualityThreshold = 4 }
 
 local EXPECTED_HOST = {
-    sessionId = "Steve-100", recordedAsHost = true, timestamp = T, closedAt = T + 180,
+    roundId = "Steve-100", recordedAsHost = true, timestamp = T, closedAt = T + 180,
     zone = "Icecrown Citadel", source = "Lord Marrowgar", host = "Steve",
     settings = { tierCount = 3, timerSeconds = 180, qualityThreshold = 4, lootMode = "ROLL" },
     priorityAtOpen = { version = 3, order = { "Bonk", "Steve" } },
@@ -133,8 +133,8 @@ local EXPECTED_HOST = {
     },
 }
 
--- The same batch as a client saw it.
-local CLIENT_SESSION = {
+-- The same round as a client saw it.
+local CLIENT_ROUND = {
     id = "Steve-100", host = "Steve", state = "CLOSED", tierCount = 3, lootMode = "ROLL",
     openedAt = T + 1, closedAt = T + 181,
     items = { { idx = 1, itemString = "item:49623", count = 1 },
@@ -153,7 +153,7 @@ local CLIENT_CTX = { now = T + 200, zone = "Icecrown Citadel", raid = { "Dave", 
                      end }
 
 local function rec(id, ts, fields)
-    local r = { sessionId = id, recordedAsHost = true, timestamp = ts, zone = "ICC", source = "Boss",
+    local r = { roundId = id, recordedAsHost = true, timestamp = ts, zone = "ICC", source = "Boss",
                 host = "Steve", settings = { tierCount = 3, lootMode = "ROLL" }, raid = {}, outcome = "RESOLVED",
                 items = {} }
     for k, v in pairs(fields or {}) do r[k] = v end
@@ -178,25 +178,25 @@ return {
     run = run,
     cases = {
         {
-            -- Acceptance: a resolved batch produces exactly one record with every item
+            -- Acceptance: a resolved round produces exactly one record with every item
             -- and every entry, including entries that never rolled; the settings block
             -- captures the tier count in force at open; itemLevel/quality/equipLoc are
             -- written under ROLL.
             name = "the host record carries every item, every entry and the delivery",
-            input = { op = "host", session = HOST_SESSION, ctx = HOST_CTX },
+            input = { op = "host", round = HOST_ROUND, ctx = HOST_CTX },
             expected = EXPECTED_HOST,
         },
         {
-            -- Acceptance: an aborted batch is recorded with its reason and entries.
-            name = "an aborted batch keeps its reason and what was submitted",
-            input = { op = "host", ctx = HOST_CTX, session = {
+            -- Acceptance: an aborted round is recorded with its reason and entries.
+            name = "an aborted round keeps its reason and what was submitted",
+            input = { op = "host", ctx = HOST_CTX, round = {
                 id = "Steve-101", host = "Steve", state = "ABORTED", abortReason = "MANUAL",
                 tierCount = 2, openedAt = T, closedAt = T + 50, lootMode = "ROLL",
                 items = { { idx = 1, itemString = "item:1", count = 1, info = { itemLevel = 200, quality = 4, equipLoc = "INVTYPE_HEAD" } } },
                 entries = { [1] = { { char = "Bonk", owner = "Dave", tier = 1, submittedAt = T + 10 } } },
             } },
             expected = {
-                sessionId = "Steve-101", recordedAsHost = true, timestamp = T, closedAt = T + 50,
+                roundId = "Steve-101", recordedAsHost = true, timestamp = T, closedAt = T + 50,
                 zone = "Icecrown Citadel", source = "Lord Marrowgar", host = "Steve",
                 settings = { tierCount = 2, timerSeconds = 180, qualityThreshold = 4, lootMode = "ROLL" },
                 raid = { "Steve", "Dave" }, outcome = "ABORTED", abortReason = "MANUAL",
@@ -209,11 +209,11 @@ return {
             },
         },
         {
-            -- Acceptance: client and host records of one batch are distinguishable.
+            -- Acceptance: client and host records of one round are distinguishable.
             name = "the client record is built from STATE, RESULT and ROLLS",
-            input = { op = "client", session = CLIENT_SESSION, ctx = CLIENT_CTX },
+            input = { op = "client", round = CLIENT_ROUND, ctx = CLIENT_CTX },
             expected = {
-                sessionId = "Steve-100", recordedAsHost = false, timestamp = T + 1, closedAt = T + 181,
+                roundId = "Steve-100", recordedAsHost = false, timestamp = T + 1, closedAt = T + 181,
                 zone = "Icecrown Citadel", host = "Steve",
                 settings = { tierCount = 3, lootMode = "ROLL" },
                 raid = { "Dave", "Steve" }, outcome = "RESOLVED",
@@ -236,7 +236,7 @@ return {
             -- Under SK: list positions on entries and awards, looked-up entries count as
             -- rolled, and the text export says "position N".
             name = "an SK host record carries list positions and exports them",
-            input = { op = "host", ctx = HOST_CTX, session = {
+            input = { op = "host", ctx = HOST_CTX, round = {
                 id = "Steve-102", host = "Steve", state = "CLOSED", tierCount = 3,
                 openedAt = T, closedAt = T + 100, lootMode = "SK",
                 priorityAtOpen = { version = 7, order = { "Ann", "Bob", "Cat" } },
@@ -251,7 +251,7 @@ return {
                 awards = { [1] = { { copy = 1, char = "Bob", delivery = "AWAITING", priorIndex = 2 } } },
             } },
             expected = {
-                sessionId = "Steve-102", recordedAsHost = true, timestamp = T, closedAt = T + 100,
+                roundId = "Steve-102", recordedAsHost = true, timestamp = T, closedAt = T + 100,
                 zone = "Icecrown Citadel", source = "Lord Marrowgar", host = "Steve",
                 settings = { tierCount = 3, timerSeconds = 180, qualityThreshold = 4, lootMode = "SK" },
                 priorityAtOpen = { version = 7, order = { "Ann", "Bob", "Cat" } },
@@ -271,7 +271,7 @@ return {
         {
             name = "SK text export shows the list position, not a roll",
             input = { op = "text", records = { {
-                sessionId = "S", recordedAsHost = true, timestamp = T, zone = "ICC", source = "Boss", host = "Steve",
+                roundId = "S", recordedAsHost = true, timestamp = T, zone = "ICC", source = "Boss", host = "Steve",
                 settings = { tierCount = 3, lootMode = "SK" }, raid = {}, outcome = "RESOLVED",
                 items = { { itemIdx = 1, itemString = "item:5", count = 1, unclaimed = false, degraded = false,
                             entries = {}, awards = { { copy = 1, char = "Bob", owner = "B", tier = 1, roll = 0, listIdx = 2,
@@ -283,14 +283,14 @@ return {
         {
             -- Aborted before ROLLS: the client's entries fall back to what STATE said.
             name = "a client abort record falls back to STATE entries",
-            input = { op = "client", ctx = CLIENT_CTX, session = {
+            input = { op = "client", ctx = CLIENT_CTX, round = {
                 id = "Steve-103", host = "Steve", state = "ABORTED", abortReason = "HOST_LEFT",
                 tierCount = 3, lootMode = "ROLL", openedAt = T, closedAt = T + 240,
                 items = { { idx = 1, itemString = "item:49623", count = 1 } },
                 entries = { [1] = { { char = "Bonk", owner = "Dave", tier = 1 } } },
             } },
             expected = {
-                sessionId = "Steve-103", recordedAsHost = false, timestamp = T, closedAt = T + 240,
+                roundId = "Steve-103", recordedAsHost = false, timestamp = T, closedAt = T + 240,
                 zone = "Icecrown Citadel", host = "Steve",
                 settings = { tierCount = 3, lootMode = "ROLL" },
                 raid = { "Dave", "Steve" }, outcome = "ABORTED", abortReason = "HOST_LEFT",
@@ -302,22 +302,22 @@ return {
             },
         },
         {
-            name = "upsert appends a batch it has not seen",
+            name = "upsert appends a round it has not seen",
             input = { op = "upsert",
-                      records = { { sessionId = "S1", recordedAsHost = true, tag = "a" } },
-                      record = { sessionId = "S2", recordedAsHost = true, tag = "b" } },
+                      records = { { roundId = "S1", recordedAsHost = true, tag = "a" } },
+                      record = { roundId = "S2", recordedAsHost = true, tag = "b" } },
             expected = { added = true, keys = { "S1/host:a", "S2/host:b" } },
         },
         {
             name = "upsert replaces a same-side record and keeps the other side's",
             input = { op = "upsert",
-                      records = { { sessionId = "S1", recordedAsHost = true, tag = "a" },
-                                  { sessionId = "S1", recordedAsHost = false, tag = "b" } },
-                      record = { sessionId = "S1", recordedAsHost = true, tag = "c" } },
+                      records = { { roundId = "S1", recordedAsHost = true, tag = "a" },
+                                  { roundId = "S1", recordedAsHost = false, tag = "b" } },
+                      record = { roundId = "S1", recordedAsHost = true, tag = "c" } },
             expected = { added = false, keys = { "S1/host:c", "S1/client:b" } },
         },
         {
-            -- Acceptance: loading with 501 batches prunes to 500, oldest first.
+            -- Acceptance: loading with 501 rounds prunes to 500, oldest first.
             name = "pruning drops the oldest past the cap and counts the unexported",
             input = (function()
                 local records = {}
@@ -340,14 +340,14 @@ return {
             name = "a delivery update changes the original award in place",
             input = { op = "delivery",
                       records = { won("S1", T, "Bonk", "Dave", "item:1", "PENDING") },
-                      award = { sessionId = "S1", itemIdx = 1, copy = 1, delivery = "DELIVERED",
+                      award = { roundId = "S1", itemIdx = 1, copy = 1, delivery = "DELIVERED",
                                 deliveryPath = "TRADE", deliveredAt = T + 2400, priorIndex = 4 } },
             expected = { updated = true, awards = { "S1/1/1 DELIVERED 4" }, count = 1 },
         },
         {
-            name = "a delivery update for an unknown batch changes nothing",
+            name = "a delivery update for an unknown round changes nothing",
             input = { op = "delivery", records = { won("S1", T, "Bonk", "Dave", "item:1", "PENDING") },
-                      award = { sessionId = "S9", itemIdx = 1, copy = 1, delivery = "DELIVERED" } },
+                      award = { roundId = "S9", itemIdx = 1, copy = 1, delivery = "DELIVERED" } },
             expected = { updated = false, awards = { "S1/1/1 PENDING nil" }, count = 1 },
         },
         {
@@ -385,7 +385,7 @@ return {
             expected = { "S2" },
         },
         {
-            -- Acceptance (009): a simulated batch does not appear by default.
+            -- Acceptance (009): a simulated round does not appear by default.
             name = "simulated records are hidden unless asked for",
             input = { op = "filter", filter = {}, records = {
                 won("S1", T, "Bonk", "Dave", "item:1", "DELIVERED", { simulated = true }),
@@ -413,7 +413,7 @@ return {
             expected = { "item:3 DELIVERED", "item:2 PENDING" },
         },
         {
-            name = "plain text export: a batch header and one line per award",
+            name = "plain text export: a round header and one line per award",
             input = { op = "text", records = { EXPECTED_HOST } },
             expected = "D" .. T .. "  Icecrown Citadel / Lord Marrowgar  (host Steve, ROLL, 3 tiers)\n"
                 .. "  [item:49623] -> Bonk (Dave) T1, roll 91, delivered\n"

@@ -53,7 +53,7 @@ local function activeTierCount()
     return ns.Database.DefaultTierCount()
 end
 
-local function batchIsOpen()
+local function roundIsOpen()
     local client = ns.Client
     return client ~= nil and client.IsOpen ~= nil and client.IsOpen() == true
 end
@@ -180,7 +180,7 @@ function Editor.Refresh()
     local order, chars = roster.order, roster.chars
     local tierCount = activeTierCount()
 
-    frame.warning:SetText(batchIsOpen()
+    frame.warning:SetText(roundIsOpen()
         and "|cffffcc00A roll is open. Entries you already submitted keep the tiers they had at submit time.|r"
         or "")
 

@@ -56,7 +56,7 @@ with the reasoning.
 - **The priority list is per character; the hierarchy is per player.** They are orthogonal on
   purpose: the hierarchy picks your bucket, the list decides who wins inside it. Spec 010 §3.
 - **The priority list is stored, not derived.** Unlike a tally, it degrades catastrophically —
-  one missing batch silently corrupts every later position. `verify` replays history to *detect*
+  one missing round silently corrupts every later position. `verify` replays history to *detect*
   drift; it never repairs. Spec 010 §8.
 - **Under `SK` the resolution engine calls `rng` zero times.** There are no ties to break; the
   003 §6 re-roll path is unreachable and should assert rather than sit there as dead code.
@@ -64,7 +64,7 @@ with the reasoning.
   Never recompute it — by then the list has moved. Spec 010 §6.
 - **Absent characters hold their absolute index.** The naive remove-and-append rewards not
   showing up. Spec 010 §6.
-- **SK batches are a fixed point, not a sequential pass.** Loot-slot order must not decide who
+- **SK rounds are a fixed point, not a sequential pass.** Loot-slot order must not decide who
   wins what; only the order suicides are applied in. Spec 010 §7.
 - **`itemLevel` / `quality` / `equipLoc` are logged on every item under both modes.** Nothing in
   v1 reads them; they cannot be backfilled once the client cache is cold.
@@ -101,15 +101,15 @@ Add a fixture case for every bug fixed in `Core/`.
 
 Specs 001, 002, 003 and 004 are built. In the tree: `RaidLootSystem.toc`, `RaidLootSystem.lua`,
 `Core/{Constants,Util,Serialize,Tiers,Eligibility,Resolve}.lua`,
-`Modules/{Database,Comms,Roster,ItemInfo,LootDetect,Session,Client}.lua`,
+`Modules/{Database,Comms,Roster,ItemInfo,LootDetect,Round,Client}.lua`,
 `UI/{Widgets,HierarchyEditor,Minimap}.lua`, `Libs/`, `Data/`, and `tests/` with the `tiers`,
-`serialize`, `roster`, `session`, `eligibility`, `resolve`, `iteminfo` and `lootdetect` suites
+`serialize`, `roster`, `round`, `eligibility`, `resolve`, `iteminfo` and `lootdetect` suites
 plus `tests/purity.sh`.
 
-`Modules/{Session,Roster,ItemInfo,LootDetect}.lua` each have a pure half above a "WoW-facing"
+`Modules/{Round,Roster,ItemInfo,LootDetect}.lua` each have a pure half above a "WoW-facing"
 divider; the fixture runner loads all four. Keep new pure logic above that line.
 
-`Session.Open` is reachable now. Until the host panel (006) exists, `/rls loot`, `/rls start`
+`Round.Open` is reachable now. Until the host panel (006) exists, `/rls loot`, `/rls start`
 and `/rls roll <link>` are the seam that drives it.
 
 Specs 005 through 008 and 010 are built too: `UI/{RollWindow,HostPanel,HistoryBrowser}.lua`,
@@ -126,9 +126,9 @@ can open with `/rls sk`. Its row model is `PriorityList.viewRows` in `Core/`, an
 
 **Spec 012 (campaigns) is specified and not built.** It lands in two commits, in this order:
 
-1. **The rename**, 012 §2 — `batch`/`session` become `round` across code, wire and docs, including
-   `Modules/Session.lua` -> `Modules/Round.lua` and the filenames of specs 002 and 004. No
-   behavioural change; `lua tests/run.lua` and `tests/purity.sh` green either side.
+1. **The rename**, 012 §2 — **done**. One loot source's roll is a `round` everywhere in code, wire
+   and docs; `Modules/Session.lua` became `Modules/Round.lua` and specs 002 and 004 were renamed
+   with it. No behavioural change.
 2. **The feature** — `Modules/Campaign.lua`, `UI/Campaigns.lua`, `schema` 3 with no migration
    (defaults are rebuilt), the `CINV` op, and campaign ids on `HI` / `ROSTER` / `OPEN` / `SKLIST` /
    `CFG`. `host` and `priority` stop existing at the top level of the saved variables and move onto
@@ -151,7 +151,7 @@ The rules that are easiest to get wrong when building it, each with its spec sec
   ignore-list, no durations. Re-inviting is the whole recovery mechanism, and adding state to
   "remember" a refusal reintroduces every question that design removed. 012 §6.
 - **`round` never means a tie re-roll iteration** — those stay `rerolls`. And some uses of
-  "session" mean a *login* session (002 §11's once-per-sender warning); the §2 sweep leaves those
+  "session" mean a *login* session (002 §11's once-per-sender warning); the §2 sweep left those
   alone. 012 §2.
 
 ## Conventions

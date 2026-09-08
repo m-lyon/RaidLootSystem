@@ -17,8 +17,8 @@ bot to equip it, and tracking anything that ends up stuck in the host's bags.
 
 | Path | When | Properties |
 |---|---|---|
-| **Master loot** *(primary)* | Corpse-path batch, loot source still valid, winner in range | One click. Item goes corpse → winner. Binds to the winner. **No deadline.** |
-| **Trade** *(fallback)* | Item-link batches, despawned corpses, out-of-range winners, host wants to move on | Host holds the item. Binds to the **host**, tradeable to kill-eligible players for **2 hours**. |
+| **Master loot** *(primary)* | Corpse-path round, loot source still valid, winner in range | One click. Item goes corpse → winner. Binds to the winner. **No deadline.** |
+| **Trade** *(fallback)* | Item-link rounds, despawned corpses, out-of-range winners, host wants to move on | Host holds the item. Binds to the **host**, tradeable to kill-eligible players for **2 hours**. |
 | **Self** *(degenerate trade)* | The winner is the character the host is playing | The item is already in the winner's bags. Delivered on arrival; no pending record, no clock. §5. |
 
 The master-loot path is the default because it has no clock attached. The trade path is a fully
@@ -33,7 +33,7 @@ Triggered from the award control on the results row (005 §5), host only.
 1. Confirm.                       -- irreversible; see §6
 2. Verify the loot source:
      loot window open, GetNumLootItems() consistent,
-     GetLootSlotLink(lootSlot) matches the batch item.
+     GetLootSlotLink(lootSlot) matches the round item.
 3. Find the candidate index:
      for i = 1, 40 do
          if GetMasterLootCandidate(i) == winnerName then idx = i end
@@ -74,9 +74,9 @@ delivered or becomes a pending delivery, which has its own section below.
 
 The results view is not enough on its own: it is a window, the host can close it, and closing it
 used to leave an unawarded item with no route back. This section is keyed off the award records
-rather than the current batch, so a copy left behind two kills ago is still reachable. Those
+rather than the current round, so a copy left behind two kills ago is still reachable. Those
 records are in memory only, unlike pending deliveries — a `/reload` between resolution and award
-loses them, and the batch is then readable in history but no longer awardable.
+loses them, and the round is then readable in history but no longer awardable.
 
 ## 5. Trade path and pending deliveries
 
@@ -87,7 +87,7 @@ to despawn — the item becomes soulbound to the host with a 2-hour tradeable fl
 
 ```lua
 pending[n] = {
-  itemString, winner, owner, sessionId, itemIdx,
+  itemString, winner, owner, roundId, itemIdx,
   takenAt   = time(),          -- when it entered the host's bags
   expiresAt = takenAt + 7200,
   delivered = false,
@@ -104,11 +104,11 @@ Behaviour:
 
 **Which copy is in the bags.** A bag lookup by item id cannot tell "this copy was looted" from
 "the host owns one of these anyway" or "copy 1 is already in my bags for its own trade". The
-host records how many of each batch item it holds when the batch opens; a copy counts as taken
+host records how many of each round item it holds when the round opens; a copy counts as taken
 only when the bags hold more than that baseline plus what other pending records already
 account for. Otherwise the copy is looted from the corpse.
 
-This baseline applies to **corpse batches only**. An item-link batch has no corpse: the host
+This baseline applies to **corpse rounds only**. An item-link round has no corpse: the host
 opened it on an item already in their bags, so that copy *is* the one being awarded and the
 baseline is not charged against it. Other pending records still are, so two copies are never
 promised to the same winner twice.
@@ -187,7 +187,7 @@ SendChatMessage("equip " .. itemLink, "WHISPER", nil, winnerName)
 
 Every awarded copy carries one of the states history records (008 §3). `AWAITING` is the state
 between resolution and the host's click; it is kept distinct from `PENDING`, which means the
-host holds the item for a trade, so a batch nobody awarded reads as exactly that afterwards.
+host holds the item for a trade, so a round nobody awarded reads as exactly that afterwards.
 
 | State | Meaning |
 |---|---|

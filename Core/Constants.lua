@@ -46,18 +46,18 @@ C.OPS = {
 }
 
 --------------------------------------------------------------------------------
--- Session lifecycle (spec 002)
+-- Round lifecycle (spec 002)
 --------------------------------------------------------------------------------
 
-C.SESSION_STATE = {
+C.ROUND_STATE = {
     OPEN      = "OPEN",
     RESOLVING = "RESOLVING",
     CLOSED    = "CLOSED",
     ABORTED   = "ABORTED",
 }
 
--- Why a batch ended without a result (spec 002 section 9). Shown in the window,
--- not only in chat, and written to history so a batch never simply vanishes.
+-- Why a round ended without a result (spec 002 section 9). Shown in the window,
+-- not only in chat, and written to history so a round never simply vanishes.
 C.ABORT_REASON = {
     ML_CHANGED = "ML_CHANGED",
     HOST_LEFT  = "HOST_LEFT",
@@ -71,9 +71,9 @@ C.ABORT_TEXT = {
     ML_CHANGED = "the master looter changed",
     HOST_LEFT  = "the host left the raid",
     LOOT_GONE  = "the loot is no longer there",
-    EXPIRED    = "the batch was left unresolved for too long",
+    EXPIRED    = "the round was left unresolved for too long",
     MANUAL     = "the host cancelled it",
-    RESOLVE_FAILED = "the batch could not be resolved",
+    RESOLVE_FAILED = "the round could not be resolved",
 }
 
 -- Per-copy outcome on the wire (spec 000 section 5, RESULT).
@@ -97,7 +97,7 @@ C.REJECT = {
 C.STATE_COALESCE = 0.5        -- trailing timer on STATE broadcasts, seconds
 C.SYNC_INTERVAL = 5           -- a client sends SYNC at most this often
 C.HOST_LEFT_GRACE = 60        -- seconds past endsAt with no RESULT before a client aborts
-C.BATCH_EXPIRY = 15 * 60      -- an unresolved batch aborts as EXPIRED after this
+C.ROUND_EXPIRY = 15 * 60      -- an unresolved round aborts as EXPIRED after this
 
 C.MIN_TIMER_SECONDS = 15
 C.MAX_TIMER_SECONDS = 300
@@ -155,7 +155,7 @@ C.LOOT_MODE = { ROLL = "ROLL", SK = "SK" }
 C.ROLL_MIN = 1
 C.ROLL_MAX = 100
 
--- Re-roll rounds allowed on a boundary tie before the result is marked degraded
+-- Re-roll iterations allowed on a boundary tie before the result is marked degraded
 -- (spec 003 section 6). A guard against a pathological rng, not an expected path.
 C.MAX_REROLL = 10
 
@@ -178,7 +178,7 @@ C.ROLL_STATUS_OF_REASON = {
 }
 C.REROLL_JOIN = "+"           -- joins a re-roll list inside one ROLLS element
 
--- The roll window turns amber for the last seconds of a batch (spec 005 section 3) and
+-- The roll window turns amber for the last seconds of a round (spec 005 section 3) and
 -- shows an abort reason in place for this long before closing (section 6).
 C.COUNTDOWN_WARN_SECONDS = 30
 C.ABORT_LINGER_SECONDS = 10
@@ -259,9 +259,9 @@ C.DEFAULTS = {
     history = {},
     pending = {},
     -- Ticks the player has made in the roll window but not yet submitted. Kept in saved
-    -- variables so a /reload mid-batch loses nothing (spec 005 section 6).
+    -- variables so a /reload mid-round loses nothing (spec 005 section 6).
     scratch = {
-        sessionId = "",
+        roundId = "",
         ticks = {},               -- itemIdx -> charName -> { override, star }
     },
 }

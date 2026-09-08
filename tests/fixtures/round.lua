@@ -1,6 +1,6 @@
--- tests/fixtures/session.lua
+-- tests/fixtures/round.lua
 --
--- The pure half of Modules/Session.lua: submission validation, replacement,
+-- The pure half of Modules/Round.lua: submission validation, replacement,
 -- the tier snapshot, the STATE aggregate and the RESULT/ROLLS records.
 -- Spec 002 sections 5 to 8.
 
@@ -44,17 +44,17 @@ local function context(state, ns)
 end
 
 local function run(input, ns)
-    local Session = ns.Session
+    local Round = ns.Round
 
     if input.kind == "id" then
-        return Session.NewId(input.host, input.timestamp)
+        return Round.NewId(input.host, input.timestamp)
 
     elseif input.kind == "results" then
-        return { results = Session.ResultRows(input.results),
-                 rolls = Session.RollRows(input.results) }
+        return { results = Round.ResultRows(input.results),
+                 rolls = Round.RollRows(input.results) }
     end
 
-    -- Everything else drives a session through a sequence of submissions.
+    -- Everything else drives a round through a sequence of submissions.
     local state = {
         tierCount = input.tierCount or 3,
         published = {},
@@ -64,7 +64,7 @@ local function run(input, ns)
     }
     for player, roster in pairs(input.published or {}) do state.published[player] = roster end
 
-    local session = Session.New("Steve-100", "Steve", state.tierCount, 0,
+    local round = Round.New("Steve-100", "Steve", state.tierCount, 0,
         input.items or ITEMS)
 
     local rejections = {}
@@ -74,22 +74,22 @@ local function run(input, ns)
         if submit.republish then
             state.published[submit.republish.player] = submit.republish.roster
         end
-        local accepted, rejected = Session.Validate(session, submit.sender,
+        local accepted, rejected = Round.Validate(round, submit.sender,
             submit.entries, context(state, ns))
-        Session.Apply(session, submit.sender, accepted, submit.now or step)
+        Round.Apply(round, submit.sender, accepted, submit.now or step)
         for _, r in ipairs(rejected) do
             rejections[#rejections + 1] = r.char .. ":" .. r.reason
         end
     end
 
     local entries = {}
-    for _, e in ipairs(Session.StateEntries(session)) do
+    for _, e in ipairs(Round.StateEntries(round)) do
         entries[#entries + 1] = string.format("%d/%s/%s/T%d",
             e.itemIdx, e.char, e.owner, e.tier)
     end
 
     local timestamps = {}
-    for player, record in pairs(session.submitted) do
+    for player, record in pairs(round.submitted) do
         timestamps[player] = { submittedAt = record.submittedAt,
                                revisedAt = record.revisedAt, count = record.count }
     end
@@ -97,9 +97,9 @@ local function run(input, ns)
     return {
         entries = entries,
         rejections = rejections,
-        submitted = Session.SubmittedNames(session),
+        submitted = Round.SubmittedNames(round),
         timestamps = timestamps,
-        stars = Session.Stars(session),
+        stars = Round.Stars(round),
     }
 end
 
@@ -108,11 +108,11 @@ local function entry(itemIdx, char, override, star)
 end
 
 return {
-    name = "session",
+    name = "round",
     run = run,
     cases = {
         {
-            name = "a session id names its host and its time",
+            name = "a round id names its host and its time",
             input = { kind = "id", host = "Steve", timestamp = 1757155200.7 },
             expected = "Steve-1757155200",
         },
@@ -147,7 +147,7 @@ return {
             },
         },
         {
-            name = "an item index outside the batch is rejected",
+            name = "an item index outside the round is rejected",
             input = {
                 published = { Steve = STEVE },
                 submits = { { sender = "Steve", entries = { entry(9, "Steve") } } },

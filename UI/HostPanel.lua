@@ -1,7 +1,7 @@
 -- UI/HostPanel.lua
 --
--- The master looter's control surface (spec 006): raid settings, batch candidates,
--- roster health, the live batch, and the loot-still-on-corpse banner. Only reachable
+-- The master looter's control surface (spec 006): raid settings, round candidates,
+-- roster health, the live round, and the loot-still-on-corpse banner. Only reachable
 -- while this client holds master looter; losing it closes the panel.
 --
 -- Everything above the "WoW-facing" divider is pure and fixture-tested by the
@@ -23,7 +23,7 @@ local C = ns.Constants
 --------------------------------------------------------------------------------
 
 --- Why Start roll is disabled, or nil when it may be pressed.
--- @param ctx { isHost, lootMethod, batchOpen, scanning, ticked }
+-- @param ctx { isHost, lootMethod, roundOpen, scanning, ticked }
 function HostPanel.StartBlocker(ctx)
     ctx = ctx or {}
     if not ctx.isHost then
@@ -32,7 +32,7 @@ function HostPanel.StartBlocker(ctx)
         end
         return "You are not the master looter."
     end
-    if ctx.batchOpen then return "A batch is already open. Close or cancel it first." end
+    if ctx.roundOpen then return "A round is already open. Close or cancel it first." end
     if ctx.scanning then return "Still looking the loot up." end
     if (ctx.ticked or 0) == 0 then return "No items are ticked." end
     return nil
@@ -41,9 +41,9 @@ end
 local FROZEN_SETTING = { tierCount = true, timerSeconds = true, lootMode = true }
 
 --- Why a setting cannot be changed right now, or nil.
-function HostPanel.SettingBlocker(key, batchOpen)
-    if FROZEN_SETTING[key] and batchOpen then
-        return "Frozen while a batch is open. Your change would apply to the next one."
+function HostPanel.SettingBlocker(key, roundOpen)
+    if FROZEN_SETTING[key] and roundOpen then
+        return "Frozen while a round is open. Your change would apply to the next one."
     end
     return nil
 end
@@ -159,7 +159,7 @@ end
 --------------------------------------------------------------------------------
 
 local function change(key, value)
-    local ok, why = ns.Session.ChangeSetting(key, value)
+    local ok, why = ns.Round.ChangeSetting(key, value)
     if not ok then ns.Print(why) end
     HostPanel.Refresh()
 end
@@ -220,9 +220,9 @@ end
 
 local function refreshSettings()
     local host = DB().Host()
-    local batchOpen = ns.Session.current ~= nil
-        and ns.Session.current.state == C.SESSION_STATE.OPEN
-    local frozen = HostPanel.SettingBlocker("tierCount", batchOpen)
+    local roundOpen = ns.Round.current ~= nil
+        and ns.Round.current.state == C.ROUND_STATE.OPEN
+    local frozen = HostPanel.SettingBlocker("tierCount", roundOpen)
 
     settings.tier:SetValueQuiet(host.tierCount or 3)
     settings.timer:SetValueQuiet(host.timerSeconds or 180)
@@ -250,11 +250,11 @@ local function refreshSettings()
     Widgets.Tooltip(settings.tier, "Tier count", frozen
         or "How many hierarchy positions count as distinct tiers. Announced to the raid.")
     Widgets.Tooltip(settings.timer, "Entry timer", frozen
-        or "Seconds a batch stays open. Announced to the raid.")
+        or "Seconds a round stays open. Announced to the raid.")
 end
 
 --------------------------------------------------------------------------------
--- Batch candidates (section 3)
+-- Round candidates (section 3)
 --------------------------------------------------------------------------------
 
 local function tickKey(item)
@@ -271,7 +271,7 @@ end
 
 local function startRoll()
     local items = tickedItems()
-    local ok, why = ns.Session.Open(items)
+    local ok, why = ns.Round.Open(items)
     if not ok then ns.Print(why) end
     HostPanel.Refresh()
 end
@@ -301,7 +301,7 @@ local function receiveCursorItem()
 end
 
 local function buildCandidates(parent)
-    local panel = section(parent, "Batch candidates", 120)
+    local panel = section(parent, "Round candidates", 120)
 
     panel.hint = Widgets.Label(panel, "", "GameFontDisableSmall")
     panel.hint:SetPoint("TOPLEFT", panel.title, "BOTTOMLEFT", 0, -2)
@@ -377,7 +377,7 @@ local function candidateRow(i)
     end)
     row.remove:SetPoint("RIGHT", row, "RIGHT", -2, 0)
     Widgets.Tooltip(row.remove, "Remove",
-        "Take this item out of the batch. Add it again by link if you change your mind.")
+        "Take this item out of the round. Add it again by link if you change your mind.")
 
     row.right = Widgets.Label(row, "", "GameFontHighlightSmall")
     row.right:SetPoint("RIGHT", row.remove, "LEFT", -4, 0)
@@ -428,17 +428,17 @@ local function refreshCandidates()
             or "")
     end
 
-    local session = ns.Session.current
+    local round = ns.Round.current
     local blocker = HostPanel.StartBlocker({
-        isHost = ns.Session.IsHost(),
+        isHost = ns.Round.IsHost(),
         lootMethod = (GetLootMethod()),
-        batchOpen = session ~= nil and session.state == C.SESSION_STATE.OPEN,
+        roundOpen = round ~= nil and round.state == C.ROUND_STATE.OPEN,
         scanning = LootDetect.scanning,
         ticked = #tickedItems(),
     })
     if blocker then candidates.start:Disable() else candidates.start:Enable() end
     Widgets.Tooltip(candidates.start, "Start roll",
-        blocker or string.format("Open a batch on the %d ticked item(s).", #tickedItems()))
+        blocker or string.format("Open a round on the %d ticked item(s).", #tickedItems()))
 
     local listH = math.max(n, 1) * ROW_H
     candidates.list:SetHeight(listH)
@@ -496,7 +496,7 @@ local function refreshHealth()
         line("|cffffaa00Unclaimed:|r " .. table.concat(unclaimed, ", "))
     end
 
-    for _, row in ipairs(HostPanel.AddonStatus(Roster.GroupMembers(), ns.Session.peers, C.VERSION)) do
+    for _, row in ipairs(HostPanel.AddonStatus(Roster.GroupMembers(), ns.Round.peers, C.VERSION)) do
         local colour = row.status == "not running" and "|cff888888"
             or (row.drift and "|cffffaa00" or "|cffaaaaaa")
         line("  " .. row.name, colour .. row.status .. "|r")
@@ -535,24 +535,24 @@ local function refreshPriority()
 end
 
 --------------------------------------------------------------------------------
--- Live batch (section 3)
+-- Live round (section 3)
 --------------------------------------------------------------------------------
 
 local function buildLive(parent)
     -- Abort discards submitted entries, so it is confirmed (spec 000 section 8).
     StaticPopupDialogs["RLS_CONFIRM_ABORT"] = {
-        text = "Cancel the open batch? Every submitted entry is discarded.",
-        button1 = "Cancel batch",
+        text = "Cancel the open round? Every submitted entry is discarded.",
+        button1 = "Cancel round",
         button2 = "Keep it",
         OnAccept = function()
-            if not ns.Session.Abort(C.ABORT_REASON.MANUAL) then
-                ns.Print("there is no batch of yours to cancel.")
+            if not ns.Round.Abort(C.ABORT_REASON.MANUAL) then
+                ns.Print("there is no round of yours to cancel.")
             end
         end,
         timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
     }
 
-    local panel = section(parent, "Live batch", 100)
+    local panel = section(parent, "Live round", 100)
 
     panel.countdown = Widgets.Label(panel, "", "GameFontNormal")
     panel.countdown:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -12, -8)
@@ -563,13 +563,13 @@ local function buildLive(parent)
     panel.list:SetHeight(1)
 
     panel.close = Widgets.Button(panel, "Close now", 90, 22, function()
-        if not ns.Session.Close() then ns.Print("there is no batch of yours to close.") end
+        if not ns.Round.Close() then ns.Print("there is no round of yours to close.") end
     end)
     panel.close:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 10, 8)
     Widgets.Tooltip(panel.close, "Close now", "Resolve immediately with what has been submitted.")
 
     panel.extend = Widgets.Button(panel, "Extend", 80, 22, function()
-        local ok, why = ns.Session.Extend(C.EXTEND_SECONDS)
+        local ok, why = ns.Round.Extend(C.EXTEND_SECONDS)
         if not ok then ns.Print(why) end
     end)
     panel.extend:SetPoint("LEFT", panel.close, "RIGHT", 6, 0)
@@ -579,14 +579,14 @@ local function buildLive(parent)
         StaticPopup_Show("RLS_CONFIRM_ABORT")
     end)
     panel.abort:SetPoint("LEFT", panel.extend, "RIGHT", 6, 0)
-    Widgets.Tooltip(panel.abort, "Abort", "Cancel the batch and discard every entry. Confirmed.")
+    Widgets.Tooltip(panel.abort, "Abort", "Cancel the round and discard every entry. Confirmed.")
 
     return panel
 end
 
 local function refreshLive()
-    local session = ns.Session.current
-    local open = session ~= nil and session.state == C.SESSION_STATE.OPEN
+    local round = ns.Round.current
+    local open = round ~= nil and round.state == C.ROUND_STATE.OPEN
     if not open then
         live:Hide()
         return
@@ -604,12 +604,12 @@ local function refreshLive()
         row:Show()
     end
 
-    local outstanding = ns.Session.OutstandingPlayers()
-    local submitted = ns.Session.SubmittedNames(session)
+    local outstanding = ns.Round.OutstandingPlayers()
+    local submitted = ns.Round.SubmittedNames(round)
     line(string.format("%d submitted%s", #submitted,
         #outstanding > 0 and (", waiting on " .. table.concat(outstanding, ", ")) or ", everyone is in"))
-    for _, count in ipairs(ns.Session.EntryCounts(session)) do
-        local item = ns.Session.ItemByIdx(session, count.idx)
+    for _, count in ipairs(ns.Round.EntryCounts(round)) do
+        local item = ns.Round.ItemByIdx(round, count.idx)
         line("  " .. ns.LootDetect.Label(item),
             count.count == 0 and "|cffff6060no entries|r"
             or string.format("%d entr%s", count.count, count.count == 1 and "y" or "ies"))
@@ -621,9 +621,9 @@ local function refreshLive()
 end
 
 local function refreshCountdown()
-    local session = ns.Session.current
-    if not session or session.state ~= C.SESSION_STATE.OPEN then return end
-    local left = session.endsAt - GetTime()
+    local round = ns.Round.current
+    if not round or round.state ~= C.ROUND_STATE.OPEN then return end
+    local left = round.endsAt - GetTime()
     local text = ns.RollWindow.FormatCountdown(left)
     if left <= C.COUNTDOWN_WARN_SECONDS then text = "|cffffaa00" .. text .. "|r" end
     live.countdown:SetText(text)
@@ -635,7 +635,7 @@ end
 -- The roll window's results view is where awards are normally made, but it is a
 -- window like any other and closing it used to leave the host with no route back
 -- to an unawarded item. This is that route, and it outlives the results view: it
--- is keyed off the award records, so a batch from two kills ago still lists here.
+-- is keyed off the award records, so a round from two kills ago still lists here.
 --------------------------------------------------------------------------------
 
 local function buildAwaiting(parent)
@@ -662,7 +662,7 @@ local function awaitingRow(i)
 
     row.award = Widgets.Button(row, "Award", 64, 18, function()
         if not row.record then return end
-        ns.Award.Prompt(row.record.sessionId, row.record.itemIdx, row.record.copy,
+        ns.Award.Prompt(row.record.roundId, row.record.itemIdx, row.record.copy,
             IsShiftKeyDown())
     end)
     row.award:SetPoint("RIGHT", row, "RIGHT", 0, 0)
@@ -876,7 +876,7 @@ local function build()
         refreshAccumulator = refreshAccumulator + elapsed
         if refreshAccumulator < 0.5 then return end
         refreshAccumulator = 0
-        if not ns.Session.IsHost() then
+        if not ns.Round.IsHost() then
             -- Losing master looter closes the panel (section 2).
             ns.Print("you are no longer the master looter; the host panel closed.")
             frame:Hide()
@@ -905,7 +905,7 @@ function HostPanel.Refresh()
 end
 
 function HostPanel.Show()
-    if not ns.Session.IsHost() then
+    if not ns.Round.IsHost() then
         local method = GetLootMethod()
         ns.Print(method == "master"
             and "the host panel is only for the master looter."
@@ -928,7 +928,7 @@ function HostPanel.IsShown()
 end
 
 function HostPanel.Init()
-    ns.Session.RegisterListener(function() HostPanel.Refresh() end)
+    ns.Round.RegisterListener(function() HostPanel.Refresh() end)
     ns.LootDetect.RegisterListener(function(_, newScan)
         -- A new corpse means a fresh set of ticks; a rebuild of the same one (a manual
         -- add, a lost slot, a moved quality bar) keeps what the host unticked.

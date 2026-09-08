@@ -107,7 +107,7 @@ careful thought about what it means for the openness guarantees. Spec 002, 006.
 
 ---
 
-## Raid-leader session-claiming of unclaimed bots
+## Raid-leader temporary claiming of unclaimed bots
 
 **What:** let the raid leader temporarily claim a bot nobody has declared, for the duration of
 one raid, so its loot isn't stranded.
@@ -149,7 +149,7 @@ regardless of list position (proposal 001 §4, spec 010 §7). These are the desi
 **Cost:** medium. The history fields it needs (`itemLevel`, `quality`, `equipLoc` per item) are
 **already being logged** under both v1 modes precisely so this stays buildable — see
 [spec 008](specs/008-history-and-export.md) §3. Resolution stops being a pure function of the
-current batch; design the ledger as an injected parameter, never a global read, or spec 003's
+current round; design the ledger as an injected parameter, never a global read, or spec 003's
 testability guarantee goes with it.
 
 ---

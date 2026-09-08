@@ -27,7 +27,7 @@ function Pending.NewRecord(award, now)
         itemString = award.itemString,
         winner = award.char,
         owner = award.owner,
-        sessionId = award.sessionId,
+        roundId = award.roundId,
         itemIdx = award.itemIdx,
         copy = award.copy or 1,
         takenAt = now,
@@ -69,7 +69,7 @@ function Pending.Outstanding(records)
 end
 
 local function sameCopy(r, award)
-    return r.sessionId == award.sessionId and r.itemIdx == award.itemIdx
+    return r.roundId == award.roundId and r.itemIdx == award.itemIdx
         and (r.copy or 1) == (award.copy or 1)
 end
 
@@ -211,7 +211,7 @@ function Pending.OutstandingRecords()
 end
 
 local function awardFor(record)
-    return ns.Award.Get(record.sessionId, record.itemIdx, record.copy)
+    return ns.Award.Get(record.roundId, record.itemIdx, record.copy)
 end
 
 --- The delivery happened: by our trade, by the host's own hand, or because the
@@ -233,7 +233,7 @@ function Pending.MarkDelivered(record, path)
             ns.Print(string.format("%s delivered to %s.", labelFor(record.itemString), record.winner))
         end
         if ns.History then
-            ns.History.UpdateDeliveryFromAward({ sessionId = record.sessionId, itemIdx = record.itemIdx,
+            ns.History.UpdateDeliveryFromAward({ roundId = record.roundId, itemIdx = record.itemIdx,
                 copy = record.copy, delivery = C.DELIVERY.DELIVERED,
                 deliveryPath = path, deliveredAt = record.deliveredAt })
         end
@@ -251,7 +251,7 @@ local function failPending(record)
         return
     end
     if ns.History then
-        ns.History.UpdateDeliveryFromAward({ sessionId = record.sessionId, itemIdx = record.itemIdx,
+        ns.History.UpdateDeliveryFromAward({ roundId = record.roundId, itemIdx = record.itemIdx,
             copy = record.copy, delivery = C.DELIVERY.FAILED, deliveryPath = C.DELIVERY_PATH.TRADE,
             failure = C.AWARD_FAILURE.TRADE_EXPIRED })
     end

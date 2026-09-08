@@ -41,7 +41,7 @@ opts = {
   tierCount = 3,
   maxReroll = 10,
   lootMode  = "ROLL",           -- ROLL | SK. Absent = ROLL. See spec 010 §7.
-  priority  = nil,              -- SK only: charName -> list index, frozen at batch open
+  priority  = nil,              -- SK only: charName -> list index, frozen at round open
   stars     = nil,              -- SK only: charName -> starred itemIdx
 }
 ```
@@ -57,7 +57,7 @@ eligibility checks and no roster lookups — it does not know what a roster is.
 3. `item.count >= 1`.
 4. `opts.rng` is a function.
 
-Assertion failures raise. In production the host catches, aborts the batch with a visible error,
+Assertion failures raise. In production the host catches, aborts the round with a visible error,
 and writes the failure to history — resolving a loot roll on corrupt input is worse than not
 resolving it.
 
@@ -131,7 +131,7 @@ somebody later "fixes".
    `degraded = true`, and record it. This is a guard against a pathological rng, not an expected
    path; it must be visible if it ever fires.
 
-Each re-roll round is recorded in the entry's `rerolled` list so the results table and chat can
+Each re-roll is recorded in the entry's `rerolled` list so the results table and chat can
 show `"Botty and Sneaky tied on 83 — rerolling"` and the history preserves the full sequence.
 
 Ties entirely above the boundary (all of them win) or entirely below it (none of them win) are
@@ -160,14 +160,14 @@ result = {
 `listIdx` is `0` under `ROLL`; `roll` is `0` and `rerolled` empty under `SK`. Both fields are
 always present so consumers need no mode-specific branching.
 
-`Resolve.batch(items, entriesByItem, opts)` applies `Resolve.item` across a batch and returns a
+`Resolve.round(items, entriesByItem, opts)` applies `Resolve.item` across a round and returns a
 list of results.
 
 **Under `ROLL`, items are fully independent** — there is no cross-item interaction of any kind.
 
 **Under `SK` they are coupled**, by two rules specified in 010 §7: a character that wins is
-withdrawn from the batch's remaining items, and its starred item decides which one it takes if it
-would win several. `Resolve.batch` implements this as a bounded fixed point over the whole batch,
+withdrawn from the round's remaining items, and its starred item decides which one it takes if it
+would win several. `Resolve.round` implements this as a bounded fixed point over the whole round,
 not a sequential pass, so **loot-slot order is not a factor in who wins what**. Only the order in
 which suicides are subsequently applied depends on item index.
 

@@ -1,7 +1,7 @@
 -- Modules/PriorityList.lua
 --
 -- The stateful half of Suicide Kings (spec 010 sections 5, 6, 8, 9 and 10): the list
--- in saved variables, seeding, the suicides a resolved batch applies, the restore a
+-- in saved variables, seeding, the suicides a resolved round applies, the restore a
 -- failed delivery earns, the SKLIST broadcast and its client side, the event log
 -- that `verify` replays, and the host panel section.
 --
@@ -168,7 +168,7 @@ end
 
 --- Send the authoritative list (host only).
 function Priority.Broadcast()
-    if not ns.Session.IsHost() then return false end
+    if not ns.Round.IsHost() then return false end
     if not Priority.Seeded() then return false end
     return ns.Comms.Send(C.OPS.SKLIST, Priority.Encode(DB()))
 end
@@ -248,7 +248,7 @@ end
 --- Newly claimed, uncontested characters join at the bottom. Host only; nothing is
 -- ever removed here.
 function Priority.SyncRoster()
-    if not ns.Session.IsHost() or not Priority.Seeded() then return end
+    if not ns.Round.IsHost() or not Priority.Seeded() then return end
     local order = DB().order
     local added = false
     for _, name in ipairs(Priority.SeedCandidates(ns.Roster.claims)) do
@@ -265,16 +265,16 @@ end
 -- Suicides at close, restores on failure (sections 6 and 7)
 --------------------------------------------------------------------------------
 
---- Called by Session.Close after Award.Begin, host side, under SK. One suicide per
+--- Called by Round.Close after Award.Begin, host side, under SK. One suicide per
 -- winning character in (item index, copy) order; each award record learns the
 -- prior index, the present indices and the version, so a failed delivery can be
 -- undone exactly and `verify` can replay it.
-function Priority.ApplyAwards(session)
-    if session.lootMode ~= C.LOOT_MODE.SK or not session.awards then return end
+function Priority.ApplyAwards(round)
+    if round.lootMode ~= C.LOOT_MODE.SK or not round.awards then return end
     local present = presentSet()
     local done = {}
-    for _, item in ipairs(session.items) do
-        for _, record in ipairs(session.awards[item.idx] or {}) do
+    for _, item in ipairs(round.items) do
+        for _, record in ipairs(round.awards[item.idx] or {}) do
             local key = record.char:lower()
             if not done[key] then
                 done[key] = true
@@ -349,7 +349,7 @@ local function suicideEntry(entry)
 end
 
 local function needsHost(entry)
-    if ns.Session.IsHost() then return true end
+    if ns.Round.IsHost() then return true end
     ns.Print("the priority list needs a change for " .. entry.char
         .. ", but only the master looter can make it. Ask them to restore by hand.")
     return false
@@ -389,7 +389,7 @@ end
 
 --- SKLIST from the host: replace wholesale when it differs, and say so.
 local function onSklist(sender, body)
-    if not ns.Session.IsAuthoritative(sender) then
+    if not ns.Round.IsAuthoritative(sender) then
         ns.Debug("dropped SKLIST from " .. tostring(sender) .. ", who is not the master looter")
         return
     end
@@ -399,11 +399,11 @@ local function onSklist(sender, body)
         return
     end
 
-    -- The positions matter to a batch only under SK (spec 005 section 3); a list
-    -- edit during a ROLL batch must not make the window render it as Suicide Kings.
-    local session = ns.Client.session
-    if session and session.lootMode == C.LOOT_MODE.SK then
-        session.priority = PriorityList.positions(msg.order)
+    -- The positions matter to a round only under SK (spec 005 section 3); a list
+    -- edit during a ROLL round must not make the window render it as Suicide Kings.
+    local round = ns.Client.round
+    if round and round.lootMode == C.LOOT_MODE.SK then
+        round.priority = PriorityList.positions(msg.order)
     end
 
     if not ns.Comms.IsSelf(sender) then
@@ -414,7 +414,7 @@ local function onSklist(sender, body)
             stored.version, stored.seed, stored.order = msg.version, msg.seed, msg.order
             stored.log = {}                   -- the log is the host's; a client has none
             ns.Print(noticeText)
-            if session then session.priorityNotice = noticeText end
+            if round then round.priorityNotice = noticeText end
         else
             noticeText = nil
         end
@@ -424,15 +424,15 @@ end
 
 --- RESULT on a client: apply the same suicides the host did (section 8), so every
 -- copy agrees before the SKLIST that follows confirms it.
-function Priority.OnClientResult(session)
-    if session.lootMode ~= C.LOOT_MODE.SK then return end
+function Priority.OnClientResult(round)
+    if round.lootMode ~= C.LOOT_MODE.SK then return end
     local me = UnitName("player")
-    if session.host and me and session.host:lower() == me:lower() then return end
+    if round.host and me and round.host:lower() == me:lower() then return end
     if not Priority.Seeded() then return end
 
     local awards = {}
-    for _, item in ipairs(session.items) do
-        for _, r in ipairs(session.results or {}) do
+    for _, item in ipairs(round.items) do
+        for _, r in ipairs(round.results or {}) do
             if r.itemIdx == item.idx and r.winner and r.winner ~= "" then
                 awards[#awards + 1] = { char = r.winner }
             end
@@ -448,7 +448,7 @@ end
 --- `/rls sk verify`: replay and report (section 8). Host only: the log that replay
 -- needs is the host's, and a client holds the host's copy without it.
 function Priority.RunVerify()
-    if not ns.Session.IsHost() then
+    if not ns.Round.IsHost() then
         ns.Print("verify runs on the master looter's client: the event log it replays is theirs. "
             .. "Your copy is version " .. (DB().version or 0) .. ".")
         return nil

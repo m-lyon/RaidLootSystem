@@ -29,7 +29,7 @@ Modules\Comms.lua
 Modules\Roster.lua
 Modules\ItemInfo.lua
 Modules\LootDetect.lua
-Modules\Session.lua
+Modules\Round.lua
 Modules\Client.lua
 Modules\Award.lua
 Modules\Pending.lua

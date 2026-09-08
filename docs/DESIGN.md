@@ -33,7 +33,7 @@ sometimes genuinely wanted:
 > and yours is led by a priest rather than a mage, is another. A friend's guild you occasionally
 > guest in is a third.
 
-A campaign has **no end**. There is no "start tonight's session" and nothing to close down at the
+A campaign has **no end**. There is no "start tonight's raid" and nothing to close down at the
 end of the evening — you switch between campaigns, and each one is exactly where you left it. A
 priority list that reset weekly would defeat the point of having one.
 
@@ -125,8 +125,8 @@ presses Join and confirms which characters they are bringing. Nobody does this a
 new turns up.
 
 **The boss dies.** The master looter opens the corpse. Raid Loot System notices the epics and
-opens a **batch** — a single roll covering everything the boss dropped at once, rather than
-six separate rounds. A 3-minute timer starts, and the items are announced in raid chat.
+opens a **round** — a single roll covering everything the boss dropped at once, rather than
+six separate rolls. A 3-minute timer starts, and the items are announced in raid chat.
 
 **Everyone enters.** Each player gets one window: their characters down the side, the boss's
 items across the top, a checkbox in every cell. Cells are greyed out where that character
@@ -216,9 +216,9 @@ something that isn't yours.
 
 **Roll** is the original behaviour: highest roll in the highest occupied tier. **Suicide Kings**
 replaces the roll with a persistent priority list — see §9. It can only be selected once the list
-has been seeded, and like the tier count it changes only between batches, with an announcement.
+has been seeded, and like the tier count it changes only between rounds, with an announcement.
 
-The tier count can be changed mid-raid, but only between batches, never while a roll is open —
+The tier count can be changed mid-raid, but only between rounds, never while a roll is open —
 and the change is announced.
 
 **Every setting here belongs to the campaign**, so a Sunday alt run with a flat tier count of 0 and
@@ -244,7 +244,7 @@ back, rather than starting a second one by accident.
 
 ## 8. History
 
-Every batch is recorded: what dropped, who entered, what tier they were, what they rolled, who
+Every round is recorded: what dropped, who entered, what tier they were, what they rolled, who
 won, and whether the handover actually completed. Both the master looter and every player keep
 their own copy. It can be exported as plain text or CSV.
 
@@ -285,7 +285,7 @@ everyone else is raiding.
 Classic Suicide Kings hands out one item at a time. We resolve a whole boss at once, and your
 character has one position but six items to want.
 
-1. **One win per character per batch.** Once a character wins, it's out of the rest of that
+1. **One win per character per round.** Once a character wins, it's out of the rest of that
    boss's items. Otherwise being top of the list and ticking everything wins you everything, for
    the price of one suicide.
 2. **The priority pick.** Star **one** of the items you ticked for that character. If it would
@@ -355,9 +355,9 @@ reasoning attached, so we don't re-argue them every month.
 | **Tier** | A priority band derived from hierarchy position and the raid's tier count |
 | **Rest** | The single bottom tier holding everything below the cut-off, all equal |
 | **Tier count** | How many hierarchy positions are treated as distinct tiers. Raid leader's setting |
-| **Batch** | One roll covering every item from a single loot source |
+| **Round** | One roll covering every item from a single loot source |
 | **Entry** | One character submitted for one item |
-| **Host** | The client running the batch. Always whoever holds master looter |
+| **Host** | The client running the round. Always whoever holds master looter |
 | **Loot mode** | Roll or Suicide Kings. Raid leader's setting |
 | **Priority list** | The Suicide Kings order — every character, highest priority first |
 | **Suicide** | Dropping to the bottom of the priority list after winning an item |

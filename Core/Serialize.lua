@@ -199,11 +199,11 @@ function Serialize.decodeRoster(body)
 end
 
 --------------------------------------------------------------------------------
--- Session payloads (spec 000 section 5, spec 002)
+-- Round payloads (spec 000 section 5, spec 002)
 --
 -- One encoder and one decoder per op. Nothing outside this file builds or parses
--- a session wire string. Decoders return nil plus a reason on anything malformed:
--- a half-read batch is worse than no batch.
+-- a round wire string. Decoders return nil plus a reason on anything malformed:
+-- a half-read round is worse than no round.
 --------------------------------------------------------------------------------
 
 local function flag(value)
@@ -233,19 +233,19 @@ local function encodeElements(rows)
 end
 
 --------------------------------------------------------------------------------
--- OPEN: sessionId^tierCount^secondsLeft^idx=itemString=count~...
+-- OPEN: roundId^tierCount^secondsLeft^idx=itemString=count~...
 --
--- The third field is the batch's REMAINING SECONDS, not the host's absolute
+-- The third field is the round's REMAINING SECONDS, not the host's absolute
 -- `endsAt`. The client clock the host reads is time since that client started, so
 -- an absolute deadline is meaningless on any other machine; each client adds the
--- remainder to its own clock. Resyncing mid-batch (spec 002 section 10) sends what is left, so a late
+-- remainder to its own clock. Resyncing mid-round (spec 002 section 10) sends what is left, so a late
 -- arrival lands on the same wall-clock deadline as everyone else.
 --------------------------------------------------------------------------------
 
---- @param lootMode optional; a trailing field (spec 010 section 8), so a batch carries
+--- @param lootMode optional; a trailing field (spec 010 section 8), so a round carries
 --        its own mode and a late joiner who never saw CFG still knows it. Omitted when
 --        nil, and a body without it decodes as ROLL.
-function Serialize.encodeOpen(sessionId, tierCount, secondsLeft, items, lootMode)
+function Serialize.encodeOpen(roundId, tierCount, secondsLeft, items, lootMode)
     local rows = {}
     for i = 1, #items do
         local item = items[i]
@@ -253,15 +253,15 @@ function Serialize.encodeOpen(sessionId, tierCount, secondsLeft, items, lootMode
     end
     local body, err = encodeElements(rows)
     if not body then return nil, err end
-    local fields = { sessionId, tierCount, secondsLeft, body }
+    local fields = { roundId, tierCount, secondsLeft, body }
     if lootMode then fields[5] = lootMode end
     return Serialize.encodeFields(fields)
 end
 
 function Serialize.decodeOpen(body)
     local fields = Serialize.decodeFields(body)
-    local sessionId = fields[1]
-    if not sessionId or sessionId == "" then return nil, "OPEN has no session id" end
+    local roundId = fields[1]
+    if not roundId or roundId == "" then return nil, "OPEN has no round id" end
 
     local tierCount = tonumber(fields[2])
     local secondsLeft = tonumber(fields[3])
@@ -283,18 +283,18 @@ function Serialize.decodeOpen(body)
     local lootMode = fields[5]
     if lootMode ~= C.LOOT_MODE.SK then lootMode = C.LOOT_MODE.ROLL end
 
-    return { sessionId = sessionId, tierCount = tierCount,
+    return { roundId = roundId, tierCount = tierCount,
              secondsLeft = secondsLeft, items = items, lootMode = lootMode }
 end
 
 --------------------------------------------------------------------------------
--- SUBMIT: sessionId^itemIdx=charName=override=star~...
+-- SUBMIT: roundId^itemIdx=charName=override=star~...
 --
--- Always the sender's COMPLETE entry set for the batch (spec 002 section 5), so
+-- Always the sender's COMPLETE entry set for the round (spec 002 section 5), so
 -- an empty entry list is a valid message meaning "I withdraw everything".
 --------------------------------------------------------------------------------
 
-function Serialize.encodeSubmit(sessionId, entries)
+function Serialize.encodeSubmit(roundId, entries)
     local rows = {}
     for i = 1, #entries do
         local e = entries[i]
@@ -302,13 +302,13 @@ function Serialize.encodeSubmit(sessionId, entries)
     end
     local body, err = encodeElements(rows)
     if not body then return nil, err end
-    return Serialize.encodeFields({ sessionId, body })
+    return Serialize.encodeFields({ roundId, body })
 end
 
 function Serialize.decodeSubmit(body)
     local fields = Serialize.decodeFields(body)
-    local sessionId = fields[1]
-    if not sessionId or sessionId == "" then return nil, "SUBMIT has no session id" end
+    local roundId = fields[1]
+    if not roundId or roundId == "" then return nil, "SUBMIT has no round id" end
 
     local entries = {}
     for _, element in ipairs(Serialize.decodeList(fields[2])) do
@@ -319,16 +319,16 @@ function Serialize.decodeSubmit(body)
         entries[#entries + 1] = { itemIdx = itemIdx, char = char,
                                   override = isFlag(sub[3]), star = isFlag(sub[4]) }
     end
-    return { sessionId = sessionId, entries = entries }
+    return { roundId = roundId, entries = entries }
 end
 
 --------------------------------------------------------------------------------
--- STATE: sessionId^name~name...^itemIdx=charName=owner=tier~...
+-- STATE: roundId^name~name...^itemIdx=charName=owner=tier~...
 --
 -- The authoritative aggregate and the only source for the live open view.
 --------------------------------------------------------------------------------
 
-function Serialize.encodeState(sessionId, submitted, entries)
+function Serialize.encodeState(roundId, submitted, entries)
     local names = {}
     for i = 1, #submitted do
         local element, err = Serialize.encodeElement({ submitted[i] })
@@ -344,13 +344,13 @@ function Serialize.encodeState(sessionId, submitted, entries)
     local body, err = encodeElements(rows)
     if not body then return nil, err end
 
-    return Serialize.encodeFields({ sessionId, Serialize.encodeList(names), body })
+    return Serialize.encodeFields({ roundId, Serialize.encodeList(names), body })
 end
 
 function Serialize.decodeState(body)
     local fields = Serialize.decodeFields(body)
-    local sessionId = fields[1]
-    if not sessionId or sessionId == "" then return nil, "STATE has no session id" end
+    local roundId = fields[1]
+    if not roundId or roundId == "" then return nil, "STATE has no round id" end
 
     local submitted = {}
     for _, name in ipairs(Serialize.decodeList(fields[2])) do
@@ -368,18 +368,18 @@ function Serialize.decodeState(body)
                                   owner = (owner ~= "" and owner or nil), tier = tier }
     end
 
-    return { sessionId = sessionId, submitted = submitted, entries = entries }
+    return { roundId = roundId, submitted = submitted, entries = entries }
 end
 
 --------------------------------------------------------------------------------
--- RESULT: sessionId^itemIdx=winner=tier=roll=outcome~...
+-- RESULT: roundId^itemIdx=winner=tier=roll=outcome~...
 --
 -- One element per awarded copy. An item nobody entered gets one element with an
 -- empty winner and the UNCLAIMED outcome, so a client can tell "nobody wanted it"
 -- apart from "the message about that item never arrived".
 --------------------------------------------------------------------------------
 
-function Serialize.encodeResult(sessionId, results)
+function Serialize.encodeResult(roundId, results)
     local rows = {}
     for i = 1, #results do
         local r = results[i]
@@ -387,13 +387,13 @@ function Serialize.encodeResult(sessionId, results)
     end
     local body, err = encodeElements(rows)
     if not body then return nil, err end
-    return Serialize.encodeFields({ sessionId, body })
+    return Serialize.encodeFields({ roundId, body })
 end
 
 function Serialize.decodeResult(body)
     local fields = Serialize.decodeFields(body)
-    local sessionId = fields[1]
-    if not sessionId or sessionId == "" then return nil, "RESULT has no session id" end
+    local roundId = fields[1]
+    if not roundId or roundId == "" then return nil, "RESULT has no round id" end
 
     local results = {}
     for _, element in ipairs(Serialize.decodeList(fields[2])) do
@@ -413,11 +413,11 @@ function Serialize.decodeResult(body)
         }
     end
 
-    return { sessionId = sessionId, results = results }
+    return { roundId = roundId, results = results }
 end
 
 --------------------------------------------------------------------------------
--- ROLLS: sessionId^itemIdx=charName=tier=roll=listIdx=status=rerolls~...
+-- ROLLS: roundId^itemIdx=charName=tier=roll=listIdx=status=rerolls~...
 --
 -- The full record behind the results table. `roll` is 0 under SK and `listIdx`
 -- is 0 under ROLL (spec 010 section 8). `status` is empty for an entry that rolled
@@ -428,7 +428,7 @@ end
 -- decodes as rolled with no re-rolls.
 --------------------------------------------------------------------------------
 
-function Serialize.encodeRolls(sessionId, rolls)
+function Serialize.encodeRolls(roundId, rolls)
     local rows = {}
     for i = 1, #rolls do
         local r = rolls[i]
@@ -440,13 +440,13 @@ function Serialize.encodeRolls(sessionId, rolls)
     end
     local body, err = encodeElements(rows)
     if not body then return nil, err end
-    return Serialize.encodeFields({ sessionId, body })
+    return Serialize.encodeFields({ roundId, body })
 end
 
 function Serialize.decodeRolls(body)
     local fields = Serialize.decodeFields(body)
-    local sessionId = fields[1]
-    if not sessionId or sessionId == "" then return nil, "ROLLS has no session id" end
+    local roundId = fields[1]
+    if not roundId or roundId == "" then return nil, "ROLLS has no round id" end
 
     local rolls = {}
     for _, element in ipairs(Serialize.decodeList(fields[2])) do
@@ -466,7 +466,7 @@ function Serialize.decodeRolls(body)
                               rerolled = rerolled }
     end
 
-    return { sessionId = sessionId, rolls = rolls }
+    return { roundId = roundId, rolls = rolls }
 end
 
 --------------------------------------------------------------------------------
@@ -503,18 +503,18 @@ function Serialize.decodeSklist(body)
 end
 
 --------------------------------------------------------------------------------
--- ABORT: sessionId^reasonCode        CFG: tierCount^timerSeconds^lootMode
+-- ABORT: roundId^reasonCode        CFG: tierCount^timerSeconds^lootMode
 --------------------------------------------------------------------------------
 
-function Serialize.encodeAbort(sessionId, reason)
-    return Serialize.encodeFields({ sessionId, reason })
+function Serialize.encodeAbort(roundId, reason)
+    return Serialize.encodeFields({ roundId, reason })
 end
 
 function Serialize.decodeAbort(body)
     local fields = Serialize.decodeFields(body)
-    if not fields[1] or fields[1] == "" then return nil, "ABORT has no session id" end
+    if not fields[1] or fields[1] == "" then return nil, "ABORT has no round id" end
     if not fields[2] or fields[2] == "" then return nil, "ABORT has no reason code" end
-    return { sessionId = fields[1], reason = fields[2] }
+    return { roundId = fields[1], reason = fields[2] }
 end
 
 function Serialize.encodeConfig(tierCount, timerSeconds, lootMode)

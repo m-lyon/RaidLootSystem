@@ -122,7 +122,7 @@ is two different players publishing the same character name.
   the affected rows disabled with reason `"contested — Steve and Dave both claim Sneaky"`.
 
 **Unclaimed bots:** raid members present but in nobody's published roster. Listed as a warning
-in the host panel. Not enterable in v1 (see ROADMAP: RL session-claiming).
+in the host panel. Not enterable in v1 (see ROADMAP: RL temporary claiming).
 
 ## 6. Presence
 
@@ -169,7 +169,7 @@ change (006 §3), and stating a number a player cannot act on next to a list the
 the reading that the hierarchy owns it. The bands carry everything the player needs: where the
 cuts fall for the count in force right now.
 
-**Editing during an open batch** is allowed, but the editor displays a warning that entries
+**Editing during an open round** is allowed, but the editor displays a warning that entries
 already submitted are locked to the tiers they had at submit time (see 002 §6).
 
 ## 8. Export / import

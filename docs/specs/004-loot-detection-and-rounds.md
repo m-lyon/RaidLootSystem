@@ -1,4 +1,4 @@
-# Spec 004 — Loot detection, item classification and batching
+# Spec 004 — Loot detection, item classification and rounds
 
 **Modules:** `Modules/LootDetect.lua`, `Modules/ItemInfo.lua`, `Data/TierTokens.lua`, `Data/ClassArmor.lua`
 **Depends on:** 000
@@ -8,12 +8,12 @@
 
 ## 1. Scope
 
-Deciding **which items become a batch**, and turning a WoW item into the locale-independent
+Deciding **which items become a round**, and turning a WoW item into the locale-independent
 `itemInfo` table that `Core/Eligibility.lua` consumes.
 
-**Out of scope:** the eligibility predicate itself (003 §8), session lifecycle (002).
+**Out of scope:** the eligibility predicate itself (003 §8), round lifecycle (002).
 
-## 2. Two ways a batch starts
+## 2. Two ways a round starts
 
 ### Corpse path (primary)
 
@@ -26,7 +26,7 @@ for slot = 1, GetNumLootItems() do
 end
 ```
 
-An item becomes a **batch candidate** if all hold:
+An item becomes a **round candidate** if all hold:
 
 1. It has an item link (skip coin slots).
 2. `quality >= host.qualityThreshold` (default 4, epic).
@@ -37,40 +37,40 @@ Everything else — gold, Emblems, crafting mats, quest items, BoE greens — is
 auto-add but remains **manually addable** from the host panel (006). That covers Primordial
 Saronite, patterns, mounts, and anything the classifier misjudges.
 
-Duplicate stacks: two loot slots holding the same item id collapse into **one** batch item with
+Duplicate stacks: two loot slots holding the same item id collapse into **one** round item with
 `count = 2` (DESIGN §4, resolution in 003 §5). The host retains both `lootSlot` values for the
 award step.
 
 The host is prompted, not railroaded: the host panel lists the candidates with checkboxes and a
-**Start roll** button. Auto-opening a batch the instant a corpse is looted would fire on trash
+**Start roll** button. Auto-opening a round the instant a corpse is looted would fire on trash
 and on other people's boss kills.
 
 ### Item-link path (secondary)
 
-Any item link dropped onto the roll window, or `/rls roll <link>`, starts a batch for that item.
+Any item link dropped onto the roll window, or `/rls roll <link>`, starts a round for that item.
 This covers:
 
 - Trash drops and world drops
 - Items already sitting in someone's bags
-- Re-running a batch that was aborted
+- Re-running a round that was aborted
 - Anything the corpse scan filtered out
 
-Item-link batches have **no `lootSlot`**, so the award step goes straight to the trade path
+Item-link rounds have **no `lootSlot`**, so the award step goes straight to the trade path
 (007 §5) rather than `GiveMasterLoot`.
 
 ## 3. Loot source validity
 
-A corpse-path batch is bound to a loot source. The host tracks:
+A corpse-path round is bound to a loot source. The host tracks:
 
 - `LOOT_CLOSED` — the window closed. Not fatal; slot indices survive and the window can be
   reopened on the same corpse.
-- `LOOT_SLOT_CLEARED` — a slot was emptied. If it belonged to an open batch and was not cleared
-  by our own award, that item is dropped from the batch with a visible notice.
+- `LOOT_SLOT_CLEARED` — a slot was emptied. If it belonged to an open round and was not cleared
+  by our own award, that item is dropped from the round with a visible notice.
 - The loot source becoming unreachable (corpse despawned) — detected at award time when
   `GetNumLootItems()` no longer matches, or the item at `lootSlot` differs.
 
-If **every** item in a batch becomes invalid, the host aborts with `LOOT_GONE` (002 §9). If
-some remain valid, the batch continues with the survivors and announces what was lost.
+If **every** item in a round becomes invalid, the host aborts with `LOOT_GONE` (002 §9). If
+some remain valid, the round continues with the survivors and announces what was lost.
 
 The host panel shows a persistent **"loot still on corpse"** banner listing unresolved items,
 because a 3-minute window is long enough to wander off and forget (DESIGN §5).
@@ -104,7 +104,7 @@ comparison uses the internal constant.
 `GET_ITEM_INFO_RECEIVED` event. Handle it with a retry:
 
 - Ask for the item, and if it returns nil, retry on a 0.25s ticker up to 20 times.
-- A batch cannot open until every candidate has resolved, or has exhausted its retries.
+- A round cannot open until every candidate has resolved, or has exhausted its retries.
 - An item that never resolves is added as `special = true` (§6) rather than being dropped —
   losing an epic because the client had a cold cache would be unforgivable.
 
@@ -180,7 +180,7 @@ they are responsible for judging their own eligibility.
 
 - Opening a corpse with 6 epics and 1 green as master looter lists exactly the 6 epics as
   candidates, with the green available via manual add.
-- Two loot slots of the same item produce one batch item with `count = 2`.
+- Two loot slots of the same item produce one round item with `count = 2`.
 - Lowering the quality threshold to rare includes blues on the next corpse.
 - A cloak reports `equipLoc = INVTYPE_CLOAK` and does **not** carry an enforced armour restriction.
 - `Chestguard of the Lost Conqueror` (or any `… Conqueror`) classifies as
@@ -189,6 +189,6 @@ they are responsible for judging their own eligibility.
 - An item not in the client cache resolves within 5 seconds, or is added as `special`.
 - Class/subclass mapping is asserted against index positions, with **zero** hardcoded English
   item-class strings anywhere in the codebase (grep-checkable).
-- A corpse despawning mid-batch aborts with `LOOT_GONE` and writes to history.
-- Dropping an item link on the roll window opens a batch with no `lootSlot` and routes to the
+- A corpse despawning mid-round aborts with `LOOT_GONE` and writes to history.
+- Dropping an item link on the roll window opens a round with no `lootSlot` and routes to the
   trade path at award time.

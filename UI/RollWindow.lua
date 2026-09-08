@@ -1,7 +1,7 @@
 -- UI/RollWindow.lua
 --
--- The window every player uses to enter a batch and to read its result (spec 005).
--- One frame, two modes: entry while the batch is OPEN, results once it is CLOSED.
+-- The window every player uses to enter a round and to read its result (spec 005).
+-- One frame, two modes: entry while the round is OPEN, results once it is CLOSED.
 --
 -- Everything above the "WoW-facing" divider is pure and fixture-tested by the
 -- `rollwindow` suite: which cells are enterable and why, what a submission contains,
@@ -115,7 +115,7 @@ end
 
 --- The complete entry set the grid represents, in item order then name order.
 -- @param ticks  itemIdx -> charName -> { override, star }
--- @param items  the batch's items
+-- @param items  the round's items
 -- @return array of { itemIdx, char, override, star }
 function RollWindow.LocalEntries(ticks, items)
     local out = {}
@@ -169,7 +169,7 @@ function RollWindow.IsDirty(localEntries, accepted, lastSent)
 end
 
 --- This player's entries as the host last reported them.
--- @param entries  session.entries: itemIdx -> array of { char, owner, tier }
+-- @param entries  round.entries: itemIdx -> array of { char, owner, tier }
 function RollWindow.AcceptedFor(entries, me)
     local out = {}
     local key = me and me:lower() or ""
@@ -303,7 +303,7 @@ function RollWindow.ResultTable(itemIdx, results, rolls, owners, isSK)
 end
 
 --- The right-hand text of one results row (section 5).
--- @param tierLabel  Tiers.label of the row's tier under the batch's tier count
+-- @param tierLabel  Tiers.label of the row's tier under the round's tier count
 -- @param wonLabel   label of the item the character won instead, for a withdrawn row
 function RollWindow.RowText(row, isSK, tierLabel, wonLabel)
     if row.status == C.ROLL_STATUS.NOT_CONSULTED then
@@ -363,9 +363,9 @@ local rowHeaders, colHeaderScroll, colHeaderContent, cellScroll, cellContent, hs
 local rows, columns, cells = {}, {}, {}
 local resultRows = {}
 local selectedIdx
-local infoByIdx, infoSessionId = {}, nil
-local lastShownSessionId
-local lastSentSessionId
+local infoByIdx, infoRoundId = {}, nil
+local lastShownRoundId
+local lastSentRoundId
 local abortHideAt
 local countdownAccumulator = 0
 
@@ -375,53 +375,53 @@ local function DB() return ns.Database end
 -- Scratch ticks (section 6): survive a /reload through saved variables
 --------------------------------------------------------------------------------
 
-local function scratchFor(session)
+local function scratchFor(round)
     local scratch = DB().Scratch()
-    if scratch.sessionId ~= session.id then
-        scratch.sessionId = session.id
+    if scratch.roundId ~= round.id then
+        scratch.roundId = round.id
         scratch.ticks = {}
     end
     return scratch.ticks
 end
 
-local function getTick(session, itemIdx, char)
-    local ticks = scratchFor(session)
+local function getTick(round, itemIdx, char)
+    local ticks = scratchFor(round)
     return ticks[itemIdx] and ticks[itemIdx][char] or nil
 end
 
-local function setTick(session, itemIdx, char, tick)
-    local ticks = scratchFor(session)
+local function setTick(round, itemIdx, char, tick)
+    local ticks = scratchFor(round)
     ticks[itemIdx] = ticks[itemIdx] or {}
     ticks[itemIdx][char] = tick
     if tick == nil and next(ticks[itemIdx]) == nil then ticks[itemIdx] = nil end
 end
 
-local function clearStars(session, char)
-    for _, byChar in pairs(scratchFor(session)) do
+local function clearStars(round, char)
+    for _, byChar in pairs(scratchFor(round)) do
         if byChar[char] then byChar[char].star = nil end
     end
 end
 
 --------------------------------------------------------------------------------
--- Reading the batch
+-- Reading the round
 --------------------------------------------------------------------------------
 
-local function currentSession()
-    return ns.Client and ns.Client.session or nil
+local function currentRound()
+    return ns.Client and ns.Client.round or nil
 end
 
-local function isSK(session)
-    return session.lootMode == C.LOOT_MODE.SK          -- OPEN carries it (spec 010 section 8)
+local function isSK(round)
+    return round.lootMode == C.LOOT_MODE.SK          -- OPEN carries it (spec 010 section 8)
 end
 
 local function me()
     return UnitName("player")
 end
 
---- Item info for a batch item, requesting it on first sight. nil until it arrives.
-local function infoFor(session, item)
-    if infoSessionId ~= session.id then
-        infoByIdx, infoSessionId = {}, session.id
+--- Item info for a round item, requesting it on first sight. nil until it arrives.
+local function infoFor(round, item)
+    if infoRoundId ~= round.id then
+        infoByIdx, infoRoundId = {}, round.id
     end
     local info = infoByIdx[item.idx]
     if info then return info end
@@ -432,7 +432,7 @@ local function infoFor(session, item)
         -- read the answer itself.
         local immediate = true
         ns.ItemInfo.Request(item.itemString, function(result)
-            if infoSessionId ~= session.id then return end
+            if infoRoundId ~= round.id then return end
             infoByIdx[item.idx] = result
             if not immediate then RollWindow.Refresh() end
         end)
@@ -441,22 +441,22 @@ local function infoFor(session, item)
     return infoByIdx[item.idx]
 end
 
-local function itemLabel(session, item)
-    local info = item and infoFor(session, item)
+local function itemLabel(round, item)
+    local info = item and infoFor(round, item)
     if info and info.link then return info.link end
     if info and info.name then return "[" .. info.name .. "]" end
     return item and item.itemString or "an item"
 end
 
-local function itemByIdx(session, idx)
-    for _, item in ipairs(session.items) do
+local function itemByIdx(round, idx)
+    for _, item in ipairs(round.items) do
         if item.idx == idx then return item end
     end
     return nil
 end
 
 --- This player's roster rows, with what the grid needs to know about each.
-local function rosterRows(session)
+local function rosterRows(round)
     local roster = DB().Roster()
     local Roster = ns.Roster
     local out = {}
@@ -466,7 +466,7 @@ local function rosterRows(session)
         out[i] = {
             name = name, class = entry.class, isSelf = entry.isSelf,
             position = i,
-            tier = ns.Tiers.forPosition(i, session.tierCount),
+            tier = ns.Tiers.forPosition(i, round.tierCount),
             present = Roster.IsPresent(name),
             contested = Roster.IsContested(name),
             contestReason = (claim and claim.contested) and Roster.ContestReason(claim) or nil,
@@ -476,9 +476,9 @@ local function rosterRows(session)
 end
 
 --- charName (lower) -> owner, from the last STATE, falling back to the claim index.
-local function ownersFor(session)
+local function ownersFor(round)
     local owners = {}
-    for _, list in pairs(session.entries or {}) do
+    for _, list in pairs(round.entries or {}) do
         for _, e in ipairs(list) do
             if e.owner then owners[e.char:lower()] = e.owner end
         end
@@ -497,7 +497,7 @@ end
 local function expectedPlayers()
     local expected = {}
     for _, member in ipairs(ns.Roster.GroupMembers()) do
-        if member.name and (ns.Session.peers[member.name] or member.isSelf) then
+        if member.name and (ns.Round.peers[member.name] or member.isSelf) then
             expected[#expected + 1] = member.name
         end
     end
@@ -514,8 +514,8 @@ local function selectColumn(idx)
 end
 
 local function onCellClick(cell, button)
-    local session = currentSession()
-    if not session or session.state ~= C.SESSION_STATE.OPEN then return end
+    local round = currentRound()
+    if not round or round.state ~= C.ROUND_STATE.OPEN then return end
     local state = cell.state
     local itemIdx, char = cell.itemIdx, cell.charName
     if not state then return end
@@ -524,17 +524,17 @@ local function onCellClick(cell, button)
         -- Override: only on a cell the eligibility filter refused, and only for the
         -- overridable reasons (spec 003 section 8). Right-click does nothing else.
         if state.override then
-            setTick(session, itemIdx, char, nil)
+            setTick(round, itemIdx, char, nil)
         elseif state.overridable then
-            setTick(session, itemIdx, char, { override = true })
+            setTick(round, itemIdx, char, { override = true })
         else
             return
         end
     else
         if state.ticked then
-            setTick(session, itemIdx, char, nil)
+            setTick(round, itemIdx, char, nil)
         elseif state.enterable then
-            setTick(session, itemIdx, char, {})
+            setTick(round, itemIdx, char, {})
         else
             return
         end
@@ -543,13 +543,13 @@ local function onCellClick(cell, button)
 end
 
 local function onStarClick(star)
-    local session = currentSession()
-    if not session or session.state ~= C.SESSION_STATE.OPEN then return end
+    local round = currentRound()
+    if not round or round.state ~= C.ROUND_STATE.OPEN then return end
     local cell = star:GetParent()
-    local tick = getTick(session, cell.itemIdx, cell.charName)
+    local tick = getTick(round, cell.itemIdx, cell.charName)
     if not tick then return end
     local wasStarred = tick.star
-    clearStars(session, cell.charName)
+    clearStars(round, cell.charName)
     if not wasStarred then tick.star = true end
     RollWindow.Refresh()
 end
@@ -631,10 +631,10 @@ local function createRowHeader()
 end
 
 local function onColumnClick(column)
-    local session = currentSession()
-    if not session then return end
-    local item = itemByIdx(session, column.itemIdx)
-    local info = item and infoFor(session, item)
+    local round = currentRound()
+    if not round then return end
+    local item = itemByIdx(round, column.itemIdx)
+    local info = item and infoFor(round, item)
     if IsShiftKeyDown() and info and info.link then
         if not ChatEdit_InsertLink(info.link) then ns.Print(info.link) end
         return
@@ -667,12 +667,12 @@ local function createColumn()
     column.special:SetPoint("TOPLEFT", column.icon, "TOPLEFT", -6, 4)
 
     column:SetScript("OnEnter", function(self)
-        local session = currentSession()
-        local item = session and itemByIdx(session, self.itemIdx)
+        local round = currentRound()
+        local item = round and itemByIdx(round, self.itemIdx)
         if not item then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetHyperlink(item.itemString)
-        local info = infoFor(session, item)
+        local info = infoFor(round, item)
         if info and info.special then
             GameTooltip:AddLine("Eligibility filter off - check yourself.", 1, 0.8, 0, true)
         end
@@ -693,23 +693,23 @@ end
 -- Entry mode refresh
 --------------------------------------------------------------------------------
 
-local function refreshEntry(session)
+local function refreshEntry(round)
     local settings = DB().Settings()
-    local sk = isSK(session)
-    local items = session.items
-    local roster = rosterRows(session)
+    local sk = isSK(round)
+    local items = round.items
+    local roster = rosterRows(round)
     local hideIneligible = entryPanel.hideToggle:GetChecked() == 1
     local visibleCols = math.min(#items, MAX_VISIBLE_COLS)
 
     -- Which item is selected: keep the selection when it still exists.
-    if not selectedIdx or not itemByIdx(session, selectedIdx) then
+    if not selectedIdx or not itemByIdx(round, selectedIdx) then
         selectedIdx = items[1] and items[1].idx or nil
     end
 
     -- Present characters' list positions, for the SK median.
     local presentPositions = {}
-    if sk and session.priority then
-        for name, position in pairs(session.priority) do
+    if sk and round.priority then
+        for name, position in pairs(round.priority) do
             if ns.Roster.IsPresent(name) then presentPositions[#presentPositions + 1] = position end
         end
     end
@@ -725,7 +725,7 @@ local function refreshEntry(session)
         column.itemIdx = item.idx
         column:ClearAllPoints()
         column:SetPoint("TOPLEFT", colHeaderContent, "TOPLEFT", (c - 1) * CELL_W, 0)
-        local info = infoFor(session, item)
+        local info = infoFor(round, item)
         column.icon:SetTexture(info and info.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
         column.count:SetText(item.count > 1 and ("x" .. item.count) or "")
         if info and info.special then column.special:Show() else column.special:Hide() end
@@ -756,8 +756,8 @@ local function refreshEntry(session)
                 cell = createCell()
                 cells[r][c] = cell
             end
-            local info = infoFor(session, item)
-            local tick = getTick(session, item.idx, char.name)
+            local info = infoFor(round, item)
+            local tick = getTick(round, item.idx, char.name)
             local state = RollWindow.CellState(info, char, tick,
                 { filterEnabled = settings.eligibilityFilter })
             cell.state, cell.itemIdx, cell.charName = state, item.idx, char.name
@@ -776,7 +776,7 @@ local function refreshEntry(session)
                 cell.star:Hide()
             end
 
-            local label = itemLabel(session, item)
+            local label = itemLabel(round, item)
             if state.enterable then
                 cell.tooltipTitle = char.name .. " for " .. label
                 cell.tooltipBody = state.text
@@ -794,8 +794,8 @@ local function refreshEntry(session)
         if show then
             row:ClearAllPoints()
             row:SetPoint("TOPLEFT", rowHeaders, "TOPLEFT", 0, -y)
-            local tierLabel = ns.Tiers.label(char.tier, session.tierCount)
-            local rest = ns.Tiers.isRest(char.tier, session.tierCount)
+            local tierLabel = ns.Tiers.label(char.tier, round.tierCount)
+            local rest = ns.Tiers.isRest(char.tier, round.tierCount)
             row.badge:SetText((rest and "|cffe6b422" or "|cffaaaaaa") .. tierLabel .. "|r")
             local name = Widgets.ColorName(char.name, char.class)
             if char.isSelf then name = name .. " |cff888888*|r" end
@@ -803,7 +803,7 @@ local function refreshEntry(session)
             Widgets.SetDotPresent(row.dot, char.present)
             row:SetAlpha(char.present and 1 or 0.5)
             if sk then
-                local position = session.priority and session.priority[char.name] or nil
+                local position = round.priority and round.priority[char.name] or nil
                 if not position then
                     row.position:SetText("|cff888888?|r")
                 elseif RollWindow.AboveMedian(position, presentPositions) then
@@ -840,16 +840,16 @@ local function refreshEntry(session)
     end
 
     -- Detail panel: who the host has accepted for the selected item (STATE only).
-    local item = selectedIdx and itemByIdx(session, selectedIdx)
+    local item = selectedIdx and itemByIdx(round, selectedIdx)
     if item then
-        local lines = { "Selected: " .. itemLabel(session, item) }
-        local detail = RollWindow.DetailRows(session.entries[item.idx], sk, session.priority)
+        local lines = { "Selected: " .. itemLabel(round, item) }
+        local detail = RollWindow.DetailRows(round.entries[item.idx], sk, round.priority)
         if #detail == 0 then
             lines[#lines + 1] = "|cff888888No entries accepted yet.|r"
         else
             local parts = {}
             for _, d in ipairs(detail) do
-                local text = ns.Tiers.label(d.tier, session.tierCount) .. "  "
+                local text = ns.Tiers.label(d.tier, round.tierCount) .. "  "
                     .. colouredChar(d.char) .. " (" .. tostring(d.owner or "?") .. ")"
                 if sk then
                     text = text .. " |cff888888#" .. tostring(d.listIdx or "?") .. "|r"
@@ -858,7 +858,7 @@ local function refreshEntry(session)
             end
             lines[#lines + 1] = table.concat(parts, "     ")
         end
-        if sk and not session.priority then
+        if sk and not round.priority then
             lines[#lines + 1] = "|cffff8800List positions unknown: the host's list has not arrived.|r"
         end
         entryPanel.detail:SetText(table.concat(lines, "\n"))
@@ -869,19 +869,19 @@ local function refreshEntry(session)
     -- Footer.
     if sk then entryPanel.fullList:Show() else entryPanel.fullList:Hide() end
     local myName = me()
-    local localEntries = RollWindow.LocalEntries(scratchFor(session), items)
-    local accepted = RollWindow.AcceptedFor(session.entries, myName)
-    local submitted = session.submitted[myName] == true or lastSentSessionId == session.id
+    local localEntries = RollWindow.LocalEntries(scratchFor(round), items)
+    local accepted = RollWindow.AcceptedFor(round.entries, myName)
+    local submitted = round.submitted[myName] == true or lastSentRoundId == round.id
     entryPanel.submit:SetText(submitted and "Revise" or
         string.format("Submit %d entr%s", #localEntries, #localEntries == 1 and "y" or "ies"))
     local dirty = submitted and RollWindow.IsDirty(localEntries, accepted, ns.Client.LastSent())
     entryPanel.dirty:SetText(dirty and "|cffffaa00unsent changes|r" or "")
 
-    if session.lastRejected and #session.lastRejected > 0 then
+    if round.lastRejected and #round.lastRejected > 0 then
         entryPanel.warning:SetText("|cffff6060The host refused: "
-            .. table.concat(session.lastRejected, ", ") .. "|r")
-    elseif session.priorityNotice then
-        entryPanel.warning:SetText("|cffffaa00" .. session.priorityNotice .. "|r")
+            .. table.concat(round.lastRejected, ", ") .. "|r")
+    elseif round.priorityNotice then
+        entryPanel.warning:SetText("|cffffaa00" .. round.priorityNotice .. "|r")
     else
         entryPanel.warning:SetText("")
     end
@@ -917,9 +917,9 @@ local function resultRow(pool, content, i)
     row.award = Widgets.Button(row, "Award", 64, 18, function(self)
         if not ns.Award then return end
         if self.action == "deliver" then
-            local record = ns.Award.Get(self.sessionId, self.itemIdx, self.copy)
+            local record = ns.Award.Get(self.roundId, self.itemIdx, self.copy)
             for _, pending in ipairs(ns.Pending.OutstandingRecords()) do
-                if record and pending.sessionId == record.sessionId
+                if record and pending.roundId == record.roundId
                     and pending.itemIdx == record.itemIdx and pending.copy == record.copy then
                     ns.Pending.Deliver(pending)
                     return
@@ -927,7 +927,7 @@ local function resultRow(pool, content, i)
             end
             ns.Print("no pending record for that item; see /rls pending.")
         else
-            ns.Award.Prompt(self.sessionId, self.itemIdx, self.copy, IsShiftKeyDown())
+            ns.Award.Prompt(self.roundId, self.itemIdx, self.copy, IsShiftKeyDown())
         end
     end)
     row.award:SetPoint("RIGHT", row, "RIGHT", -4, 0)
@@ -947,7 +947,7 @@ end
 --- Render a results view into `content`, reusing `pool`'s rows. One rendering
 -- component for the roll window and the history browser (spec 008 section 5).
 --
--- @param view { sessionId, items = { { idx, itemString, count, label } }, results, rolls,
+-- @param view { roundId, items = { { idx, itemString, count, label } }, results, rolls,
 --               owners, isSK, tierCount, host, awardRecord = function(itemIdx, copy),
 --               outcome, abortReason }
 -- @return the rendered height
@@ -1014,8 +1014,8 @@ function RollWindow.RenderResults(content, pool, view)
                 row.status:SetText(colour .. ns.Award.StatusText(record) .. "|r")
                 if view.host then
                     row.right:Hide()
-                    row.award.sessionId, row.award.itemIdx, row.award.copy =
-                        view.sessionId, item.idx, w.copy
+                    row.award.roundId, row.award.itemIdx, row.award.copy =
+                        view.roundId, item.idx, w.copy
                     if record.delivery == D.DELIVERED then
                         row.award:Hide()
                     elseif record.delivery == D.PENDING then
@@ -1061,19 +1061,19 @@ function RollWindow.RenderResults(content, pool, view)
     return y
 end
 
-local function refreshResults(session)
+local function refreshResults(round)
     local items = {}
-    for i, item in ipairs(session.items) do
+    for i, item in ipairs(round.items) do
         items[i] = { idx = item.idx, itemString = item.itemString, count = item.count,
-                     label = itemLabel(session, item) }
+                     label = itemLabel(round, item) }
     end
-    local host = ns.Session.IsHost() and ns.Award ~= nil
+    local host = ns.Round.IsHost() and ns.Award ~= nil
     RollWindow.RenderResults(resultsPanel.content, resultRows, {
-        sessionId = session.id, items = items,
-        results = session.results, rolls = session.rolls, owners = ownersFor(session),
-        isSK = isSK(session), tierCount = session.tierCount, host = host,
+        roundId = round.id, items = items,
+        results = round.results, rolls = round.rolls, owners = ownersFor(round),
+        isSK = isSK(round), tierCount = round.tierCount, host = host,
         awardRecord = host and function(itemIdx, copy)
-            return ns.Award.Get(session.id, itemIdx, copy)
+            return ns.Award.Get(round.id, itemIdx, copy)
         end or nil,
     })
 
@@ -1087,42 +1087,42 @@ end
 
 function RollWindow.Refresh()
     if not frame or not frame:IsShown() then return end
-    local session = currentSession()
-    if not session then
-        frame.titleText:SetText("Raid Loot System - no batch")
+    local round = currentRound()
+    if not round then
+        frame.titleText:SetText("Raid Loot System - no round")
         frame.status:SetText("")
         frame.counter:SetText("")
         entryPanel:Hide()
         resultsPanel:Hide()
-        frame.banner:SetText("There is no batch open and no results to show.")
+        frame.banner:SetText("There is no round open and no results to show.")
         return
     end
 
-    local hostLabel = session.host and (session.host .. "'s batch") or "Batch"
-    frame.titleText:SetText(string.format("%s - %d item%s", hostLabel, #session.items,
-        #session.items == 1 and "" or "s"))
+    local hostLabel = round.host and (round.host .. "'s round") or "Round"
+    frame.titleText:SetText(string.format("%s - %d item%s", hostLabel, #round.items,
+        #round.items == 1 and "" or "s"))
 
-    local inCount, total, outstanding = RollWindow.Outstanding(expectedPlayers(), session.submitted)
+    local inCount, total, outstanding = RollWindow.Outstanding(expectedPlayers(), round.submitted)
     frame.counter:SetText(string.format("%d/%d in", inCount, total))
     frame.counter.outstanding = outstanding
 
-    if session.state == C.SESSION_STATE.OPEN then
+    if round.state == C.ROUND_STATE.OPEN then
         frame.banner:SetText("")
         resultsPanel:Hide()
         entryPanel:Show()
-        refreshEntry(session)
-    elseif session.state == C.SESSION_STATE.CLOSED then
+        refreshEntry(round)
+    elseif round.state == C.ROUND_STATE.CLOSED then
         frame.banner:SetText("")
         frame.status:SetText("|cff66ff66Resolved|r")
         entryPanel:Hide()
         resultsPanel:Show()
-        refreshResults(session)
-    elseif session.state == C.SESSION_STATE.ABORTED then
+        refreshResults(round)
+    elseif round.state == C.ROUND_STATE.ABORTED then
         entryPanel:Hide()
         resultsPanel:Hide()
         frame.status:SetText("")
-        frame.banner:SetText("|cffff6060Batch cancelled: "
-            .. (C.ABORT_TEXT[session.abortReason] or tostring(session.abortReason)) .. "|r")
+        frame.banner:SetText("|cffff6060Round cancelled: "
+            .. (C.ABORT_TEXT[round.abortReason] or tostring(round.abortReason)) .. "|r")
         frame:SetHeight(120)
     else
         frame.status:SetText("|cffffaa00Resolving...|r")
@@ -1134,9 +1134,9 @@ end
 --------------------------------------------------------------------------------
 
 local function submitGrid(passAll)
-    local session = currentSession()
-    if not session or session.state ~= C.SESSION_STATE.OPEN then
-        ns.Print("there is no batch open.")
+    local round = currentRound()
+    if not round or round.state ~= C.ROUND_STATE.OPEN then
+        ns.Print("there is no round open.")
         return
     end
 
@@ -1148,18 +1148,18 @@ local function submitGrid(passAll)
         -- raid, say) is dropped here rather than sent for the host to refuse.
         local settings = DB().Settings()
         local roster = {}
-        for _, char in ipairs(rosterRows(session)) do roster[char.name] = char end
-        for _, e in ipairs(RollWindow.LocalEntries(scratchFor(session), session.items)) do
+        for _, char in ipairs(rosterRows(round)) do roster[char.name] = char end
+        for _, e in ipairs(RollWindow.LocalEntries(scratchFor(round), round.items)) do
             local char = roster[e.char]
-            local item = itemByIdx(session, e.itemIdx)
-            local state = char and RollWindow.CellState(infoFor(session, item), char,
+            local item = itemByIdx(round, e.itemIdx)
+            local state = char and RollWindow.CellState(infoFor(round, item), char,
                 { override = e.override, star = e.star },
                 { filterEnabled = settings.eligibilityFilter })
             if state and state.enterable then
                 entries[#entries + 1] = e
             else
                 ns.Print(string.format("%s was not sent for %s: %s", e.char,
-                    itemLabel(session, item), state and state.text or "not in your roster"))
+                    itemLabel(round, item), state and state.text or "not in your roster"))
             end
         end
     end
@@ -1169,7 +1169,7 @@ local function submitGrid(passAll)
         ns.Print("could not submit: " .. tostring(why))
         return
     end
-    lastSentSessionId = session.id
+    lastSentRoundId = round.id
     ns.Print(passAll and "passed on everything." or
         string.format("submitted %d entr%s.", #entries, #entries == 1 and "y" or "ies"))
     RollWindow.Refresh()
@@ -1293,11 +1293,11 @@ local function buildResultsPanel(parent)
 end
 
 local function build()
-    -- Passing marks you as in for the whole batch, and every tick you had made
+    -- Passing marks you as in for the whole round, and every tick you had made
     -- is cleared to get there, so it asks first.
     StaticPopupDialogs["RLS_CONFIRM_PASS_ALL"] = {
-        text = "Pass on every item in this batch? Your ticks are cleared and you enter "
-            .. "nothing. You can still submit again while the batch is open.",
+        text = "Pass on every item in this round? Your ticks are cleared and you enter "
+            .. "nothing. You can still submit again while the round is open.",
         button1 = "Pass all",
         button2 = CANCEL,
         OnAccept = function() submitGrid(true) end,
@@ -1349,9 +1349,9 @@ local function build()
         if countdownAccumulator < 0.2 then return end
         countdownAccumulator = 0
 
-        local session = currentSession()
-        if session and session.state == C.SESSION_STATE.OPEN then
-            local left = session.endsAt - GetTime()
+        local round = currentRound()
+        if round and round.state == C.ROUND_STATE.OPEN then
+            local left = round.endsAt - GetTime()
             local text = RollWindow.FormatCountdown(left)
             if left <= C.COUNTDOWN_WARN_SECONDS then text = "|cffffaa00" .. text .. "|r" end
             frame.status:SetText(text)
@@ -1391,45 +1391,45 @@ end
 
 --- Is there something for the minimap button to pulse about (section 6)?
 function RollWindow.NeedsAttention()
-    local session = currentSession()
-    if not session or session.state ~= C.SESSION_STATE.OPEN then return false end
+    local round = currentRound()
+    if not round or round.state ~= C.ROUND_STATE.OPEN then return false end
     if RollWindow.IsShown() then return false end
     local myName = me()
-    if session.submitted[myName] or lastSentSessionId == session.id then return false end
+    if round.submitted[myName] or lastSentRoundId == round.id then return false end
     return true
 end
 
 --- Does the roll window own the minimap button and a bare `/rls` right now?
 --
--- Only while a batch is live, or while the results of one are still on screen. A
--- concluded batch hands the button back to the hierarchy: results open themselves
+-- Only while a round is live, or while the results of one are still on screen. A
+-- concluded round hands the button back to the hierarchy: results open themselves
 -- when they land, and once the player has closed them the window is stale -- the
--- history browser is where an old batch is read, not here (spec 005 section 2).
+-- history browser is where an old round is read, not here (spec 005 section 2).
 function RollWindow.HasContent()
-    local session = currentSession()
-    if not session then return false end
-    if session.state == C.SESSION_STATE.OPEN then return true end
-    return session.state == C.SESSION_STATE.CLOSED and RollWindow.IsShown()
+    local round = currentRound()
+    if not round then return false end
+    if round.state == C.ROUND_STATE.OPEN then return true end
+    return round.state == C.ROUND_STATE.CLOSED and RollWindow.IsShown()
 end
 
-local function onClientChanged(session)
-    if not session then
+local function onClientChanged(round)
+    if not round then
         RollWindow.Refresh()
         return
     end
     -- A SYNC resend can bring an aborted mirror back to OPEN (Client.lua); the abort
     -- linger must not then close a live grid.
-    if session.state ~= C.SESSION_STATE.ABORTED then abortHideAt = nil end
-    if session.state == C.SESSION_STATE.OPEN then
-        if lastShownSessionId ~= session.id then
-            -- A new batch opens the window (section 2). A resend of the same batch
+    if round.state ~= C.ROUND_STATE.ABORTED then abortHideAt = nil end
+    if round.state == C.ROUND_STATE.OPEN then
+        if lastShownRoundId ~= round.id then
+            -- A new round opens the window (section 2). A resend of the same round
             -- (SYNC) does not reopen a window the player closed.
-            lastShownSessionId = session.id
+            lastShownRoundId = round.id
             RollWindow.Show()
         end
-    elseif session.state == C.SESSION_STATE.CLOSED then
-        if session.results and not RollWindow.IsShown() then RollWindow.Show() end
-    elseif session.state == C.SESSION_STATE.ABORTED then
+    elseif round.state == C.ROUND_STATE.CLOSED then
+        if round.results and not RollWindow.IsShown() then RollWindow.Show() end
+    elseif round.state == C.ROUND_STATE.ABORTED then
         if RollWindow.IsShown() and not abortHideAt then
             abortHideAt = GetTime() + C.ABORT_LINGER_SECONDS
         end

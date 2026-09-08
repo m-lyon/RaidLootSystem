@@ -59,7 +59,7 @@ night contradicts one of them.
 
 No raid needed. Each run prints `[sim]` lines and ends with "done".
 
-- [x] `/rls simulate` — the roll window opens, fake players submit and one revises, the batch
+- [x] `/rls simulate` — the roll window opens, fake players submit and one revises, the round
       closes, results render, "done" prints. No chat line reached a real channel and no addon
       message was sent (nobody else is there to receive one; the chat log shows only `[sim]`).
 - [x] `/rls simulate scenario=tie` — a visible `50 -> 30 / 50 -> 80 (tie re-roll)` in results.
@@ -72,7 +72,7 @@ No raid needed. Each run prints `[sim]` lines and ends with "done".
 - [ ] `scenario=sk`, `scenario=star`, `scenario=absent`, `scenario=restore`. After each, `/rls sk
       list`: your real priority list is unchanged (version and order), because the simulation
       worked on a copy.
-- [ ] `/rls history`: the simulated batches are hidden until "Show simulated" is ticked.
+- [ ] `/rls history`: the simulated rounds are hidden until "Show simulated" is ticked.
 - [ ] `/rls simulate stop` mid-run restores everything; a following `/rls simulate` works.
 
 ## 5. Two real clients, one master looter
@@ -96,21 +96,21 @@ Set the group to master loot with you as master looter. The other client is "the
 - [ ] Open a corpse as master looter: candidates list with icons; skipped items counted; Add item
       by pasted link, by shift-clicked link, and by dragging a bag item onto the box.
 - [ ] Start roll is disabled with a reason when not on master loot, when nothing is ticked, and
-      while a batch is open.
-- [ ] Verbosity Off: a whole batch produces no chat. Verbose: a 6-item batch with ~20 entries
+      while a round is open.
+- [ ] Verbosity Off: a whole round produces no chat. Verbose: a 6-item round with ~20 entries
       drains without a "throttled" message.
 
 ### Roll window (spec 005)
 
-- [ ] A 6-item batch with a 9-character roster fits without scrolling at default UI scale. A
+- [ ] A 6-item round with a 9-character roster fits without scrolling at default UI scale. A
       7th item adds the horizontal slider.
 - [ ] A plate item greys every cloth/leather/mail row with a class-specific tooltip. Right-click
       enables it with the orange marker; right-click on a "not in the raid" cell does nothing.
 - [ ] The client submits: the host's detail panel updates within half a second. Revising shows
       "unsent changes" until re-submitted. Pass all counts the client as in with zero entries.
-- [ ] Close the window mid-batch: the minimap button pulses until you submit. `/rls` reopens it
+- [ ] Close the window mid-round: the minimap button pulses until you submit. `/rls` reopens it
       with the ticks intact.
-- [ ] `/reload` mid-batch on the client: the grid, countdown and unsubmitted ticks come back.
+- [ ] `/reload` mid-round on the client: the grid, countdown and unsubmitted ticks come back.
 - [ ] Results: not-consulted entries shown greyed as "T3 — not consulted", not as losses.
 - [ ] Abort from the host panel: the client's window shows the reason for ten seconds, then closes.
 
@@ -133,18 +133,18 @@ Set the group to master loot with you as master looter. The other client is "the
 
 ### History (spec 008)
 
-- [ ] After a batch, `/rls history` on both clients shows one record each; the host's lacks the
+- [ ] After a round, `/rls history` on both clients shows one record each; the host's lacks the
       "(client)" badge and shows delivery state, the client's does not.
-- [ ] Export CSV of a 6-item batch with 20 entries: 20 rows plus the header.
+- [ ] Export CSV of a 6-item round with 20 entries: 20 rows plus the header.
 - [ ] Character summary for a bot lists only what it was awarded.
 
 ### Suicide Kings (spec 010)
 
 - [ ] Seed from the host panel: announced, versioned, and every client shows the identical order
       and version (`/rls sk list` on each). Loot mode becomes selectable.
-- [ ] Switch to Suicide Kings, run a batch: no rolls, positions shown in the window, the winner
+- [ ] Switch to Suicide Kings, run a round: no rolls, positions shown in the window, the winner
       drops to the bottom on every client after RESULT. `/reload` every client; all copies agree.
-- [ ] Two of your bots at home during a batch: their positions do not move.
+- [ ] Two of your bots at home during a round: their positions do not move.
 - [ ] Fail a delivery terminally (abandon it): the winner is restored to its prior index on every
       client, version bumped, announced. `/rls sk verify` on the host reports a match.
 - [ ] Manual move / Bottom / Top from the panel: each confirmed, announced, logged; `verify` still
@@ -152,10 +152,10 @@ Set the group to master loot with you as master looter. The other client is "the
 
 ### Failure modes (spec 009 §5)
 
-- [ ] Master looter handed over mid-batch: both clients abort with "the master looter changed".
-- [ ] `/reload` mid-batch on the **host**: clients time out a minute after the deadline and abort
+- [ ] Master looter handed over mid-round: both clients abort with "the master looter changed".
+- [ ] `/reload` mid-round on the **host**: clients time out a minute after the deadline and abort
       cleanly as "the host left the raid".
-- [ ] A corpse despawning mid-batch aborts as "the loot is no longer there".
+- [ ] A corpse despawning mid-round aborts as "the loot is no longer there".
 
 ## 6. When it has survived a raid night
 

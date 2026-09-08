@@ -55,9 +55,9 @@ fail in a way that looks like a logic bug.
 | `eligibility` | The check order and every reason code, incl. cloaks and tokens | 003 §8 |
 | `resolve` | Tier walking, multi-copy spill, boundary ties, unclaimed, degraded | 003 §9 |
 | `serialize` | Round-trip of every op, chunk split/join, malformed input rejection | 000 §5 |
-| `session` | Submission validation, replacement, the tier snapshot, RESULT/ROLLS records | 002 §5–8 |
+| `round` | Submission validation, replacement, the tier snapshot, RESULT/ROLLS records | 002 §5–8 |
 | `iteminfo` | Link parsing, class/subclass positions, tokens, special items | 004 §4, §6 |
-| `lootdetect` | The candidate rule, duplicate stacks, losing loot mid-batch | 004 §2, §3 |
+| `lootdetect` | The candidate rule, duplicate stacks, losing loot mid-round | 004 §2, §3 |
 | `priority` | Seed, suicide with absentees, restore, roster churn, replay | 010 §12 |
 | `sk` | SK resolution: tier gating, one-win rule, the star fixed point | 010 §12 |
 
@@ -120,7 +120,7 @@ An in-game harness that runs the full pipeline solo — no raid, no bots, no oth
 
 **How it works:** `Modules/Simulate.lua` installs a **loopback transport** in place of
 `Comms.lua`'s `SendAddonMessage`. Everything the host sends is delivered back to this client on
-the next frame, as the real echo would be, so the real `Session` (host) and the real `Client`
+the next frame, as the real echo would be, so the real `Round` (host) and the real `Client`
 mirror and roll window execute unchanged. Fake players are scripted senders: their `HI`, `ROSTER`
 and `SUBMIT` messages enter through the real transport code with their own sender names, so the
 host validates and aggregates them for real. They do not run a second copy of `Client.lua` —
@@ -128,7 +128,7 @@ the addon's modules are singletons bound to the logged-in character — and they
 they react to what the local mirror shows. Only the wire, the chat, the group roster, the master
 looter derivation and the award click are faked.
 
-It must exercise, end to end: batch open → fake submissions → live `STATE` updates in the roll
+It must exercise, end to end: round open → fake submissions → live `STATE` updates in the roll
 window → revision → close → resolution → results rendering → history write.
 
 **Named scenarios**, each reproducing a case that is otherwise hard to stage:
@@ -141,16 +141,16 @@ window → revision → close → resolution → results rendering → history w
 | `contested` | Two players claiming the same character |
 | `token` | A tier token and its class filtering |
 | `special` | An unclassifiable item with the filter off |
-| `abort` | Master looter changing mid-batch |
+| `abort` | Master looter changing mid-round |
 | `chunked` | A payload large enough to require multi-chunk transport |
-| `sk` | A seeded priority list, so positions decide a batch with no rolls |
+| `sk` | A seeded priority list, so positions decide a round with no rolls |
 | `star` | A character that would win two items, taking its starred one |
 | `absent` | A suicide with absent characters in the list, holding their indices |
 | `restore` | A failed delivery returning a character to its prior index |
 
 **Guard rails:**
 
-- Simulation refuses to run while a real batch is open.
+- Simulation refuses to run while a real round is open.
 - It never sends a real addon message, a real chat message, or a real whisper.
 - History records written in simulation are tagged `simulated = true` and excluded from the
   history browser by default.
@@ -170,9 +170,9 @@ Kept in the repo and run before tagging a release, because some things only exis
 
 - Two real clients, one as master looter: open, submit, revise, close, award.
 - Award to a bot at range, and out of range.
-- Master looter handed over mid-batch → both clients abort with `ML_CHANGED`.
-- `/reload` mid-batch on the client → recovers via `SYNC`.
-- `/reload` mid-batch on the **host** → clients time out and abort cleanly.
+- Master looter handed over mid-round → both clients abort with `ML_CHANGED`.
+- `/reload` mid-round on the client → recovers via `SYNC`.
+- `/reload` mid-round on the **host** → clients time out and abort cleanly.
 - A real tier token drop → correct classes enterable.
 - Auto-equip whisper reaches a bot and is accepted by the server's playerbot build.
 - Trade path: take an item, log out, log in, deliver, confirm the pending record closed.
@@ -200,6 +200,6 @@ A GitHub Actions workflow on push and PR:
 - Introducing the string `"Plate"` as an item-class comparison fails CI.
 - `/rls simulate scenario=tie` produces a visible re-roll in the roll window without a raid.
 - `/rls simulate` writes no addon messages and no chat output.
-- A simulated batch does not appear in the default history browser view.
-- A simulated batch leaves `priority.version` and `priority.order` untouched.
+- A simulated round does not appear in the default history browser view.
+- A simulated round leaves `priority.version` and `priority.order` untouched.
 - Introducing `math.random` or `time()` into `Core/PriorityList.lua` fails CI.
