@@ -155,8 +155,9 @@ local function createRow(index)
     row.name:SetWidth(130)
 
     row.badge = Widgets.Label(row, "", "GameFontNormalSmall")
-    row.badge:SetPoint("LEFT", row.name, "RIGHT", 4, 0)
+    row.badge:SetPoint("LEFT", row.name, "RIGHT", 2, 0)
     row.badge:SetWidth(34)
+    row.badge:SetJustifyH("LEFT")
 
     -- UIPanelCloseButton's "X" glyph carries a lot of built-in padding, so at the
     -- same frame size it reads visibly smaller than the cropped up/down arrows;
@@ -225,9 +226,8 @@ function Editor.Refresh()
     frame.picker:SetOptions(targetOptions())
     frame.picker:SetValue(target)
     frame.scope:SetText(editingDefault()
-        and "|cffffcc00This is the template new campaigns are seeded from. It resolves nothing: "
-            .. "no tier, no entry and no award is ever decided by it.|r"
-        or string.format("|cff888888Ranking for \"%s\". Other campaigns keep their own.|r",
+        and "|cffffcc00This is the template new campaigns will use.|r"
+        or string.format("|cff888888Ranking for \"%s\".|r",
             ns.Campaign.LabelFor(target)))
 
     frame.warning:SetText((not editingDefault() and roundIsOpen())
