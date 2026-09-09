@@ -171,6 +171,9 @@ local function confirmHierarchy()
         end
     end
 
+    -- Clear the mode before hiding: OnHide reports an abandoned join or create, and
+    -- reaching here means neither was abandoned.
+    mode = nil
     pendingInvite = nil
     hierarchyFrame:Hide()
 end

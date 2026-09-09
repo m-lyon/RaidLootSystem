@@ -96,6 +96,12 @@ Add a fixture case for every bug fixed in `Core/`.
   raid-night check.
 - **The exact mod-playerbots `equip` command syntax** (spec 007) is still unconfirmed against
   the server build.
+- **Blizzard's `StaticPopupDialogs` `button3` / `OnAlt` is unconfirmed on 3.3.5a.**
+  `UI/Campaigns.lua`'s non-members warning uses it for "Open anyway" (deliberately not `button2`,
+  so Escape cancels rather than opening the round). ElvUI uses `button3`/`OnAlt` but through its
+  *own* popup system, so it is not evidence for Blizzard's. If `OnAlt` never fires, that button is
+  inert -- Invite and Cancel still work, so a host is blocked rather than misled, but it wants a
+  raid-night check. Fall back to a second confirmed dialog if it turns out unsupported.
 
 ## What is and isn't in the tree
 
