@@ -25,6 +25,7 @@ Data\ClassArmor.lua
 Data\ItemClasses.lua
 
 Modules\Database.lua
+Modules\Campaign.lua
 Modules\Comms.lua
 Modules\Roster.lua
 Modules\ItemInfo.lua
@@ -42,6 +43,7 @@ UI\Widgets.lua
 UI\RollWindow.lua
 UI\HostPanel.lua
 UI\HierarchyEditor.lua
+UI\Campaigns.lua
 UI\HistoryBrowser.lua
 UI\PriorityViewer.lua
 UI\Minimap.lua

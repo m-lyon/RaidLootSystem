@@ -44,7 +44,8 @@ function Award.Build(round)
                     if e.char == a.char then listIdx = e.listIdx end
                 end
                 list[copy] = {
-                    roundId = round.id, itemIdx = result.itemIdx, copy = copy,
+                    roundId = round.id, campaignId = round.campaignId,
+                    itemIdx = result.itemIdx, copy = copy,
                     itemString = item and item.itemString,
                     char = a.char, owner = a.owner, tier = a.tier, roll = a.roll or 0,
                     listIdx = listIdx or 0,

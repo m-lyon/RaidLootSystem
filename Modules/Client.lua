@@ -77,6 +77,20 @@ local function onOpen(sender, body)
         return
     end
 
+    -- OPEN is one of the two ops a non-member still acts on (spec 012 section 10).
+    -- A client not in the campaign opens the roll window READ-ONLY with a banner,
+    -- rather than doing nothing: "the addon did nothing and I do not know why" is
+    -- the worst available outcome for a loot tool, and the read-only window is how a
+    -- mistaken Ignore is noticed within one boss rather than at the end of the night.
+    local member = ns.Campaign.IsMemberOf(msg.campaignId)
+    if member then
+        -- OPEN additionally sets the active campaign, for members (section 10).
+        ns.Campaign.Switch(msg.campaignId)
+    else
+        ns.Debug("OPEN names campaign " .. tostring(msg.campaignId)
+            .. ", which you are not in; the window is read-only")
+    end
+
     local previous = Client.round
     if previous and previous.id ~= msg.roundId
         and previous.state == C.ROUND_STATE.OPEN then
@@ -95,6 +109,7 @@ local function onOpen(sender, body)
         previous.tierCount = msg.tierCount
         previous.items = msg.items
         previous.lootMode = msg.lootMode
+        previous.readOnly = not member
         fireChanged()
         return
     end
@@ -110,6 +125,9 @@ local function onOpen(sender, body)
         state = C.ROUND_STATE.OPEN,
         lootMode = msg.lootMode,           -- the round carries its mode (spec 010 section 8)
         openedAt = time(),
+        campaignId = msg.campaignId,
+        campaignLabel = ns.Campaign.LabelFor(msg.campaignId),
+        readOnly = not member,
     }
     expectedCount, lastSent, warnedForSubmission = nil, {}, false
     fireChanged()
@@ -290,6 +308,8 @@ local function onConfig(sender, body)
         ns.Debug("unreadable CFG: " .. tostring(why))
         return
     end
+    -- Settings from a campaign you are not in are not your settings (section 10).
+    if not ns.Campaign.AcceptsMessage(C.OPS.CFG, msg.campaignId, sender) then return end
     Client.config = msg
     fireChanged()
 end
@@ -305,6 +325,12 @@ function Client.Submit(entries)
     local round = Client.round
     if not round or round.state ~= C.ROUND_STATE.OPEN then
         return false, "there is no round open."
+    end
+    if round.readOnly then
+        -- A non-member submits nothing (spec 012 section 6). The host would refuse
+        -- every entry anyway, having no roster of ours for this campaign.
+        return false, string.format("you are not in the campaign \"%s\". Ask the master looter "
+            .. "to invite you.", round.campaignLabel or "?")
     end
 
     local body, err = Serialize.encodeSubmit(round.id, entries)

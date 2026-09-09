@@ -29,6 +29,10 @@ function Pending.NewRecord(award, now)
         owner = award.owner,
         roundId = award.roundId,
         itemIdx = award.itemIdx,
+        -- The campaign the award was made in (spec 012 section 14). A restore on
+        -- terminal failure targets THAT campaign's list, and the two-hour trade
+        -- window routinely outlives a campaign switch.
+        campaignId = award.campaignId,
         copy = award.copy or 1,
         takenAt = now,
         expiresAt = now + C.PENDING_TTL,

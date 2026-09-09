@@ -420,22 +420,38 @@ return {
                 .. "  [item:50000] -> unclaimed\n",
         },
         {
+            -- Spec 012 section 14: the campaign label appears in the text export when
+            -- the record carries one. A record from before campaigns existed prints no
+            -- placeholder at all -- see the case above.
+            name = "plain text export: the campaign label when the record has one",
+            input = { op = "text", records = { (function()
+                local r = {}
+                for k, v in pairs(EXPECTED_HOST) do r[k] = v end
+                r.campaignId, r.campaignLabel = "Steve-100", "Tuesday 25"
+                return r
+            end)() } },
+            expected = "D" .. T .. "  Icecrown Citadel / Lord Marrowgar  [Tuesday 25]  "
+                .. "(host Steve, ROLL, 3 tiers)\n"
+                .. "  [item:49623] -> Bonk (Dave) T1, roll 91, delivered\n"
+                .. "  [item:50000] -> unclaimed\n",
+        },
+        {
             -- Acceptance: CSV of N entries is N rows plus a header.
             name = "CSV export: the header and one row per entry",
             input = { op = "csv", records = { EXPECTED_HOST } },
             expected = {
-                "timestamp,zone,source,item,itemLevel,quality,equipLoc,character,owner,tier,listIdx,star,rolled,roll,withdrawn,awarded,delivery",
-                T .. ",Icecrown Citadel,Lord Marrowgar,Item item:49623,264,4,INVTYPE_CHEST,Bonk,Dave,1,0,true,true,91,false,true,DELIVERED",
-                T .. ",Icecrown Citadel,Lord Marrowgar,Item item:49623,264,4,INVTYPE_CHEST,Sneaky,Steve,2,0,false,false,0,false,false,",
+                "timestamp,zone,source,campaign,campaignId,item,itemLevel,quality,equipLoc,character,owner,tier,listIdx,star,rolled,roll,withdrawn,awarded,delivery",
+                T .. ",Icecrown Citadel,Lord Marrowgar,,,Item item:49623,264,4,INVTYPE_CHEST,Bonk,Dave,1,0,true,true,91,false,true,DELIVERED",
+                T .. ",Icecrown Citadel,Lord Marrowgar,,,Item item:49623,264,4,INVTYPE_CHEST,Sneaky,Steve,2,0,false,false,0,false,false,",
             },
         },
         {
             name = "CSV quotes a field holding a comma",
             input = { op = "csv", records = { won("S1", T, "Bonk", "Dave", "item:1", "DELIVERED", { source = "Lady, Deathwhisper" }) } },
             expected = {
-                "timestamp,zone,source,item,itemLevel,quality,equipLoc,character,owner,tier,listIdx,star,rolled,roll,withdrawn,awarded,delivery",
-                T .. ',ICC,"Lady, Deathwhisper",Item item:1,264,4,INVTYPE_CHEST,Bonk,Dave,1,0,false,true,80,false,true,DELIVERED',
-                T .. ',ICC,"Lady, Deathwhisper",Item item:1,264,4,INVTYPE_CHEST,Loser,Anna,2,0,false,false,0,false,false,',
+                "timestamp,zone,source,campaign,campaignId,item,itemLevel,quality,equipLoc,character,owner,tier,listIdx,star,rolled,roll,withdrawn,awarded,delivery",
+                T .. ',ICC,"Lady, Deathwhisper",,,Item item:1,264,4,INVTYPE_CHEST,Bonk,Dave,1,0,false,true,80,false,true,DELIVERED',
+                T .. ',ICC,"Lady, Deathwhisper",,,Item item:1,264,4,INVTYPE_CHEST,Loser,Anna,2,0,false,false,0,false,false,',
             },
         },
         {
@@ -449,9 +465,9 @@ return {
                 return r
             end)() } },
             expected = {
-                "timestamp,zone,source,item,itemLevel,quality,equipLoc,character,owner,tier,listIdx,star,rolled,roll,withdrawn,awarded,delivery",
-                T .. ",ICC,Boss,Item item:1,,4,,Bonk,Dave,1,0,false,true,80,false,true,DELIVERED",
-                T .. ",ICC,Boss,Item item:1,,4,,Loser,Anna,2,0,false,false,0,false,false,",
+                "timestamp,zone,source,campaign,campaignId,item,itemLevel,quality,equipLoc,character,owner,tier,listIdx,star,rolled,roll,withdrawn,awarded,delivery",
+                T .. ",ICC,Boss,,,Item item:1,,4,,Bonk,Dave,1,0,false,true,80,false,true,DELIVERED",
+                T .. ",ICC,Boss,,,Item item:1,,4,,Loser,Anna,2,0,false,false,0,false,false,",
             },
         },
         {

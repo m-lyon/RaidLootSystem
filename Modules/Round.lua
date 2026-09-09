@@ -282,6 +282,7 @@ end
 
 Round.current = nil        -- the open round, host side only
 Round.peers = {}           -- player -> addon version, from HI (section 11)
+Round.peerCampaign = {}    -- player -> campaign id, from HI (spec 012 section 10)
 
 local listeners = {}
 local frame
@@ -383,6 +384,10 @@ function Round.Open(items)
     local me = UnitName("player")
     local round = Round.New(Round.NewId(me, time()), me, tierCount,
         GetTime() + seconds, items)
+    -- The round belongs to the campaign it was opened in, and every message that
+    -- establishes standing state carries that id (spec 012 section 10).
+    round.campaignId = ns.Campaign.ActiveId()
+    round.campaignLabel = ns.Campaign.ActiveLabel()
     round.openedAt = time()
     round.openedAtLocal = GetTime()      -- GetTime for elapsed, time() for history
 
@@ -398,8 +403,8 @@ function Round.Open(items)
     Round.current = round
     if ns.Award then ns.Award.Snapshot(round) end     -- spec 007: what the host already had
 
-    local body, err = Serialize.encodeOpen(round.id, tierCount, seconds, round.items,
-        round.lootMode)
+    local body, err = Serialize.encodeOpen(round.campaignId, round.id, tierCount, seconds,
+        round.items, round.lootMode)
     if not body then
         Round.current = nil
         return false, "this loot could not be encoded (" .. tostring(err) .. ")."
@@ -429,8 +434,8 @@ function Round.Extend(seconds)
     seconds = seconds or C.EXTEND_SECONDS
     local endsAt = round.endsAt + seconds
     local secondsLeft = math.max(0, endsAt - GetTime())
-    local body, err = Serialize.encodeOpen(round.id, round.tierCount, secondsLeft,
-        round.items, round.lootMode)
+    local body, err = Serialize.encodeOpen(round.campaignId, round.id, round.tierCount,
+        secondsLeft, round.items, round.lootMode)
     if not body then
         -- Extending locally while the clients keep the old deadline would close their
         -- windows under an open round. Refuse, loudly.
@@ -491,8 +496,8 @@ function Round.DropSlots(goneSlots)
     -- Clients replace their item list on a same-id OPEN (spec 002 section 3), so the
     -- shrunken round reaches them the same way the original did.
     local secondsLeft = math.max(0, round.endsAt - GetTime())
-    local body = Serialize.encodeOpen(round.id, round.tierCount, secondsLeft, round.items,
-        round.lootMode)
+    local body = Serialize.encodeOpen(round.campaignId, round.id, round.tierCount, secondsLeft,
+        round.items, round.lootMode)
     if body then ns.Comms.Send(C.OPS.OPEN, body) end
     stateDirty = true
     fireChanged()
@@ -585,7 +590,7 @@ local function onSync(sender, body)
     if not round or round.state ~= C.ROUND_STATE.OPEN then return end
 
     local secondsLeft = math.max(0, round.endsAt - GetTime())
-    local body2 = Serialize.encodeOpen(round.id, round.tierCount, secondsLeft,
+    local body2 = Serialize.encodeOpen(round.campaignId, round.id, round.tierCount, secondsLeft,
         round.items, round.lootMode)
     if body2 then ns.Comms.Send(C.OPS.OPEN, body2) end
     -- SYNC resends OPEN, SKLIST and STATE (spec 010 section 8).
@@ -594,8 +599,26 @@ local function onSync(sender, body)
     ns.Debug("resent the round to " .. tostring(sender))
 end
 
+--- HI carries the sender's active campaign and its label as well as their version
+-- (spec 012 section 10), so the host panel can say "Dave is in 'Alt Run'" and count
+-- who has joined rather than showing an opaque timestamp.
 local function onHi(sender, body)
-    Round.peers[sender] = body
+    local msg = Serialize.decodeHi(body)
+    if not msg then
+        Round.peers[sender] = body        -- a version-only HI from an older build
+        return
+    end
+    Round.peers[sender] = msg.version
+    Round.peerCampaign[sender] = msg.campaignId
+    if msg.campaignId then ns.Campaign.RememberLabel(msg.campaignId, msg.label) end
+    if ns.HostPanel then ns.HostPanel.Refresh() end
+end
+
+--- The HI body this client sends: version, active campaign, its label.
+function Round.HiBody()
+    local campaign = ns.Campaign.Active()
+    return Serialize.encodeHi(C.VERSION, campaign and campaign.id or "",
+        campaign and campaign.label or "")
 end
 
 --------------------------------------------------------------------------------
@@ -722,7 +745,8 @@ function Round.BroadcastConfig()
     end
     local host = ns.Database.Host()
     ns.Comms.Send(C.OPS.CFG,
-        Serialize.encodeConfig(host.tierCount, host.timerSeconds, host.lootMode))
+        Serialize.encodeConfig(ns.Campaign.ActiveId(), host.tierCount, host.timerSeconds,
+            host.lootMode))
     return true
 end
 
@@ -855,7 +879,7 @@ local function onGroupEvent()
     local now = GetTime()
     if now - lastHi > 5 then
         lastHi = now
-        ns.Comms.Send(C.OPS.HI, C.VERSION)
+        ns.Comms.Send(C.OPS.HI, Round.HiBody())
     end
 end
 

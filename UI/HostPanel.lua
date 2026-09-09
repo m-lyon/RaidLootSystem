@@ -102,7 +102,7 @@ local PAD = 16
 local SCROLL_RIGHT_TRIM = 14
 
 local frame, content
-local settings, candidates, health, priority, live, banner, pending, awaiting
+local settings, candidates, health, priority, live, banner, pending, awaiting, campaign
 local candidateRows, healthRows, liveRows, pendingRows, awaitingRows = {}, {}, {}, {}, {}
 local ticked = {}                   -- itemId -> false when the host unticked it. Keyed by
                                     -- id, not idx: a rebuild renumbers idx.
@@ -143,8 +143,8 @@ end
 
 local function layoutSections()
     local y = 0
-    for _, panel in ipairs({ banner, awaiting, pending, settings, candidates, health,
-                             priority, live }) do
+    for _, panel in ipairs({ banner, awaiting, pending, campaign, settings, candidates,
+                             health, priority, live }) do
         if panel:IsShown() then
             panel:ClearAllPoints()
             panel:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -y)
@@ -152,6 +152,102 @@ local function layoutSections()
         end
     end
     content:SetHeight(math.max(y, 1))
+end
+
+--------------------------------------------------------------------------------
+-- Campaign (spec 012 section 13)
+--
+-- Which campaign this client is in, who else has joined it, and the whole
+-- lifecycle. Every host setting below now reads and writes THIS campaign's `host`
+-- table, so switching snaps them all over.
+--------------------------------------------------------------------------------
+
+local function campaignOptions()
+    local options = {}
+    for i, c in ipairs(ns.Campaign.List()) do
+        options[i] = { value = c.id, text = c.label or c.id }
+    end
+    return options
+end
+
+local function buildCampaign(parent)
+    local panel = section(parent, "Campaign", 104)
+
+    panel.picker = Widgets.Dropdown(panel, "RaidLootSystemHostCampaign", 150,
+        campaignOptions(), function(value)
+            local ok, why = ns.Campaign.Switch(value)
+            if not ok then ns.Print(why) end
+            HostPanel.Refresh()
+        end)
+    panel.picker:SetPoint("TOPLEFT", panel, "TOPLEFT", 4, -24)
+
+    panel.joined = Widgets.Label(panel, "", "GameFontHighlightSmall")
+    panel.joined:SetPoint("TOPLEFT", panel, "TOPLEFT", 190, -30)
+    panel.joined:SetWidth(INNER - 200)
+    panel.joined:SetJustifyH("LEFT")
+
+    panel.invite = Widgets.Button(panel, "Invite raid", 90, 20, function()
+        local ok, why = ns.Campaign.Invite()
+        if not ok then ns.Print(why) end
+    end)
+    panel.invite:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -58)
+    Widgets.Tooltip(panel.invite, "Invite raid to campaign",
+        "Everyone not already in it is offered the campaign. Re-inviting is how a "
+        .. "misclicked Ignore is recovered: refusing stores nothing.")
+
+    local function small(text, tip, onClick, anchor)
+        local b = Widgets.Button(panel, text, 62, 20, onClick)
+        b:SetPoint("LEFT", anchor, "RIGHT", 4, 0)
+        Widgets.Tooltip(b, text, tip)
+        return b
+    end
+
+    panel.new = small("New", "Create a campaign: settings, then which of your characters "
+        .. "play in it.", function() ns.Campaigns.ShowCreate() end, panel.invite)
+    panel.rename = small("Rename", "Rename this campaign. The new label reaches everyone on the "
+        .. "next invite or round.", function()
+            ns.Campaigns.PromptRename(ns.Campaign.ActiveId())
+        end, panel.new)
+    panel.delete = small("Delete", "Delete a campaign. Refused while it holds an undelivered "
+        .. "item, and you cannot delete the one you are in.", function()
+            ns.Campaigns.PromptDelete(ns.Campaign.ActiveId())
+        end, panel.rename)
+    panel.export = small("Export", "A string carrying this campaign's id, settings and priority "
+        .. "list, for repairing a fork.", function()
+            ns.Campaigns.ShowExport(ns.Campaign.ActiveId())
+        end, panel.delete)
+    panel.import = small("Import", "Paste a campaign string. Importing one you already have is "
+        .. "refused unless you confirm the overwrite.", function()
+            ns.Campaigns.ShowImport()
+        end, panel.export)
+
+    panel.note = Widgets.Label(panel, "", "GameFontDisableSmall")
+    panel.note:SetPoint("TOPLEFT", panel.invite, "BOTTOMLEFT", -2, -6)
+    panel.note:SetWidth(INNER - 24)
+    panel.note:SetJustifyH("LEFT")
+    return panel
+end
+
+local function refreshCampaign()
+    local active = ns.Campaign.Active()
+    campaign.picker:SetOptions(campaignOptions())
+    campaign.picker:SetValue(active.id)
+
+    local joined = ns.Campaign.Joined(active.id)
+    if joined.total <= 1 then
+        campaign.joined:SetText("|cff888888No one else is running the addon here.|r")
+    elseif #joined.missing == 0 then
+        campaign.joined:SetText(string.format("|cff66ff66%d/%d joined.|r",
+            joined.joined, joined.total))
+    else
+        campaign.joined:SetText(string.format("|cffffaa00%d/%d joined|r |cff888888- not in it: %s|r",
+            joined.joined, joined.total, table.concat(joined.missing, ", ")))
+    end
+
+    campaign.note:SetText(string.format(
+        "Tier count, timer, quality and loot mode below belong to \"%s\". "
+        .. "Its priority list holds %d characters.", active.label,
+        #(active.priority.order or {})))
 end
 
 --------------------------------------------------------------------------------
@@ -271,9 +367,13 @@ end
 
 local function startRoll()
     local items = tickedItems()
-    local ok, why = ns.Round.Open(items)
-    if not ok then ns.Print(why) end
-    HostPanel.Refresh()
+    -- A raid member who is not in this campaign would roll on nothing, so the host
+    -- is warned and names them before the round opens (spec 012 section 6).
+    ns.Campaigns.GuardOpen(function()
+        local ok, why = ns.Round.Open(items)
+        if not ok then ns.Print(why) end
+        HostPanel.Refresh()
+    end)
 end
 
 local function addItem(link)
@@ -854,6 +954,7 @@ local function build()
     banner = buildBanner(content)
     awaiting = buildAwaiting(content)
     pending = buildPending(content)
+    campaign = buildCampaign(content)
     settings = buildSettings(content)
     candidates = buildCandidates(content)
     health = buildHealth(content)
@@ -892,6 +993,7 @@ end
 
 function HostPanel.Refresh()
     if not frame or not frame:IsShown() then return end
+    refreshCampaign()
     refreshSettings()
     refreshCandidates()
     refreshHealth()
@@ -936,4 +1038,5 @@ function HostPanel.Init()
         HostPanel.Refresh()
     end)
     ns.Roster.RegisterListener(function() HostPanel.Refresh() end)
+    ns.Campaign.RegisterListener(function() HostPanel.Refresh() end)
 end

@@ -68,7 +68,7 @@ local function currentFilter()
     local roster
     if filters.mine:GetChecked() == 1 then
         roster = {}
-        for _, name in ipairs(DB().Roster().order) do roster[name:lower()] = true end
+        for _, name in ipairs(DB().Hierarchy()) do roster[name:lower()] = true end
     end
     local days = tonumber(filters.days:GetText())
     return {
@@ -77,6 +77,9 @@ local function currentFilter()
         item = filters.item:GetText(),
         since = days and (time() - days * 86400) or nil,
         roster = roster,
+        -- Defaults to the active campaign (spec 012 section 13); All campaigns is
+        -- the toggle, and records written before campaigns existed only show there.
+        campaignId = (filters.allCampaigns:GetChecked() ~= 1) and ns.Campaign.ActiveId() or nil,
         includeSimulated = filters.simulated:GetChecked() == 1,
         labelOf = nameOf,
     }
@@ -111,6 +114,10 @@ local function buildFilters(parent)
     panel.simulated = Widgets.CheckBox(panel, "RaidLootSystemHistorySimulated", "Show simulated",
         function() Browser.Refresh() end)
     panel.simulated:SetPoint("LEFT", panel.mine, "RIGHT", 110, 0)
+
+    panel.allCampaigns = Widgets.CheckBox(panel, "RaidLootSystemHistoryAllCampaigns",
+        "All campaigns", function() Browser.Refresh() end)
+    panel.allCampaigns:SetPoint("LEFT", panel.simulated, "RIGHT", 120, 0)
 
     panel.apply = Widgets.Button(panel, "Apply", 70, 20, function() Browser.Refresh() end)
     panel.apply:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -8, 6)
@@ -202,7 +209,14 @@ function Browser.Refresh()
         row:ClearAllPoints()
         row:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -y)
         row.when:SetText(formatDate(record.timestamp))
-        row.where:SetText((record.zone or "?") .. " / " .. (record.source or "?"))
+        -- A record whose campaign is gone still renders its name, with a marker
+        -- (spec 012 sections 11 and 13).
+        local campaignText = ""
+        if record.campaignId then
+            campaignText = "  |cff888888[" .. (record.campaignLabel or record.campaignId)
+                .. (ns.Campaign.Get(record.campaignId) and "" or " - deleted") .. "]|r"
+        end
+        row.where:SetText((record.zone or "?") .. " / " .. (record.source or "?") .. campaignText)
         for j, icon in ipairs(row.icons) do
             local item = record.items[j]
             if item then

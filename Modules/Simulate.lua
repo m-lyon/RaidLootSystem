@@ -85,6 +85,7 @@ Simulate.SCENARIOS = {
     star      = "a character that would win two items taking its starred one",
     absent    = "a suicide with absent characters holding their indices",
     restore   = "a failed delivery returning a character to its prior index",
+    campaign  = "an invite, a join and a round with one non-member present",
 }
 
 --- Parse "items=6 players=5 scenario=tie".
@@ -156,6 +157,11 @@ function Simulate.Build(scenario, params)
         second.chars["Bonk"] = { class = "WARRIOR" }
     elseif scenario == "abort" then
         plan.hostChange = 3
+    elseif scenario == "campaign" then
+        -- One fake player stays out of the campaign: their window is read-only for
+        -- the whole round and they submit nothing (spec 012 sections 6 and 15).
+        plan.campaign = true
+        plan.nonMember = plan.players[#plan.players].name
     elseif scenario == "sk" or scenario == "star" or scenario == "absent" or scenario == "restore" then
         plan.lootMode = C.LOOT_MODE.SK
         if scenario == "absent" then
@@ -177,6 +183,10 @@ function Simulate.Build(scenario, params)
             end
         end
         plan.entries[player.name] = list
+    end
+
+    if scenario == "campaign" then
+        plan.entries[plan.nonMember] = {}
     end
 
     if scenario == "tie" then
@@ -242,7 +252,7 @@ function Simulate.OpenChunks(plan)
         local itemString = ns.ItemInfo.ParseLink(item.link)
         items[i] = { idx = i, itemString = itemString, count = item.quantity }
     end
-    local body = ns.Serialize.encodeOpen("Sim-1", 3, 180, items, plan.lootMode)
+    local body = ns.Serialize.encodeOpen("Simc-1", "Sim-1", 3, 180, items, plan.lootMode)
     return #ns.Serialize.pack(C.OPS.OPEN, body, "1")
 end
 
@@ -346,7 +356,9 @@ local function installOverrides()
     -- The priority list: a copy, discarded afterwards (section 4).
     local copy = ns.Util.deepCopy(ns.Database.Priority())
     override(ns.Database, "Priority", function() return copy end)
-    override(ns.Database.Host(), "lootMode", plan.lootMode)
+    local hostCopy = ns.Util.deepCopy(ns.Database.Host())
+    override(ns.Database, "Host", function() return hostCopy end)
+    hostCopy.lootMode = plan.lootMode
 
     if plan.rolls then
         local i = 0
@@ -363,10 +375,19 @@ end
 -- The fake players
 --------------------------------------------------------------------------------
 
+--- The campaign a fake player publishes for: everyone but the scenario's non-member
+-- is in ours, so the host's N/M joined and the non-member warning have real input.
+local function fakeCampaignOf(player)
+    if plan.campaign and player.name == plan.nonMember then return "Elsewhere-1" end
+    return ns.Campaign.ActiveId()
+end
+
 local function publishFakes()
     for _, player in ipairs(plan.players) do
-        fakeSend(player.name, C.OPS.HI, C.VERSION)
-        local body = ns.Serialize.encodeRoster(player.order, player.chars)
+        fakeSend(player.name, C.OPS.HI,
+            ns.Serialize.encodeHi(C.VERSION, fakeCampaignOf(player), "Sim"))
+        local body = ns.Serialize.encodeRosterMsg(fakeCampaignOf(player), player.order,
+            player.chars)
         fakeSend(player.name, C.OPS.ROSTER, body)
     end
 end
@@ -403,6 +424,7 @@ local function finish()
     for _, name in ipairs({ "Simdave", "Simanna", "Simerin", "Simkate", "Simoli" }) do
         ns.Roster.published[name] = nil
         ns.Round.peers[name] = nil
+        ns.Round.peerCampaign[name] = nil
     end
     ns.Roster.RefreshPresence()
     ns.Roster.Publish()
@@ -575,6 +597,15 @@ function Simulate.Run(argument)
     end
 
     publishFakes()
+    if plan.campaign then
+        at(0.75, function()
+            local missing = ns.Campaign.NonMembersInRaid()
+            say(string.format("%d raid member(s) are not in \"%s\": %s. The host is warned "
+                .. "before opening; their roll window would be read-only.", #missing,
+                ns.Campaign.ActiveLabel(), table.concat(missing, ", ")))
+            ns.Campaign.Invite()
+        end)
+    end
     at(0.5, function()
         if plan.lootMode == C.LOOT_MODE.SK then
             local ok, err = ns.Priority.Seed(true)

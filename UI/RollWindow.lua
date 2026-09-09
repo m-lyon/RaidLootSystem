@@ -877,6 +877,17 @@ local function refreshEntry(round)
     local dirty = submitted and RollWindow.IsDirty(localEntries, accepted, ns.Client.LastSent())
     entryPanel.dirty:SetText(dirty and "|cffffaa00unsent changes|r" or "")
 
+    -- Read-only: this round belongs to a campaign this client is not in, so there is
+    -- nothing to submit (spec 012 section 6). The controls are disabled rather than
+    -- hidden, so the window still shows what is being rolled for.
+    if round.readOnly then
+        entryPanel.submit:Disable()
+        entryPanel.pass:Disable()
+    else
+        entryPanel.submit:Enable()
+        entryPanel.pass:Enable()
+    end
+
     if round.lastRejected and #round.lastRejected > 0 then
         entryPanel.warning:SetText("|cffff6060The host refused: "
             .. table.concat(round.lastRejected, ", ") .. "|r")
@@ -1099,7 +1110,8 @@ function RollWindow.Refresh()
     end
 
     local hostLabel = round.host and (round.host .. "'s round") or "Round"
-    frame.titleText:SetText(string.format("%s - %d item%s", hostLabel, #round.items,
+    frame.titleText:SetText(string.format("%s - %s - %d item%s", hostLabel,
+        round.campaignLabel or ns.Campaign.ActiveLabel(), #round.items,
         #round.items == 1 and "" or "s"))
 
     local inCount, total, outstanding = RollWindow.Outstanding(expectedPlayers(), round.submitted)
@@ -1107,7 +1119,12 @@ function RollWindow.Refresh()
     frame.counter.outstanding = outstanding
 
     if round.state == C.ROUND_STATE.OPEN then
-        frame.banner:SetText("")
+        -- A round in a campaign this client is not in opens read-only, and says why
+        -- (spec 012 section 6). Silence would be the worst available outcome, and
+        -- this is also how a mistaken Ignore is noticed within one boss.
+        frame.banner:SetText(round.readOnly and string.format(
+            "|cffffaa00You are not in the campaign \"%s\". Ask the master looter to invite you.|r",
+            round.campaignLabel or "?") or "")
         resultsPanel:Hide()
         entryPanel:Show()
         refreshEntry(round)

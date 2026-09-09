@@ -43,6 +43,27 @@ C.OPS = {
     CFG     = "CFG",
     SKLIST  = "SKLIST",
     SYNC    = "SYNC",
+    CINV    = "CINV",
+}
+
+-- The ops that carry a campaign id as their leading field (spec 012 section 10).
+-- The campaign travels on the messages that establish standing state; roundId
+-- suffices for everything inside a round, so it is not in the envelope.
+C.CAMPAIGN_OPS = {
+    HI     = true,
+    ROSTER = true,
+    OPEN   = true,
+    SKLIST = true,
+    CFG    = true,
+    CINV   = true,
+}
+
+-- The two exceptions to "drop a campaign-bearing message naming a campaign you are
+-- not in" (spec 012 section 10). CINV is what non-membership is for, and OPEN opens
+-- the read-only window of section 6 rather than saying nothing.
+C.CAMPAIGN_OPEN_TO_NONMEMBERS = {
+    CINV = true,
+    OPEN = true,
 }
 
 --------------------------------------------------------------------------------
@@ -123,6 +144,17 @@ C.MAX_TIER_COUNT = 5
 
 -- Prefix on an exported roster string. The digit is the protocol version.
 C.EXPORT_PREFIX = "RLS1:"
+
+-- Prefix on an exported campaign string (spec 012 section 12). Same encoding, a
+-- different payload: id, label, host settings and the whole priority list.
+C.CAMPAIGN_EXPORT_PREFIX = "RLSC1:"
+
+-- The label a fresh install's one campaign carries (spec 012 section 5). Its id is
+-- an ordinary <name>-<timestamp>, never a well-known constant: a shared "main"
+-- would put you nominally inside a stranger's campaign.
+C.DEFAULT_CAMPAIGN_LABEL = "Main"
+
+C.MAX_CAMPAIGN_LABEL = 40
 
 -- Reasons a character cannot be entered. Rendered by the roll window (spec 005).
 -- The first four are roster states (spec 001). The rest are the eligibility filter's
@@ -227,21 +259,14 @@ C.BOT_EQUIP_COMMAND = "equip"
 -- Saved-variable defaults (spec 000 section 4). Database.lua owns the copy.
 --------------------------------------------------------------------------------
 
-C.SCHEMA = 2                  -- 2: priority.seedChars and priority.log (spec 010 section 9)
+-- 3: campaigns (spec 012 section 9). There is no migration to it -- schema ~= 3
+-- rebuilds roster, campaigns, history and pending from these defaults.
+C.SCHEMA = 3
 
-C.DEFAULTS = {
-    schema = C.SCHEMA,
-    roster = {
-        order = {},
-        chars = {},
-    },
-    settings = {
-        eligibilityFilter = true,
-        autoEquipWinners  = true,
-        verbosity         = "SUMMARY",
-        minimap           = { hide = false, minimapPos = 220 },
-        windows           = {},
-    },
+-- The per-campaign tables (spec 012 section 3). `host` and `priority` no longer
+-- exist at the top level of the saved variables; they live on each campaign and are
+-- read through Campaign.Active().
+C.CAMPAIGN_DEFAULTS = {
     host = {
         tierCount        = 3,
         timerSeconds     = 180,
@@ -255,6 +280,25 @@ C.DEFAULTS = {
         seedChars = {},           -- the names the seed shuffled, in the order it took them
         order     = {},
         log       = {},           -- every mutation since the seed, for verify's replay
+    },
+    hierarchy = {},               -- THIS client's ordering, for this campaign
+}
+
+C.DEFAULTS = {
+    schema = C.SCHEMA,
+    roster = {
+        -- roster.order is gone: it lives on each campaign as `hierarchy`.
+        chars = {},               -- global and mutable: a class is a fact about a character
+        defaultHierarchy = {},    -- a template that resolves nothing (spec 012 section 7)
+    },
+    activeCampaign = "",
+    campaigns = {},
+    settings = {
+        eligibilityFilter = true,
+        autoEquipWinners  = true,
+        verbosity         = "SUMMARY",
+        minimap           = { hide = false, minimapPos = 220 },
+        windows           = {},
     },
     history = {},
     pending = {},

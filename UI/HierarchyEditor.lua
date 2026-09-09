@@ -33,7 +33,37 @@ local listPanel, manualPanel, transferPanel
 local dragIndex
 local layoutPanels
 
+-- Which list is being edited: a campaign id, or Roster.DEFAULT_TARGET for the
+-- global template of spec 012 section 7. The picker is prominent rather than
+-- decorative -- editing the wrong campaign's hierarchy is a silent no-op you would
+-- discover next Tuesday.
+local target
+
 local function Roster() return ns.Roster end
+
+local function editingDefault()
+    return target == ns.Roster.DEFAULT_TARGET
+end
+
+--- The list this editor is pointed at, falling back to the active campaign when the
+-- one it held has been deleted or switched away from underneath it.
+local function targetList()
+    local list = Roster().HierarchyList(target)
+    if not list then
+        target = ns.Campaign.ActiveId()
+        list = Roster().HierarchyList(target)
+    end
+    return list
+end
+
+local function targetOptions()
+    local options = {}
+    for i, c in ipairs(ns.Campaign.List()) do
+        options[i] = { value = c.id, text = c.label or c.id }
+    end
+    options[#options + 1] = { value = ns.Roster.DEFAULT_TARGET, text = "Default (template)" }
+    return options
+end
 
 --------------------------------------------------------------------------------
 -- Tier count in force
@@ -63,7 +93,7 @@ end
 --------------------------------------------------------------------------------
 
 local function moveRow(from, to)
-    local ok, why = Roster().Move(from, to)
+    local ok, why = Roster().MoveIn(target, from, to)
     if not ok and why then ns.Print(why) end
     Editor.Refresh()
 end
@@ -73,7 +103,7 @@ local function positionUnderCursor()
     local _, cursorY = GetCursorPosition()
     cursorY = cursorY / UIParent:GetEffectiveScale()
 
-    local order = Roster().Order()
+    local order = targetList()
     for i = 1, #order do
         local row = rows[i]
         if row and row:IsShown() then
@@ -99,16 +129,28 @@ local function createRow(index)
     row.highlight:SetAllPoints()
     row.highlight:SetTexture(1, 1, 1, 0.06)
 
+    -- The same inclusion checkbox the join dialog shows (spec 012 section 7), so a
+    -- character can never become unreachable by having been unticked once.
+    row.check = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
+    row.check:SetWidth(18)
+    row.check:SetHeight(18)
+    row.check:SetPoint("LEFT", row, "LEFT", 2, 0)
+    row.check:SetScript("OnClick", function(self)
+        local ok, why = Roster().SetIncludedIn(target, row.charName, self:GetChecked() == 1)
+        if not ok and why then ns.Print(why) end
+        Editor.Refresh()
+    end)
+
     row.position = Widgets.Label(row, "", "GameFontNormalSmall")
-    row.position:SetPoint("LEFT", row, "LEFT", 6, 0)
+    row.position:SetPoint("LEFT", row, "LEFT", 24, 0)
     row.position:SetWidth(18)
     row.position:SetJustifyH("RIGHT")
 
     row.dot = Widgets.Dot(row, 10)
-    row.dot:SetPoint("LEFT", row, "LEFT", 28, 0)
+    row.dot:SetPoint("LEFT", row, "LEFT", 46, 0)
 
     row.name = Widgets.Label(row, "", "GameFontNormal")
-    row.name:SetPoint("LEFT", row, "LEFT", 44, 0)
+    row.name:SetPoint("LEFT", row, "LEFT", 62, 0)
     row.name:SetJustifyH("LEFT")
     row.name:SetWidth(130)
 
@@ -147,10 +189,10 @@ local function createRow(index)
     row:SetScript("OnDragStop", function(self)
         self:SetAlpha(1)
         if not dragIndex then return end
-        local target = positionUnderCursor()
-        if target > dragIndex then target = target - 1 end
-        target = Util.clamp(target, 1, #Roster().Order())
-        if target ~= dragIndex then moveRow(dragIndex, target) end
+        local landing = positionUnderCursor()
+        if landing > dragIndex then landing = landing - 1 end
+        landing = Util.clamp(landing, 1, #targetList())
+        if landing ~= dragIndex then moveRow(dragIndex, landing) end
         dragIndex = nil
         Editor.Refresh()
     end)
@@ -176,20 +218,33 @@ end
 function Editor.Refresh()
     if not frame or not frame:IsShown() then return end
 
-    local roster = ns.Database.Roster()
-    local order, chars = roster.order, roster.chars
+    local chars = ns.Database.Roster().chars
+    local order = targetList()
     local tierCount = activeTierCount()
 
-    frame.warning:SetText(roundIsOpen()
+    frame.picker:SetOptions(targetOptions())
+    frame.picker:SetValue(target)
+    frame.scope:SetText(editingDefault()
+        and "|cffffcc00This is the template new campaigns are seeded from. It resolves nothing: "
+            .. "no tier, no entry and no award is ever decided by it.|r"
+        or string.format("|cff888888Ranking for \"%s\". Other campaigns keep their own.|r",
+            ns.Campaign.LabelFor(target)))
+
+    frame.warning:SetText((not editingDefault() and roundIsOpen())
         and "|cffffcc00A roll is open. Entries you already submitted keep the tiers they had at submit time.|r"
         or "")
 
     for _, band in ipairs(bands) do band:Hide() end
     for _, row in ipairs(rows) do row:Hide() end
 
+    -- Every character, ticked ones first in their ranked order; positions count the
+    -- ticked rows only (spec 012 section 7).
+    local model = ns.Campaign.HierarchyRows(chars, order)
+
     local y, bandIndex = 0, 0
-    for i = 1, #order do
-        local name = order[i]
+    for i = 1, #model do
+        local entryRow = model[i]
+        local name = entryRow.char
         local entry = chars[name] or {}
         local row = rows[i]
         if not row then
@@ -197,18 +252,21 @@ function Editor.Refresh()
             rows[i] = row
         end
 
-        row.index = i
+        row.index = entryRow.position
         row.charName = name
         row:ClearAllPoints()
         row:SetPoint("TOPLEFT", content, "TOPLEFT", ROW_INSET, -y)
-        row.position:SetText(tostring(i))
+        row.check:SetChecked(entryRow.included)
+        row.position:SetText(entryRow.position and tostring(entryRow.position) or "|cff666666-|r")
 
         local label = Widgets.ColorName(name, entry.class)
         if entry.isSelf then label = label .. " |cff888888(you)|r" end
+        if not entryRow.included then label = "|cff777777" .. name .. "|r" end
         row.name:SetText(label)
 
-        local tier = Tiers.forPosition(i, tierCount)
-        row.badge:SetText("|cffaaaaaa" .. Tiers.label(tier, tierCount) .. "|r")
+        local tier = entryRow.position and Tiers.forPosition(entryRow.position, tierCount) or nil
+        row.badge:SetText(tier and ("|cffaaaaaa" .. Tiers.label(tier, tierCount) .. "|r")
+            or "|cff666666out|r")
 
         local present = Roster().IsPresent(name)
         Widgets.SetDotPresent(row.dot, present)
@@ -216,13 +274,15 @@ function Editor.Refresh()
         -- Presence and conflicts are the two reasons a row is not enterable, so
         -- the row tooltip states them rather than leaving the dot unexplained.
         local enterable, _, reason = Roster().Enterable(name)
-        Widgets.Tooltip(row, name, enterable
-            and (present and "In the raid and enterable." or "Enterable.")
-            or reason)
+        Widgets.Tooltip(row, name, not entryRow.included
+            and "Not in this campaign. Tick the box to bring it in."
+            or (enterable and (present and "In the raid and enterable." or "Enterable.") or reason))
 
-        -- 3.3.5a has no Button:SetEnabled.
-        if i > 1 then row.up:Enable() else row.up:Disable() end
-        if i < #order then row.down:Enable() else row.down:Disable() end
+        -- 3.3.5a has no Button:SetEnabled. Only ticked rows have a rank to move.
+        if entryRow.position and entryRow.position > 1 then row.up:Enable() else row.up:Disable() end
+        if entryRow.position and entryRow.position < #order then row.down:Enable()
+        else row.down:Disable() end
+        row:SetAlpha(entryRow.included and 1 or 0.6)
         row:Show()
 
         y = y + ROW_HEIGHT + ROW_GAP
@@ -231,8 +291,10 @@ function Editor.Refresh()
         -- line after every one of the top rows to repeat the tier already on the
         -- row's own badge; the cut-off is the only boundary that changes what a
         -- position means, since below it ordering stops mattering at all.
-        local nextTier = Tiers.forPosition(i + 1, tierCount)
-        if i < #order and Tiers.isRest(nextTier, tierCount) and not Tiers.isRest(tier, tierCount) then
+        local position = entryRow.position
+        local nextTier = position and Tiers.forPosition(position + 1, tierCount) or nil
+        if position and position < #order and nextTier
+            and Tiers.isRest(nextTier, tierCount) and not Tiers.isRest(tier, tierCount) then
             bandIndex = bandIndex + 1
             local band = bands[bandIndex]
             if not band then
@@ -249,7 +311,7 @@ function Editor.Refresh()
         end
     end
 
-    if #order == 0 then
+    if #model == 0 then
         frame.empty:Show()
     else
         frame.empty:Hide()
@@ -470,8 +532,26 @@ local function build()
     end)
     addManual:SetPoint("LEFT", addGroup, "RIGHT", 6, 0)
 
+    -- The campaign picker (spec 012 section 13). Prominent, not decorative: editing
+    -- the wrong campaign's hierarchy is a silent no-op you would discover next
+    -- Tuesday. "Default" is the template of section 7, marked as such.
+    frame.pickerLabel = Widgets.Label(frame, "Campaign", "GameFontNormalSmall")
+    frame.pickerLabel:SetPoint("TOPLEFT", addTarget, "BOTTOMLEFT", 4, -8)
+
+    frame.picker = Widgets.Dropdown(frame, "RaidLootSystemHierarchyCampaign", 150,
+        targetOptions(), function(value)
+            target = value
+            Editor.Refresh()
+        end)
+    frame.picker:SetPoint("TOPLEFT", frame.pickerLabel, "BOTTOMLEFT", -16, -2)
+
+    frame.scope = Widgets.Label(frame, "", "GameFontDisableSmall")
+    frame.scope:SetPoint("TOPLEFT", frame.picker, "BOTTOMLEFT", 20, 0)
+    frame.scope:SetWidth(LIST_WIDTH)
+    frame.scope:SetJustifyH("LEFT")
+
     frame.warning = Widgets.Label(frame, "", "GameFontHighlightSmall")
-    frame.warning:SetPoint("TOPLEFT", addTarget, "BOTTOMLEFT", 0, -6)
+    frame.warning:SetPoint("TOPLEFT", frame.scope, "BOTTOMLEFT", 0, -6)
     frame.warning:SetWidth(LIST_WIDTH)
     frame.warning:SetJustifyH("LEFT")
 
@@ -524,10 +604,26 @@ local function build()
 
     -- Redraw when the roster, presence, claims or the raid's tier count change.
     Roster().RegisterListener(function() Editor.Refresh() end)
+    ns.Campaign.RegisterListener(function() Editor.Refresh() end)
+end
+
+--- Point the editor at one list. Used by the host panel and `/rls campaign`.
+function Editor.SetTarget(newTarget)
+    target = newTarget
+    Editor.Refresh()
+end
+
+--- Default the picker to the campaign you are in, so opening the editor after a
+-- raid edits the campaign you just raided in (active campaign is sticky, section 13).
+local function ensureTarget()
+    if target == nil or (target ~= ns.Roster.DEFAULT_TARGET and not ns.Campaign.Get(target)) then
+        target = ns.Campaign.ActiveId()
+    end
 end
 
 function Editor.Toggle()
     if not frame then build() end
+    ensureTarget()
     if frame:IsShown() then
         frame:Hide()
     else
@@ -538,6 +634,7 @@ end
 
 function Editor.Show()
     if not frame then build() end
+    ensureTarget()
     frame:RestorePosition()
     frame:Show()
 end

@@ -57,6 +57,10 @@ function History.FromHost(round, ctx)
         zone = ctx.zone,
         source = ctx.source,
         host = round.host,
+        -- Tagged, not scoped (spec 012 section 4): stored once and filtered as a
+        -- view. The label rides along so a deleted campaign still renders a name.
+        campaignId = round.campaignId,
+        campaignLabel = round.campaignLabel or ctx.campaignLabel,
         settings = {
             tierCount = round.tierCount,
             timerSeconds = ctx.timerSeconds,
@@ -161,6 +165,8 @@ function History.FromClient(round, ctx)
         zone = ctx.zone,
         source = ctx.source,
         host = round.host,
+        campaignId = round.campaignId,
+        campaignLabel = round.campaignLabel or ctx.campaignLabel,
         settings = {
             tierCount = round.tierCount,
             lootMode = round.lootMode or C.LOOT_MODE.ROLL,
@@ -330,6 +336,10 @@ function History.Filter(records, filter)
         if r.simulated and not filter.includeSimulated then ok = false end
         if ok and filter.since and (r.timestamp or 0) < filter.since then ok = false end
         if ok and filter.until_ and (r.timestamp or 0) > filter.until_ then ok = false end
+        -- The browser defaults to the active campaign, with an All campaigns toggle
+        -- (spec 012 section 13). A record written before campaigns existed has no id
+        -- and only shows under All.
+        if ok and filter.campaignId and r.campaignId ~= filter.campaignId then ok = false end
 
         if ok and (char ~= "" or owner ~= "" or filter.roster or item ~= "") then
             local charHit, ownerHit, rosterHit, itemHit = char == "", owner == "",
@@ -399,8 +409,13 @@ function History.ExportText(records, ctx)
 
     for _, r in ipairs(records) do
         local where = (r.zone or "?") .. " / " .. (r.source or "?")
-        lines[#lines + 1] = string.format("%s  %s  (host %s, %s, %d tiers%s)",
-            formatDate(r.timestamp), where, r.host or "?", r.settings.lootMode or "ROLL",
+        -- A record from before campaigns existed has no id, and a placeholder on
+        -- every such line is noise. The CSV keeps its column either way (fixed schema).
+        local campaign = r.campaignLabel or r.campaignId
+        lines[#lines + 1] = string.format("%s  %s  %s(host %s, %s, %d tiers%s)",
+            formatDate(r.timestamp), where,
+            campaign and ("[" .. campaign .. "]  ") or "",
+            r.host or "?", r.settings.lootMode or "ROLL",
             r.settings.tierCount or 0, r.simulated and ", simulated" or "")
         if r.outcome == "ABORTED" then
             lines[#lines + 1] = "  aborted: " .. (C.ABORT_TEXT[r.abortReason] or r.abortReason or "?")
@@ -430,8 +445,8 @@ function History.ExportText(records, ctx)
     return table.concat(lines, "\n")
 end
 
-History.CSV_HEADER = "timestamp,zone,source,item,itemLevel,quality,equipLoc,character,owner,"
-    .. "tier,listIdx,star,rolled,roll,withdrawn,awarded,delivery"
+History.CSV_HEADER = "timestamp,zone,source,campaign,campaignId,item,itemLevel,quality,"
+    .. "equipLoc,character,owner,tier,listIdx,star,rolled,roll,withdrawn,awarded,delivery"
 
 local function csvField(v)
     if v == nil then return "" end
@@ -455,7 +470,9 @@ function History.ExportCSV(records, ctx)
             for _, e in ipairs(item.entries) do
                 local a = awarded[lower(e.char)]
                 local fields = {
-                    r.timestamp, r.zone, r.source, nameOf(item.itemString),
+                    r.timestamp, r.zone, r.source,
+                    r.campaignLabel, r.campaignId,
+                    nameOf(item.itemString),
                     item.itemLevel, item.quality, item.equipLoc,
                     e.char, e.owner, e.tier, e.listIdx, e.star, e.rolled, e.roll,
                     e.withdrawn, a ~= nil, a and a.delivery or nil,
@@ -463,7 +480,7 @@ function History.ExportCSV(records, ctx)
                 -- A nil (an item level the cache never gave) is a hole, so the column
                 -- count is fixed rather than read from the array.
                 local out = {}
-                for i = 1, 17 do out[i] = csvField(fields[i]) end
+                for i = 1, 19 do out[i] = csvField(fields[i]) end
                 rows[#rows + 1] = table.concat(out, ",")
             end
         end
@@ -563,6 +580,7 @@ function History.Record(round)
         raid = raidPlayers(),
         timerSeconds = host.timerSeconds,
         qualityThreshold = host.qualityThreshold,
+        campaignLabel = ns.Campaign.ActiveLabel(),
         simulated = simulated(),
     })
     History.Upsert(DB(), record)

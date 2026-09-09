@@ -180,6 +180,25 @@ function Serialize.encodeRoster(order, chars)
     return Serialize.encodeList(elements)
 end
 
+--- The ROSTER message body (spec 012 section 10): campaignId^name=class~...
+-- The plain list above stays the export format of spec 001 section 8, which
+-- carries no campaign.
+function Serialize.encodeRosterMsg(campaignId, order, chars)
+    local body, err = Serialize.encodeRoster(order, chars)
+    if not body then return nil, err end
+    return Serialize.encodeFields({ campaignId, body })
+end
+
+--- @return { campaignId, order, chars }, or nil plus a reason
+function Serialize.decodeRosterMsg(body)
+    local fields = Serialize.decodeFields(body)
+    local campaignId = fields[1]
+    if not campaignId or campaignId == "" then return nil, "ROSTER has no campaign id" end
+    local order, chars = Serialize.decodeRoster(fields[2] or "")
+    if not order then return nil, chars end
+    return { campaignId = campaignId, order = order, chars = chars }
+end
+
 --- Decode a ROSTER body.
 -- @return order array, chars map, or nil plus a reason
 function Serialize.decodeRoster(body)
@@ -245,7 +264,7 @@ end
 --- @param lootMode optional; a trailing field (spec 010 section 8), so a round carries
 --        its own mode and a late joiner who never saw CFG still knows it. Omitted when
 --        nil, and a body without it decodes as ROLL.
-function Serialize.encodeOpen(roundId, tierCount, secondsLeft, items, lootMode)
+function Serialize.encodeOpen(campaignId, roundId, tierCount, secondsLeft, items, lootMode)
     local rows = {}
     for i = 1, #items do
         local item = items[i]
@@ -253,22 +272,24 @@ function Serialize.encodeOpen(roundId, tierCount, secondsLeft, items, lootMode)
     end
     local body, err = encodeElements(rows)
     if not body then return nil, err end
-    local fields = { roundId, tierCount, secondsLeft, body }
-    if lootMode then fields[5] = lootMode end
+    local fields = { campaignId, roundId, tierCount, secondsLeft, body }
+    if lootMode then fields[6] = lootMode end
     return Serialize.encodeFields(fields)
 end
 
 function Serialize.decodeOpen(body)
     local fields = Serialize.decodeFields(body)
-    local roundId = fields[1]
+    local campaignId = fields[1]
+    if not campaignId or campaignId == "" then return nil, "OPEN has no campaign id" end
+    local roundId = fields[2]
     if not roundId or roundId == "" then return nil, "OPEN has no round id" end
 
-    local tierCount = tonumber(fields[2])
-    local secondsLeft = tonumber(fields[3])
+    local tierCount = tonumber(fields[3])
+    local secondsLeft = tonumber(fields[4])
     if not tierCount or not secondsLeft then return nil, "OPEN has a non-numeric field" end
 
     local items = {}
-    for _, element in ipairs(Serialize.decodeList(fields[4])) do
+    for _, element in ipairs(Serialize.decodeList(fields[5])) do
         local sub = Serialize.decodeElement(element)
         local idx, itemString = tonumber(sub[1]), sub[2]
         if not idx then return nil, "OPEN has a non-numeric item index" end
@@ -280,10 +301,10 @@ function Serialize.decodeOpen(body)
     end
     if #items == 0 then return nil, "OPEN carries no items" end
 
-    local lootMode = fields[5]
+    local lootMode = fields[6]
     if lootMode ~= C.LOOT_MODE.SK then lootMode = C.LOOT_MODE.ROLL end
 
-    return { roundId = roundId, tierCount = tierCount,
+    return { campaignId = campaignId, roundId = roundId, tierCount = tierCount,
              secondsLeft = secondsLeft, items = items, lootMode = lootMode }
 end
 
@@ -476,22 +497,30 @@ end
 -- suicides are applied, and on SYNC. A client whose copy differs replaces it whole.
 --------------------------------------------------------------------------------
 
-function Serialize.encodeSklist(version, seed, order)
+local function encodeNames(order)
     local names = {}
     for i = 1, #order do
         local element, err = Serialize.encodeElement({ order[i] })
         if not element then return nil, err end
         names[i] = element
     end
-    return Serialize.encodeFields({ version, seed, Serialize.encodeList(names) })
+    return Serialize.encodeList(names)
+end
+
+function Serialize.encodeSklist(campaignId, version, seed, order)
+    local names, err = encodeNames(order)
+    if not names then return nil, err end
+    return Serialize.encodeFields({ campaignId, version, seed, names })
 end
 
 function Serialize.decodeSklist(body)
     local fields = Serialize.decodeFields(body)
-    local version, seed = tonumber(fields[1]), tonumber(fields[2])
+    local campaignId = fields[1]
+    if not campaignId or campaignId == "" then return nil, "SKLIST has no campaign id" end
+    local version, seed = tonumber(fields[2]), tonumber(fields[3])
     if not version or not seed then return nil, "SKLIST has a non-numeric field" end
     local order, seen = {}, {}
-    for _, name in ipairs(Serialize.decodeList(fields[3])) do
+    for _, name in ipairs(Serialize.decodeList(fields[4])) do
         if name ~= "" then
             local key = name:lower()
             if seen[key] then return nil, "SKLIST lists " .. name .. " twice" end
@@ -499,7 +528,155 @@ function Serialize.decodeSklist(body)
             order[#order + 1] = name
         end
     end
-    return { version = version, seed = seed, order = order }
+    return { campaignId = campaignId, version = version, seed = seed, order = order }
+end
+
+--------------------------------------------------------------------------------
+-- HI: addonVersion^campaignId^label      CINV: campaignId^label
+--
+-- HI carries the label as well as the id so the host panel can say "Dave is in
+-- 'Alt Run'" rather than showing an opaque timestamp (spec 012 section 10).
+--------------------------------------------------------------------------------
+
+function Serialize.encodeHi(addonVersion, campaignId, label)
+    return Serialize.encodeFields({ addonVersion, campaignId, label })
+end
+
+function Serialize.decodeHi(body)
+    local fields = Serialize.decodeFields(body)
+    local version = fields[1]
+    if not version or version == "" then return nil, "HI has no version" end
+    return { version = version,
+             campaignId = (fields[2] ~= "" and fields[2] or nil),
+             label = (fields[3] ~= "" and fields[3] or nil) }
+end
+
+function Serialize.encodeCinv(campaignId, label)
+    return Serialize.encodeFields({ campaignId, label })
+end
+
+function Serialize.decodeCinv(body)
+    local fields = Serialize.decodeFields(body)
+    if not fields[1] or fields[1] == "" then return nil, "CINV has no campaign id" end
+    if not fields[2] or fields[2] == "" then return nil, "CINV has no label" end
+    return { campaignId = fields[1], label = fields[2] }
+end
+
+--------------------------------------------------------------------------------
+-- The campaign export payload (spec 012 section 12)
+--
+--   id^label^createdAt^createdBy^tierCount=timer=quality=lootMode
+--     ^version^seed^seedChars~...^order~...^event~event~...
+--
+-- One event is kind=char=from=to=seed=version=at=by=present+...=chars+...
+-- It carries no hierarchy: that is personal and per client.
+--------------------------------------------------------------------------------
+
+local EVENT_JOIN = "+"
+
+local function encodeEvent(e)
+    local present, chars = {}, {}
+    for i, v in ipairs(e.present or {}) do present[i] = tostring(v) end
+    for i, v in ipairs(e.chars or {}) do chars[i] = tostring(v) end
+    return Serialize.encodeElement({ e.kind, e.char or "", e.from or "", e.to or "",
+        e.seed or "", e.version or "", e.at or "", e.by or "",
+        table.concat(present, EVENT_JOIN), table.concat(chars, EVENT_JOIN) })
+end
+
+local function decodeEvent(element)
+    local sub = Serialize.decodeElement(element)
+    local kind = sub[1]
+    if not kind or kind == "" then return nil end
+    local present, chars = {}, {}
+    for _, v in ipairs(Util.split(sub[9] or "", EVENT_JOIN)) do
+        local n = tonumber(v)
+        if n then present[#present + 1] = n end
+    end
+    for _, v in ipairs(Util.split(sub[10] or "", EVENT_JOIN)) do
+        if v ~= "" then chars[#chars + 1] = v end
+    end
+    local event = { kind = kind }
+    if sub[2] ~= "" then event.char = sub[2] end
+    event.from = tonumber(sub[3])
+    event.to = tonumber(sub[4])
+    event.seed = tonumber(sub[5])
+    event.version = tonumber(sub[6])
+    event.at = tonumber(sub[7])
+    if sub[8] ~= "" then event.by = sub[8] end
+    if #present > 0 then event.present = present end
+    if #chars > 0 then event.chars = chars end
+    return event
+end
+
+function Serialize.encodeCampaign(campaign)
+    local host = campaign.host or {}
+    local priority = campaign.priority or {}
+
+    local hostElement, err = Serialize.encodeElement({ host.tierCount or 3,
+        host.timerSeconds or 180, host.qualityThreshold or 4,
+        host.lootMode or C.LOOT_MODE.ROLL })
+    if not hostElement then return nil, err end
+
+    local seedChars, err2 = encodeNames(priority.seedChars or {})
+    if not seedChars then return nil, err2 end
+    local order, err3 = encodeNames(priority.order or {})
+    if not order then return nil, err3 end
+
+    local events = {}
+    for i, e in ipairs(priority.log or {}) do
+        local element, err4 = encodeEvent(e)
+        if not element then return nil, err4 end
+        events[i] = element
+    end
+
+    return Serialize.encodeFields({ campaign.id, campaign.label,
+        campaign.createdAt or 0, campaign.createdBy or "", hostElement,
+        priority.version or 0, priority.seed or 0, seedChars, order,
+        Serialize.encodeList(events) })
+end
+
+--- @return a campaign record without a hierarchy, or nil plus a reason
+function Serialize.decodeCampaign(body)
+    local fields = Serialize.decodeFields(body)
+    local id, label = fields[1], fields[2]
+    if not id or id == "" then return nil, "the campaign string has no id" end
+    if not label or label == "" then return nil, "the campaign string has no label" end
+
+    local host = Serialize.decodeElement(fields[5] or "")
+    local version, seed = tonumber(fields[6]), tonumber(fields[7])
+    if not version or not seed then
+        return nil, "the campaign string has a non-numeric priority field"
+    end
+
+    local log = {}
+    for _, element in ipairs(Serialize.decodeList(fields[10])) do
+        local event = decodeEvent(element)
+        if not event then return nil, "the campaign string has an unreadable log event" end
+        log[#log + 1] = event
+    end
+
+    local lootMode = host[4]
+    if lootMode ~= C.LOOT_MODE.SK then lootMode = C.LOOT_MODE.ROLL end
+
+    return {
+        id = id,
+        label = label,
+        createdAt = number(fields[3], 0),
+        createdBy = (fields[4] ~= "" and fields[4] or nil),
+        host = {
+            tierCount        = number(host[1], 3),
+            timerSeconds     = number(host[2], 180),
+            qualityThreshold = number(host[3], 4),
+            lootMode         = lootMode,
+        },
+        priority = {
+            version   = version,
+            seed      = seed,
+            seedChars = Serialize.decodeList(fields[8]),
+            order     = Serialize.decodeList(fields[9]),
+            log       = log,
+        },
+    }
 end
 
 --------------------------------------------------------------------------------
@@ -517,17 +694,20 @@ function Serialize.decodeAbort(body)
     return { roundId = fields[1], reason = fields[2] }
 end
 
-function Serialize.encodeConfig(tierCount, timerSeconds, lootMode)
-    return Serialize.encodeFields({ tierCount, timerSeconds, lootMode })
+function Serialize.encodeConfig(campaignId, tierCount, timerSeconds, lootMode)
+    return Serialize.encodeFields({ campaignId, tierCount, timerSeconds, lootMode })
 end
 
 function Serialize.decodeConfig(body)
     local fields = Serialize.decodeFields(body)
-    local tierCount, timerSeconds = tonumber(fields[1]), tonumber(fields[2])
+    local campaignId = fields[1]
+    if not campaignId or campaignId == "" then return nil, "CFG has no campaign id" end
+    local tierCount, timerSeconds = tonumber(fields[2]), tonumber(fields[3])
     if not tierCount or not timerSeconds then
         return nil, "CFG has a non-numeric field"
     end
-    local lootMode = fields[3]
+    local lootMode = fields[4]
     if not lootMode or lootMode == "" then return nil, "CFG has no loot mode" end
-    return { tierCount = tierCount, timerSeconds = timerSeconds, lootMode = lootMode }
+    return { campaignId = campaignId, tierCount = tierCount,
+             timerSeconds = timerSeconds, lootMode = lootMode }
 end

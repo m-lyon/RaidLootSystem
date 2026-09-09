@@ -44,13 +44,17 @@ function Roster.Validate(order, chars)
         if not VALID_CLASS[entry.class or ""] then
             return nil, "unknown class for " .. name .. ": " .. tostring(entry.class)
         end
-        if entry.isSelf then selves = selves + 1 end
     end
 
-    for name in pairs(chars) do
-        if not seen[name:lower()] then
-            return nil, name .. " has a class but no position in the order"
+    -- `chars` is global and `order` is one campaign's hierarchy (spec 012 section 4),
+    -- so a character with a class and no position is the ordinary state of one you
+    -- did not bring to this campaign -- not a broken roster. Only the ordering is
+    -- checked for duplicates and unknown classes.
+    for name, entry in pairs(chars) do
+        if not VALID_CLASS[entry.class or ""] then
+            return nil, "unknown class for " .. name .. ": " .. tostring(entry.class)
         end
+        if entry.isSelf then selves = selves + 1 end
     end
 
     if selves > 1 then return nil, "more than one character is marked as your own" end
@@ -198,7 +202,19 @@ local presence = {}          -- lowercased character name -> true
 local listeners = {}
 local frame
 
-local function DB() return ns.Database.Roster() end
+--- The active campaign's hierarchy plus the global character table, in the shape
+-- the rest of this file already expected (spec 012 section 4).
+local function DB()
+    local roster = ns.Database.Roster()
+    return { order = ns.Database.Hierarchy(), chars = roster.chars }
+end
+
+--- Forget what other players published. Claims are rebuilt for the active campaign
+-- only (spec 012 section 8), so switching campaigns starts the index over.
+function Roster.ResetPublished()
+    Roster.published = {}
+    Roster.claims = {}
+end
 
 --- UI redraws on this rather than polling.
 function Roster.RegisterListener(fn)
@@ -261,8 +277,10 @@ local function commit(order, chars, silent)
     local ok, why = Roster.Validate(order, chars)
     if not ok then return nil, why end
 
-    local roster = DB()
-    roster.order, roster.chars = order, chars
+    -- The ordering belongs to the active campaign; the characters are global.
+    local campaign = ns.Campaign.Active()
+    campaign.hierarchy = order
+    ns.Database.Roster().chars = chars
     if not silent then
         Roster.Publish()
         fireChanged()
@@ -295,18 +313,35 @@ function Roster.Add(name, class, isSelf)
     local chars = Util.deepCopy(DB().chars)
     order[#order + 1] = name
     chars[name] = { class = class, isSelf = isSelf and true or false }
+
+    -- A character you have just added belongs in the template new campaigns are
+    -- seeded from, or the seeding would be wrong the moment you join one.
+    local template = ns.Database.DefaultHierarchy()
+    if not Util.indexOf(template, name) then template[#template + 1] = name end
+
     return commit(order, chars)
 end
 
+--- Take a character out of your roster entirely: it is global, so it leaves every
+-- campaign's hierarchy and the template with it. Leaving a dangling name behind
+-- would make the campaigns you are not looking at fail validation.
 function Roster.Remove(name)
-    local position = Roster.PositionOf(name)
-    if not position then return nil, "not in your roster" end
-
-    local order = Util.copy(DB().order)
+    local stored = Roster.Resolve(name) or name
     local chars = Util.deepCopy(DB().chars)
-    local stored = table.remove(order, position)
+    if chars[stored] == nil then return nil, "not in your roster" end
     chars[stored] = nil
-    return commit(order, chars)
+
+    local function drop(list)
+        local at = Util.indexOf(list, stored)
+        while at do
+            table.remove(list, at)
+            at = Util.indexOf(list, stored)
+        end
+    end
+    for _, campaign in pairs(ns.Database.Campaigns()) do drop(campaign.hierarchy or {}) end
+    drop(ns.Database.DefaultHierarchy())
+
+    return commit(Util.copy(DB().order), chars)
 end
 
 --- Move a character to a new position, shifting the rest.
@@ -318,6 +353,67 @@ end
 
 function Roster.MoveUp(position)   return Roster.Move(position, position - 1) end
 function Roster.MoveDown(position) return Roster.Move(position, position + 1) end
+
+--------------------------------------------------------------------------------
+-- Editing one campaign's hierarchy, or the template (spec 012 section 7)
+--
+-- The editor grows a campaign picker, so it edits a named list rather than always
+-- the active one. `roster.defaultHierarchy` is reachable through the same calls
+-- under the key "default"; it resolves nothing and is never published.
+--------------------------------------------------------------------------------
+
+Roster.DEFAULT_TARGET = "default"
+
+--- The array a target names, or nil.
+function Roster.HierarchyList(target)
+    if target == nil or target == ns.Campaign.ActiveId() then return ns.Database.Hierarchy() end
+    if target == Roster.DEFAULT_TARGET then return ns.Database.DefaultHierarchy() end
+    return ns.Database.Hierarchy(target)
+end
+
+local function afterEdit(target)
+    if target == Roster.DEFAULT_TARGET then
+        fireChanged()
+        return true
+    end
+    if target == nil or target == ns.Campaign.ActiveId() then
+        Roster.Publish()
+    end
+    fireChanged()
+    return true
+end
+
+--- Reorder inside one hierarchy.
+function Roster.MoveIn(target, from, to)
+    local list = Roster.HierarchyList(target)
+    if not list then return nil, "no such campaign" end
+    if not Util.move(list, from, to) then return nil, "position out of range" end
+    return afterEdit(target)
+end
+
+--- Tick or untick a character for one campaign. A character absent from a
+-- campaign's hierarchy does not participate in it; it is not unclaimed, and it
+-- keeps its row so it can always be re-ticked.
+function Roster.SetIncludedIn(target, name, included)
+    local list = Roster.HierarchyList(target)
+    if not list then return nil, "no such campaign" end
+    local chars = ns.Database.Roster().chars
+    local stored = name
+    for stored_ in pairs(chars) do
+        if stored_:lower() == (name or ""):lower() then stored = stored_ end
+    end
+    if not chars[stored] then return nil, stored .. " is not in your roster" end
+
+    local at = Util.indexOf(list, stored)
+    if included and not at then
+        list[#list + 1] = stored
+    elseif not included and at then
+        table.remove(list, at)
+    else
+        return true
+    end
+    return afterEdit(target)
+end
 
 --------------------------------------------------------------------------------
 -- Claiming from the game (section 4)
@@ -563,10 +659,12 @@ local function rebuildClaims()
     fireChanged()
 end
 
---- Broadcast this player's full ordered roster.
+--- Broadcast this player's ordered roster for the active campaign. ROSTER carries
+-- the campaign id (spec 012 section 10), which is what makes the claim index of
+-- spec 001 section 5 per campaign as a consequence.
 function Roster.Publish()
     local roster = DB()
-    local body, err = Serialize.encodeRoster(roster.order, roster.chars)
+    local body, err = Serialize.encodeRosterMsg(ns.Campaign.ActiveId(), roster.order, roster.chars)
     if not body then
         ns.Print("could not publish your roster: " .. tostring(err))
         return
@@ -589,13 +687,21 @@ function Roster.RequestAll()
 end
 
 local function onRoster(sender, body)
-    local order, chars = Serialize.decodeRoster(body)
-    if not order then
+    local msg, why = Serialize.decodeRosterMsg(body)
+    if not msg then
         ns.Print(string.format("%s sent a roster that could not be read (%s); it was ignored.",
-            tostring(sender), tostring(chars)))
+            tostring(sender), tostring(why)))
         return
     end
-    Roster.published[sender] = { order = order, chars = chars }
+    -- The claim index is rebuilt for the ACTIVE campaign only (spec 012 section 8):
+    -- you never need claims for a campaign you are not raiding in, and letting one
+    -- in would make two players claiming a character in unrelated groups a conflict.
+    if msg.campaignId ~= ns.Campaign.ActiveId() then
+        ns.Debug(string.format("dropped ROSTER from %s: it names campaign %s, not the one "
+            .. "you are in", tostring(sender), tostring(msg.campaignId)))
+        return
+    end
+    Roster.published[sender] = { order = msg.order, chars = msg.chars }
     rebuildClaims()
 end
 

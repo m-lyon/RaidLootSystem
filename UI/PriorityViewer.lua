@@ -92,8 +92,11 @@ function Viewer.Refresh()
     local db = DB()
     local order = db.order or {}
 
+    -- The header names the campaign, so a screenshot is unambiguous about which
+    -- list it shows (spec 012 section 13).
+    local label = ns.Campaign.ActiveLabel()
     if #order == 0 then
-        frame.header:SetText("The priority list is not seeded.")
+        frame.header:SetText(string.format("\"%s\": the priority list is not seeded.", label))
         frame.mode:SetText("|cff888888Suicide Kings is unavailable until the master looter "
             .. "seeds it.|r")
         for _, row in ipairs(rows) do row:Hide() end
@@ -101,8 +104,8 @@ function Viewer.Refresh()
         return
     end
 
-    frame.header:SetText(string.format("%d characters, version %d, seed %d",
-        #order, db.version or 0, db.seed or 0))
+    frame.header:SetText(string.format("\"%s\" - %d characters, version %d, seed %d",
+        label, #order, db.version or 0, db.seed or 0))
 
     local sk = skInForce()
     if sk == nil then
@@ -181,6 +184,7 @@ local function build()
     -- the reader; presence changes regrade the median and the greying.
     ns.Priority.RegisterListener(function() Viewer.Refresh() end)
     ns.Roster.RegisterListener(function() Viewer.Refresh() end)
+    ns.Campaign.RegisterListener(function() Viewer.Refresh() end)
 end
 
 function Viewer.Show()

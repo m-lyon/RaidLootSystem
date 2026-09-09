@@ -83,23 +83,24 @@ local function run(input, ns)
     -- Round payloads, spec 002. Each case encodes, asserts the exact body, then
     -- decodes it back: a change to either side alone fails the case.
     elseif input.kind == "sklist" then
-        local body = S.encodeSklist(input.version, input.seed, input.order)
+        local body = S.encodeSklist(input.campaignId, input.version, input.seed, input.order)
         local msg, why = S.decodeSklist(body)
         if not msg then return { ok = false, body = body, why = why } end
-        return { ok = true, body = body, version = msg.version, seed = msg.seed, order = msg.order }
+        return { ok = true, body = body, campaignId = msg.campaignId, version = msg.version,
+                 seed = msg.seed, order = msg.order }
 
     elseif input.kind == "openMode" then
-        local body = S.encodeOpen(input.roundId, input.tierCount, input.secondsLeft,
-            input.items, input.lootMode)
+        local body = S.encodeOpen(input.campaignId, input.roundId, input.tierCount,
+            input.secondsLeft, input.items, input.lootMode)
         local msg = S.decodeOpen(body)
         return { body = body, lootMode = msg.lootMode }
 
     elseif input.kind == "open" then
-        local body = S.encodeOpen(input.roundId, input.tierCount, input.secondsLeft,
-            input.items)
+        local body = S.encodeOpen(input.campaignId, input.roundId, input.tierCount,
+            input.secondsLeft, input.items)
         local msg, why = S.decodeOpen(body)
         if not msg then return { ok = false, body = body, why = why } end
-        return { ok = true, body = body, roundId = msg.roundId,
+        return { ok = true, body = body, campaignId = msg.campaignId, roundId = msg.roundId,
                  tierCount = msg.tierCount, secondsLeft = msg.secondsLeft,
                  items = msg.items }
 
@@ -134,10 +135,11 @@ local function run(input, ns)
         return { ok = true, body = body, roundId = msg.roundId, reason = msg.reason }
 
     elseif input.kind == "config" then
-        local body = S.encodeConfig(input.tierCount, input.timerSeconds, input.lootMode)
+        local body = S.encodeConfig(input.campaignId, input.tierCount, input.timerSeconds,
+            input.lootMode)
         local msg, why = S.decodeConfig(body)
         if not msg then return { ok = false, body = body, why = why } end
-        return { ok = true, body = body, tierCount = msg.tierCount,
+        return { ok = true, body = body, campaignId = msg.campaignId, tierCount = msg.tierCount,
                  timerSeconds = msg.timerSeconds, lootMode = msg.lootMode }
 
     elseif input.kind == "decodeOnly" then
@@ -287,26 +289,27 @@ return {
         {
             name = "OPEN round-trips its items and its remaining seconds",
             input = {
-                kind = "open", roundId = "Steve-100", tierCount = 3, secondsLeft = 180,
+                kind = "open", campaignId = "Steve-1757155200", roundId = "Steve-100", tierCount = 3,
+                secondsLeft = 180,
                 items = { { idx = 1, itemString = "item:40395", count = 1 },
                           { idx = 2, itemString = "item:40474", count = 2 } },
             },
             expected = {
                 ok = true,
-                body = "Steve-100^3^180^1=item:40395=1~2=item:40474=2",
-                roundId = "Steve-100", tierCount = 3, secondsLeft = 180,
+                body = "Steve-1757155200^Steve-100^3^180^1=item:40395=1~2=item:40474=2",
+                campaignId = "Steve-1757155200", roundId = "Steve-100", tierCount = 3, secondsLeft = 180,
                 items = { { idx = 1, itemString = "item:40395", count = 1 },
                           { idx = 2, itemString = "item:40474", count = 2 } },
             },
         },
         {
             name = "an OPEN carrying no items is rejected rather than shown empty",
-            input = { kind = "decodeOnly", decoder = "decodeOpen", body = "Steve-100^3^180^" },
+            input = { kind = "decodeOnly", decoder = "decodeOpen", body = "Steve-1757155200^Steve-100^3^180^" },
             expected = { ok = false, why = "OPEN carries no items" },
         },
         {
             name = "an OPEN with no round id is rejected",
-            input = { kind = "decodeOnly", decoder = "decodeOpen", body = "^3^180^1=item:1=1" },
+            input = { kind = "decodeOnly", decoder = "decodeOpen", body = "Steve-1757155200^^3^180^1=item:1=1" },
             expected = { ok = false, why = "OPEN has no round id" },
         },
         {
@@ -420,30 +423,35 @@ return {
         },
         {
             name = "OPEN carries its loot mode as a trailing field",
-            input = { kind = "openMode", roundId = "Steve-100", tierCount = 3, secondsLeft = 180,
+            input = { kind = "openMode", campaignId = "Steve-1757155200", roundId = "Steve-100", tierCount = 3,
+                      secondsLeft = 180,
                       items = { { idx = 1, itemString = "item:49623", count = 1 } }, lootMode = "SK" },
-            expected = { body = "Steve-100^3^180^1=item:49623=1^SK", lootMode = "SK" },
+            expected = { body = "Steve-1757155200^Steve-100^3^180^1=item:49623=1^SK", lootMode = "SK" },
         },
         {
             name = "an OPEN without a loot mode decodes as ROLL",
-            input = { kind = "openMode", roundId = "Steve-100", tierCount = 3, secondsLeft = 180,
+            input = { kind = "openMode", campaignId = "Steve-1757155200", roundId = "Steve-100", tierCount = 3,
+                      secondsLeft = 180,
                       items = { { idx = 1, itemString = "item:49623", count = 1 } } },
-            expected = { body = "Steve-100^3^180^1=item:49623=1", lootMode = "ROLL" },
+            expected = { body = "Steve-1757155200^Steve-100^3^180^1=item:49623=1", lootMode = "ROLL" },
         },
         {
             name = "SKLIST round-trips version, seed and order",
-            input = { kind = "sklist", version = 47, seed = 1757155200, order = { "Chop", "Sneaky", "Steve" } },
-            expected = { ok = true, body = "47^1757155200^Chop~Sneaky~Steve", version = 47,
+            input = { kind = "sklist", campaignId = "Steve-1757155200", version = 47, seed = 1757155200,
+                      order = { "Chop", "Sneaky", "Steve" } },
+            expected = { ok = true, body = "Steve-1757155200^47^1757155200^Chop~Sneaky~Steve",
+                         campaignId = "Steve-1757155200", version = 47,
                          seed = 1757155200, order = { "Chop", "Sneaky", "Steve" } },
         },
         {
             name = "an empty SKLIST is a valid unseeded list",
-            input = { kind = "sklist", version = 0, seed = 0, order = {} },
-            expected = { ok = true, body = "0^0^", version = 0, seed = 0, order = {} },
+            input = { kind = "sklist", campaignId = "Steve-1757155200", version = 0, seed = 0, order = {} },
+            expected = { ok = true, body = "Steve-1757155200^0^0^", campaignId = "Steve-1757155200", version = 0, seed = 0,
+                         order = {} },
         },
         {
             name = "an SKLIST naming a character twice is rejected",
-            input = { kind = "decodeOnly", decoder = "decodeSklist", body = "1^5^Ann~ann" },
+            input = { kind = "decodeOnly", decoder = "decodeSklist", body = "Steve-1757155200^1^5^Ann~ann" },
             expected = { ok = false, why = "SKLIST lists ann twice" },
         },
         {
@@ -459,13 +467,14 @@ return {
         },
         {
             name = "CFG round-trips the tier count, the timer and the loot mode",
-            input = { kind = "config", tierCount = 3, timerSeconds = 180, lootMode = "ROLL" },
-            expected = { ok = true, body = "3^180^ROLL", tierCount = 3,
+            input = { kind = "config", campaignId = "Steve-1757155200", tierCount = 3, timerSeconds = 180,
+                      lootMode = "ROLL" },
+            expected = { ok = true, body = "Steve-1757155200^3^180^ROLL", campaignId = "Steve-1757155200", tierCount = 3,
                          timerSeconds = 180, lootMode = "ROLL" },
         },
         {
             name = "a CFG with a non-numeric timer is rejected",
-            input = { kind = "decodeOnly", decoder = "decodeConfig", body = "3^soon^ROLL" },
+            input = { kind = "decodeOnly", decoder = "decodeConfig", body = "Steve-1757155200^3^soon^ROLL" },
             expected = { ok = false, why = "CFG has a non-numeric field" },
         },
     },

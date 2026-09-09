@@ -147,6 +147,7 @@ window → revision → close → resolution → results rendering → history w
 | `star` | A character that would win two items, taking its starred one |
 | `absent` | A suicide with absent characters in the list, holding their indices |
 | `restore` | A failed delivery returning a character to its prior index |
+| `campaign` | An invite, a join, and a round with a non-member present (spec 012 §14) |
 
 **Guard rails:**
 

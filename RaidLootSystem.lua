@@ -28,9 +28,9 @@ end
 --------------------------------------------------------------------------------
 
 local function status()
-    local roster = ns.Database.Roster()
-    ns.Print(string.format("version %s, %d characters in your roster, tier count %d.",
-        C.VERSION, #roster.order, ns.Database.DefaultTierCount()))
+    local campaign = ns.Campaign.Active()
+    ns.Print(string.format("version %s, campaign \"%s\", %d characters in it, tier count %d.",
+        C.VERSION, campaign.label, #campaign.hierarchy, ns.Database.DefaultTierCount()))
 
     local contested = ns.Roster.ContestedNames()
     if #contested > 0 then
@@ -109,8 +109,11 @@ local function startRound()
         ns.Print("there are no candidates. /rls loot to see what was found.")
         return
     end
-    local ok, why = ns.Round.Open(items)
-    if not ok then ns.Print(why) end
+    -- A host cannot disenfranchise anyone without being told (spec 012 section 6).
+    ns.Campaigns.GuardOpen(function()
+        local ok, why = ns.Round.Open(items)
+        if not ok then ns.Print(why) end
+    end)
 end
 
 local function rollFor(argument)
@@ -136,6 +139,51 @@ local function setQuality(argument)
     ns.Print("only loot of quality " .. tonumber(argument) .. " and above is offered.")
 end
 
+--- `/rls campaign ...` (spec 012 section 13).
+local function campaignCommand(argument)
+    local sub, rest = argument:match("^(%S*)%s*(.-)$")
+    sub = (sub or ""):lower()
+    local Campaign = ns.Campaign
+
+    if sub == "" then
+        Campaign.PrintList()
+    elseif sub == "new" then
+        if rest == "" then
+            ns.Print("give a label: /rls campaign new Tuesday 25")
+        else
+            ns.Campaigns.ShowCreate(rest)
+        end
+    elseif sub == "switch" then
+        local campaign = Campaign.ByIndex(rest)
+        if not campaign then
+            ns.Print("no campaign " .. rest .. "; /rls campaign lists them.")
+        else
+            local ok, why = Campaign.Switch(campaign.id)
+            if not ok then ns.Print(why) end
+        end
+    elseif sub == "rename" then
+        local ok, why = Campaign.Rename(Campaign.ActiveId(), rest)
+        if not ok then ns.Print(why) else ns.Print("renamed to \"" .. rest .. "\".") end
+    elseif sub == "delete" then
+        local campaign = Campaign.ByIndex(rest)
+        if not campaign then
+            ns.Print("no campaign " .. rest .. "; /rls campaign lists them.")
+        else
+            ns.Campaigns.PromptDelete(campaign.id)
+        end
+    elseif sub == "invite" then
+        local ok, why = Campaign.Invite()
+        if not ok then ns.Print(why) end
+    elseif sub == "export" then
+        ns.Campaigns.ShowExport(Campaign.ActiveId())
+    elseif sub == "import" then
+        if rest == "" then ns.Campaigns.ShowImport() else ns.Campaigns.Import(rest) end
+    else
+        ns.Print("/rls campaign [new <label> | switch <n> | rename <label> | delete <n> "
+            .. "| invite | export | import <string>]")
+    end
+end
+
 local function help()
     ns.Print("commands:")
     ns.Print("  /rls              open the roll window, or your hierarchy when no round is live")
@@ -143,6 +191,9 @@ local function help()
     ns.Print("  /rls hierarchy    open your hierarchy")
     ns.Print("  /rls host         open the host panel (master looter)")
     ns.Print("  /rls history      open the history browser")
+    ns.Print("  /rls campaign     list your campaigns, marking the active one")
+    ns.Print("  /rls campaign new <label> | switch <n> | rename <label> | delete <n>")
+    ns.Print("  /rls campaign invite | export | import <string>")
     ns.Print("  /rls sk list      print the priority list")
     ns.Print("  /rls sk verify    replay the priority list from its seed and report drift")
     ns.Print("  /rls simulate [items=N] [players=N] [scenario=name]  run the pipeline solo")
@@ -203,6 +254,8 @@ local function dispatch(input)
             ns.Print("/rls sk for the list window, /rls sk list to print it, "
                 .. "/rls sk verify to check it. Seeding and edits are in the host panel.")
         end
+    elseif command == "campaign" then
+        campaignCommand(argument)
     elseif command == "pending" then
         ns.Pending.PrintList()
     elseif command == "deliver" then
@@ -288,6 +341,7 @@ loader:SetScript("OnEvent", function(_, event, addonName)
         end
     elseif event == "PLAYER_LOGIN" then
         ns.Comms.Init()
+        ns.Campaign.Init()
         ns.History.Init()
         ns.Announce.Init()
         ns.Roster.Init()
@@ -300,7 +354,8 @@ loader:SetScript("OnEvent", function(_, event, addonName)
         ns.Priority.Init()
         ns.RollWindow.Init()
         ns.HostPanel.Init()
+        ns.Campaigns.Init()
         ns.Minimap.Init()
-        ns.Comms.Send(C.OPS.HI, C.VERSION)
+        ns.Comms.Send(C.OPS.HI, ns.Round.HiBody())
     end
 end)

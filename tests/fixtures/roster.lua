@@ -91,13 +91,16 @@ return {
             expected = { ok = false, why = "no class recorded for Steve" },
         },
         {
-            name = "a class entry with no position is rejected",
+            -- Spec 012 section 4: chars is global and the ordering is one campaign's
+            -- hierarchy, so a character you did not bring to this campaign is the
+            -- ordinary state, not a broken roster.
+            name = "a class entry with no position is accepted: it is out of this campaign",
             input = {
                 kind = "validate",
                 order = { "Steve" },
                 chars = { Steve = { class = "MAGE" }, Ghost = { class = "PRIEST" } },
             },
-            expected = { ok = false, why = "Ghost has a class but no position in the order" },
+            expected = { ok = true },
         },
         {
             name = "an unknown class is rejected",

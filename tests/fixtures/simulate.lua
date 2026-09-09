@@ -115,7 +115,7 @@ return {
           expected = { why = "unknown scenario: nope" } },
         { name = "the scenario list is the spec's table",
           input = { op = "scenarios" },
-          expected = "abort, absent, chunked, contested, default, duplicate, restore, sk, special, star, tie, token, unclaimed" },
+          expected = "abort, absent, campaign, chunked, contested, default, duplicate, restore, sk, special, star, tie, token, unclaimed" },
 
         consistent("default", nil, { players = 3, items = 4, entries = 24 }),
         consistent("default", { items = 6, players = 5 }, { players = 5, items = 6, entries = 60 }),
