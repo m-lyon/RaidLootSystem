@@ -8,7 +8,7 @@ ns.Constants = {}
 local C = ns.Constants
 
 -- Addon version. Keep in step with the .toc "## Version:" field.
-C.VERSION = "0.1.0"
+C.VERSION = "0.2.0"
 
 --------------------------------------------------------------------------------
 -- Comms (spec 000 section 5)

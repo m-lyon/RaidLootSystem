@@ -159,5 +159,5 @@ Set the group to master loot with you as master looter. The other client is "the
 
 ## 6. When it has survived a raid night
 
-- [ ] Tag `0.1.0` (the `.toc` version). Stay on `0.x` until then.
+- [ ] Tag the current `.toc` version. Stay on `0.x` until then.
 - [ ] `notes.md` has been folded into `Data/VERIFY.md`; delete it when you are happy with that.
