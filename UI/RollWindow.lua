@@ -457,11 +457,14 @@ end
 
 --- This player's roster rows, with what the grid needs to know about each.
 local function rosterRows(round)
-    local roster = DB().Roster()
+    local chars = DB().Roster().chars
+    -- The ordering is the active campaign's hierarchy, not a top-level roster.order
+    -- -- that field is gone (spec 012 section 4).
+    local order = DB().Hierarchy()
     local Roster = ns.Roster
     local out = {}
-    for i, name in ipairs(roster.order) do
-        local entry = roster.chars[name] or {}
+    for i, name in ipairs(order) do
+        local entry = chars[name] or {}
         local claim = Roster.claims[name:lower()]
         out[i] = {
             name = name, class = entry.class, isSelf = entry.isSelf,

@@ -385,6 +385,28 @@ return {
             expected = { "S2" },
         },
         {
+            -- Acceptance (012 section 13): the browser defaults to the active campaign,
+            -- so a record another campaign wrote is not in it.
+            name = "filter by campaign excludes other campaigns and records with no id",
+            input = { op = "filter", filter = { campaignId = "Steve-1" }, records = {
+                won("S1", T, "Bonk", "Dave", "item:1", "DELIVERED", { campaignId = "Steve-1" }),
+                won("S2", T + 10, "Sneaky", "Steve", "item:2", "DELIVERED", { campaignId = "Steve-2" }),
+                won("S3", T + 20, "Bonk", "Dave", "item:3", "DELIVERED"),
+            } },
+            expected = { "S1" },
+        },
+        {
+            -- A record written before campaigns existed has no id, so All campaigns is
+            -- the only place it can be seen.
+            name = "no campaign filter shows every campaign and the records with no id",
+            input = { op = "filter", filter = {}, records = {
+                won("S1", T, "Bonk", "Dave", "item:1", "DELIVERED", { campaignId = "Steve-1" }),
+                won("S2", T + 10, "Sneaky", "Steve", "item:2", "DELIVERED", { campaignId = "Steve-2" }),
+                won("S3", T + 20, "Bonk", "Dave", "item:3", "DELIVERED"),
+            } },
+            expected = { "S3", "S2", "S1" },
+        },
+        {
             -- Acceptance (009): a simulated round does not appear by default.
             name = "simulated records are hidden unless asked for",
             input = { op = "filter", filter = {}, records = {

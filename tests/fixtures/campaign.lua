@@ -301,6 +301,20 @@ return {
             },
         },
         {
+            -- A false setting has to survive: the and/or idiom would hand back the
+            -- default true and silently leave the round closing itself.
+            name = "autoClose = false is carried, not replaced by the default",
+            input = { op = "new", label = "Manual", creator = "Steve", timestamp = 100,
+                      settings = { autoClose = false } },
+            expected = {
+                ok = true, id = "Steve-100", label = "Manual",
+                createdAt = 100, createdBy = "Steve", hierarchy = {},
+                host = { tierCount = 3, timerSeconds = 180, qualityThreshold = 4,
+                         lootMode = "ROLL", autoClose = false },
+                listed = 0, logged = 0, version = 0,
+            },
+        },
+        {
             -- Spec 010 section 2: SK is selectable only once a list exists, and a
             -- new campaign has none.
             name = "a new campaign cannot start in Suicide Kings",

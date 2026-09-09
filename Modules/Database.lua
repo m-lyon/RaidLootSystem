@@ -59,7 +59,10 @@ function DB.Load()
 
     Util.applyDefaults(db, C.DEFAULTS)
     DB.db = db
-    ns.Campaign.EnsureDefault()
+    -- The first campaign is NOT built here. Its id is stamped with the player name,
+    -- which is not reliably known at ADDON_LOADED, and that id is permanent and goes
+    -- out on the wire. Campaign.Init builds it at PLAYER_LOGIN instead, and
+    -- Campaign.Active still builds one on demand for anything that reads earlier.
     return db
 end
 

@@ -322,6 +322,22 @@ function Roster.Add(name, class, isSelf)
     return commit(order, chars)
 end
 
+--- Drop from every campaign's hierarchy and from the template any name the character
+-- table no longer holds. A hierarchy naming a character that is gone is invisible:
+-- Campaign.HierarchyRows filters it out of the display, so displayed positions and
+-- stored indices diverge and a move reorders the wrong pair.
+local function pruneHierarchies(chars)
+    local known = {}
+    for name in pairs(chars) do known[name:lower()] = true end
+    local function prune(list)
+        for i = #list, 1, -1 do
+            if not known[tostring(list[i]):lower()] then table.remove(list, i) end
+        end
+    end
+    for _, campaign in pairs(ns.Database.Campaigns()) do prune(campaign.hierarchy or {}) end
+    prune(ns.Database.DefaultHierarchy())
+end
+
 --- Take a character out of your roster entirely: it is global, so it leaves every
 -- campaign's hierarchy and the template with it. Leaving a dangling name behind
 -- would make the campaigns you are not looking at fail validation.
@@ -331,15 +347,7 @@ function Roster.Remove(name)
     if chars[stored] == nil then return nil, "not in your roster" end
     chars[stored] = nil
 
-    local function drop(list)
-        local at = Util.indexOf(list, stored)
-        while at do
-            table.remove(list, at)
-            at = Util.indexOf(list, stored)
-        end
-    end
-    for _, campaign in pairs(ns.Database.Campaigns()) do drop(campaign.hierarchy or {}) end
-    drop(ns.Database.DefaultHierarchy())
+    pruneHierarchies(chars)
 
     return commit(Util.copy(DB().order), chars)
 end
@@ -726,6 +734,13 @@ function Roster.ApplyImport(order, chars)
     for name, entry in pairs(chars) do
         entry.isSelf = (me ~= nil and name:lower() == me:lower())
     end
+    -- Validated before anything is dropped: a refused import must leave the other
+    -- campaigns exactly as it found them.
+    local ok, why = Roster.Validate(order, chars)
+    if not ok then return nil, why end
+    -- The character table is replaced wholesale, so every other campaign's hierarchy
+    -- can be left naming a character this import dropped.
+    pruneHierarchies(chars)
     return commit(order, chars)
 end
 

@@ -11,8 +11,8 @@ one click, and the winning bot is told to equip it.
 > **Status: 0.x, implemented, not yet survived a real raid night.**
 > Read [`docs/DESIGN.md`](docs/DESIGN.md) for the player-facing intent behind it.
 >
-> **Campaigns** — separate groups, each with their own priority list — are specified in
-> [spec 012](docs/specs/012-campaigns.md) and **not yet built**. See [Campaigns](#campaigns) below.
+> **Campaigns** — separate groups, each with their own priority list — are built. See
+> [Campaigns](#campaigns) below and [spec 012](docs/specs/012-campaigns.md) for the design.
 
 ---
 
@@ -165,9 +165,9 @@ touch.
 
 ## Campaigns
 
-> **Specified, not yet built.** [Spec 012](docs/specs/012-campaigns.md) is the full design;
-> [DESIGN §2](docs/DESIGN.md#2-core-concepts) is the player-facing version. Nothing below works in
-> the current build — today there is exactly one implicit campaign and no way to have a second.
+> [Spec 012](docs/specs/012-campaigns.md) is the full design; [DESIGN §2](docs/DESIGN.md#2-core-concepts)
+> is the player-facing version. A fresh install gets one campaign called "Main", so a group that
+> only ever needs one never has to think about this.
 
 A **campaign** is a named group you raid with. It owns the priority list, the raid leader's
 settings, and each person's ordering — and none of that is visible to any other campaign.
@@ -190,13 +190,15 @@ Two properties worth knowing up front:
   which is what stops a guest night with strangers from overwriting the list your own group has
   spent a month building.
 
-Planned commands:
+Commands:
 
-| Command | What it will do |
+| Command | What it does |
 |---|---|
 | `/rls campaign` | List your campaigns, marking the active one. |
 | `/rls campaign new <label>` | Create one, then pick which characters you're bringing. |
 | `/rls campaign switch <n>` | Change the active campaign. |
+| `/rls campaign rename <label>` | Rename the active campaign. |
+| `/rls campaign delete <n>` | Delete one, after a confirmation. |
 | `/rls campaign invite` | Master looter only — invite the raid to join this campaign. |
 | `/rls campaign export` / `import <string>` | Move a whole campaign between clients. |
 

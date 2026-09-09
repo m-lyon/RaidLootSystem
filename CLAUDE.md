@@ -130,19 +130,18 @@ can open with `/rls sk`. Its row model is `PriorityList.viewRows` in `Core/`, an
 `PriorityList.aboveMedian` is the single definition of the near-the-top rule --
 `RollWindow.AboveMedian` delegates to it so the two screens cannot disagree.
 
-**Spec 012 (campaigns) is specified and not built.** It lands in two commits, in this order:
+**Spec 012 (campaigns) is built**, in the two commits it was specified to land in:
 
-1. **The rename**, 012 §2 — **done**. One loot source's roll is a `round` everywhere in code, wire
+1. **The rename**, 012 §2. One loot source's roll is a `round` everywhere in code, wire
    and docs; `Modules/Session.lua` became `Modules/Round.lua` and specs 002 and 004 were renamed
    with it. No behavioural change.
 2. **The feature** — `Modules/Campaign.lua`, `UI/Campaigns.lua`, `schema` 3 with no migration
    (defaults are rebuilt), the `CINV` op, and campaign ids on `HI` / `ROSTER` / `OPEN` / `SKLIST` /
-   `CFG`. `host` and `priority` stop existing at the top level of the saved variables and move onto
-   each campaign; read them through `Campaign.Active()`.
+   `CFG`, plus the `campaign` suite. `host` and `priority` no longer exist at the top level of the
+   saved variables and live on each campaign; read them through `Campaign.Active()`, and read a
+   client's own ordering through `Database.Hierarchy()` — `roster.order` is gone.
 
-Do not start the feature before the rename has landed on its own.
-
-The rules that are easiest to get wrong when building it, each with its spec section:
+The rules that are easiest to get wrong when working on it, each with its spec section:
 
 - **A campaign-bearing message is applied to the campaign it names, if you are a member of it;
   otherwise it is dropped and logged.** Exceptions are `CINV` and `OPEN` only. This one rule is

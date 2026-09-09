@@ -477,7 +477,10 @@ local function buildTransferPanel(parent)
             return
         end
         local preview = table.concat(order, ", ")
-        local current = #ns.Database.Roster().order
+        -- An import replaces the global character table, so the count that matters is
+        -- how many characters you have, not how many this campaign ranks.
+        local current = 0
+        for _ in pairs(ns.Database.Roster().chars) do current = current + 1 end
         StaticPopup_Show("RLS_CONFIRM_IMPORT",
             string.format("Replace your current roster of %d characters with these %d?\n\n%s",
                 current, #order, preview),

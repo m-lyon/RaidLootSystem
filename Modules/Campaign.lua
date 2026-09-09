@@ -64,7 +64,9 @@ function Campaign.New(label, settings, ctx)
     local defaults = C.CAMPAIGN_DEFAULTS
     local host = {}
     for k, v in pairs(defaults.host) do
-        host[k] = settings[k] ~= nil and settings[k] or v
+        -- Spelled out rather than and/or: autoClose is a boolean, and the idiom
+        -- cannot carry a false through.
+        if settings[k] ~= nil then host[k] = settings[k] else host[k] = v end
     end
     -- A new campaign has no priority list, so Suicide Kings is unreachable in it
     -- until one is seeded (spec 010 section 2). The create dialog greys the control;
@@ -475,6 +477,10 @@ function Campaign.Switch(campaignId)
     -- campaign we left says nothing about this one.
     ns.Roster.ResetPublished()
     ns.Roster.Publish()
+    -- Peers republish on a roster event or a request, and everyone already in this
+    -- campaign has no reason to send one. Without this ask, the claim index stays
+    -- empty and every entry is rejected as NOT_PUBLISHED (spec 012 section 8).
+    ns.Roster.RequestAll()
     ns.Print(string.format("campaign: %s.", campaign.label or campaign.id))
     fireChanged()
     return true
@@ -667,5 +673,8 @@ function Campaign.ByIndex(n)
 end
 
 function Campaign.Init()
+    -- At PLAYER_LOGIN, so the default campaign's permanent id carries the real
+    -- player name rather than the fallback.
+    Campaign.EnsureDefault()
     ns.Comms.RegisterHandler(C.OPS.CINV, onCinv)
 end
