@@ -170,8 +170,35 @@ local function campaignOptions()
     return options
 end
 
+--- Delete needs its own picker: the switcher above cannot serve double duty, because
+-- selecting in it *is* switching, and section 11 refuses to delete the campaign you
+-- are in. Undeletable campaigns are listed and greyed with the reason on the tooltip
+-- rather than hidden -- "why is mine not in the list" is a worse question than being
+-- told why not.
+local function deletableOptions()
+    local options = { { value = "", text = "Delete which?" } }
+    for _, c in ipairs(ns.Campaign.List()) do
+        local blocker = ns.Campaign.DeleteRefusal(c.id)
+        options[#options + 1] = {
+            value = c.id,
+            text = c.label or c.id,
+            disabled = blocker ~= nil,
+            tooltipTitle = blocker and (c.label or c.id) or nil,
+            tooltip = blocker,
+        }
+    end
+    return options
+end
+
+-- Where the note starts, measured from the panel's top: title, picker, the button
+-- row, then the delete picker. The note wraps to an unpredictable number of lines,
+-- so the section's own height is computed from it in refreshCampaign rather than
+-- guessed here -- layoutSections stacks panels by GetHeight, so a section that
+-- under-reports overlaps the one below it.
+local NOTE_TOP = 122
+
 local function buildCampaign(parent)
-    local panel = section(parent, "Campaign", 104)
+    local panel = section(parent, "Campaign", NOTE_TOP + 30)
 
     panel.picker = Widgets.Dropdown(panel, "RaidLootSystemHostCampaign", 150,
         campaignOptions(), function(value)
@@ -208,21 +235,33 @@ local function buildCampaign(parent)
         .. "next invite or round.", function()
             ns.Campaigns.PromptRename(ns.Campaign.ActiveId())
         end, panel.new)
-    panel.delete = small("Delete", "Delete a campaign. Refused while it holds an undelivered "
-        .. "item, and you cannot delete the one you are in.", function()
-            ns.Campaigns.PromptDelete(ns.Campaign.ActiveId())
-        end, panel.rename)
     panel.export = small("Export", "A string carrying this campaign's id, settings and priority "
         .. "list, for repairing a fork.", function()
             ns.Campaigns.ShowExport(ns.Campaign.ActiveId())
-        end, panel.delete)
+        end, panel.rename)
     panel.import = small("Import", "Paste a campaign string. Importing one you already have is "
         .. "refused unless you confirm the overwrite.", function()
             ns.Campaigns.ShowImport()
         end, panel.export)
 
+    panel.deleteLabel = Widgets.Label(panel, "Delete", "GameFontNormalSmall")
+    panel.deleteLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -88)
+
+    panel.delete = Widgets.Dropdown(panel, "RaidLootSystemHostCampaignDelete", 150,
+        deletableOptions(), function(value)
+            -- SetValue has already run with the chosen id, so put the prompt back
+            -- before the confirmation opens: this control picks a target, it is not
+            -- a selection that persists.
+            panel.delete:SetValue("")
+            if value ~= "" then ns.Campaigns.PromptDelete(value) end
+        end)
+    -- No frame-level tooltip: a UIDropDownMenuTemplate frame has no mouse enabled, so
+    -- Widgets.Tooltip would never fire on it. The per-option tooltips carry the reason
+    -- a given campaign cannot be deleted, which is the part worth reading anyway.
+    panel.delete:SetPoint("TOPLEFT", panel, "TOPLEFT", 50, -84)
+
     panel.note = Widgets.Label(panel, "", "GameFontDisableSmall")
-    panel.note:SetPoint("TOPLEFT", panel.invite, "BOTTOMLEFT", -2, -6)
+    panel.note:SetPoint("TOPLEFT", panel, "TOPLEFT", 10, -NOTE_TOP)
     panel.note:SetWidth(INNER - 24)
     panel.note:SetJustifyH("LEFT")
     return panel
@@ -244,10 +283,17 @@ local function refreshCampaign()
             joined.joined, joined.total, table.concat(joined.missing, ", ")))
     end
 
+    campaign.delete:SetOptions(deletableOptions())
+    campaign.delete:SetValue("")
+
     campaign.note:SetText(string.format(
         "Tier count, timer, quality and loot mode below belong to \"%s\". "
         .. "Its priority list holds %d characters.", active.label,
         #(active.priority.order or {})))
+
+    -- Measured after SetText, so a note that wraps to two lines is not clipped and
+    -- does not overlap the section below.
+    campaign:SetHeight(NOTE_TOP + math.max(campaign.note:GetHeight(), 12) + 10)
 end
 
 --------------------------------------------------------------------------------
