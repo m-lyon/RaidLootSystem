@@ -55,6 +55,21 @@ local function run(input, ns)
         local why
         if not order then why = second end
         return { ok = order ~= nil, count = order and #order or 0, why = why }
+
+    elseif input.kind == "prune" then
+        return Roster.PruneToChars(input.list, input.chars)
+
+    elseif input.kind == "seed" then
+        return Roster.SeedTemplate(input.template, input.order)
+
+    elseif input.kind == "importTemplate" then
+        -- What an import does to the template: prune to the new character table,
+        -- then seed with the imported ordering (spec 012 section 7).
+        local template = Roster.PruneToChars(input.template, input.chars)
+        return Roster.SeedTemplate(template, input.order)
+
+    elseif input.kind == "importLosses" then
+        return Roster.ImportLosses(input.campaigns, input.chars, input.activeId)
     end
     return nil
 end
@@ -265,6 +280,73 @@ return {
             name = "surrounding whitespace is tolerated",
             input = { kind = "import", text = "  RLS1:Steve=MAGE~Sneaky=ROGUE  " },
             expected = { ok = true, count = 2 },
+        },
+
+        -- Hierarchies against the character table, spec 012 section 7.
+        {
+            name = "pruning drops the names the character table no longer holds",
+            input = { kind = "prune", list = { "Steve", "Ghost", "Sneaky" },
+                      chars = { Steve = { class = "MAGE" }, Sneaky = { class = "ROGUE" } } },
+            expected = { "Steve", "Sneaky" },
+        },
+        {
+            name = "pruning matches case-insensitively",
+            input = { kind = "prune", list = { "steve" },
+                      chars = { Steve = { class = "MAGE" } } },
+            expected = { "steve" },
+        },
+        {
+            name = "seeding appends only the names the template does not already hold",
+            input = { kind = "seed", template = { "Steve" },
+                      order = { "Sneaky", "steve", "Smash" } },
+            expected = { "Steve", "Sneaky", "Smash" },
+        },
+        {
+            -- The bug: an import that shares no character with the old roster pruned
+            -- the template to nothing, so the next new campaign or join opened with
+            -- nothing ticked and Campaign.Join refused it.
+            name = "an import reseeds the template it just pruned to nothing",
+            input = { kind = "importTemplate", template = { "Steve", "Sneaky" },
+                      order = { "Bonk", "Whacky" },
+                      chars = { Bonk = { class = "WARRIOR" }, Whacky = { class = "DRUID" } } },
+            expected = { "Bonk", "Whacky" },
+        },
+        {
+            name = "an overlapping import keeps the shared names in their template order",
+            input = { kind = "importTemplate", template = { "Sneaky", "Steve" },
+                      order = { "Steve", "Bonk" },
+                      chars = { Steve = { class = "MAGE" }, Bonk = { class = "WARRIOR" } } },
+            expected = { "Steve", "Bonk" },
+        },
+        {
+            -- The confirmation has to say which other campaigns lose characters: the
+            -- active one is excluded because the import replaces its ordering outright.
+            name = "import losses name every other campaign that loses a character",
+            input = { kind = "importLosses", activeId = "Steve-1",
+                      chars = { Bonk = { class = "WARRIOR" } },
+                      campaigns = {
+                          ["Steve-1"] = { id = "Steve-1", label = "Main",
+                                          hierarchy = { "Steve", "Sneaky" } },
+                          ["Steve-2"] = { id = "Steve-2", label = "Alt run",
+                                          hierarchy = { "Steve" } },
+                          ["Steve-3"] = { id = "Steve-3", label = "Tuesdays",
+                                          hierarchy = { "Bonk" } },
+                          ["Steve-4"] = { id = "Steve-4", label = "Ally",
+                                          hierarchy = { "Smash" } },
+                      } },
+            expected = { "Ally", "Alt run" },
+        },
+        {
+            name = "import losses are empty when no other campaign ranks a dropped name",
+            input = { kind = "importLosses", activeId = "Steve-1",
+                      chars = { Bonk = { class = "WARRIOR" } },
+                      campaigns = {
+                          ["Steve-1"] = { id = "Steve-1", label = "Main",
+                                          hierarchy = { "Steve" } },
+                          ["Steve-2"] = { id = "Steve-2", label = "Alt run",
+                                          hierarchy = { "Bonk" } },
+                      } },
+            expected = {},
         },
     },
 }

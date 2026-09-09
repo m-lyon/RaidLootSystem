@@ -193,6 +193,70 @@ function Roster.ParseImport(text)
 end
 
 --------------------------------------------------------------------------------
+-- Pure: hierarchies against the character table (spec 012 section 7)
+--
+-- The character table is global and every hierarchy names into it. A hierarchy
+-- naming a character that is gone is invisible: Campaign.HierarchyRows filters it
+-- out of the display, so displayed positions and stored indices diverge and a move
+-- reorders the wrong pair.
+--------------------------------------------------------------------------------
+
+--- Drop from `list` every name `chars` no longer holds. Mutates and returns it.
+function Roster.PruneToChars(list, chars)
+    local known = {}
+    for name in pairs(chars or {}) do known[name:lower()] = true end
+    for i = #list, 1, -1 do
+        if not known[tostring(list[i]):lower()] then table.remove(list, i) end
+    end
+    return list
+end
+
+--- Append to `template` every name in `order` it does not already hold, the way
+-- Roster.Add appends a character it has just created. An import replaces the whole
+-- character table, so a template that was only pruned ends up holding whatever the
+-- old and new rosters happen to share -- usually nothing. It is the seed for every
+-- new campaign and every join, and an empty one opens those dialogs with nothing
+-- ticked. Mutates and returns it.
+function Roster.SeedTemplate(template, order)
+    local held = {}
+    for _, name in ipairs(template) do held[tostring(name):lower()] = true end
+    for _, name in ipairs(order or {}) do
+        local key = tostring(name):lower()
+        if not held[key] then
+            held[key] = true
+            template[#template + 1] = name
+        end
+    end
+    return template
+end
+
+--- The labels of the campaigns an import would strip characters from, sorted.
+--
+-- The active campaign is excluded: the import replaces its ordering outright, which
+-- is the thing the player asked for. Every other campaign loses names silently, and
+-- saying so is what makes the confirmation honest about what it destroys.
+--
+-- @param campaigns  map of id -> campaign
+-- @param chars      the character table the import would install
+-- @param activeId   the campaign whose ordering the import replaces
+function Roster.ImportLosses(campaigns, chars, activeId)
+    local known = {}
+    for name in pairs(chars or {}) do known[name:lower()] = true end
+    local labels = {}
+    for id, campaign in pairs(campaigns or {}) do
+        if id ~= activeId then
+            local lost = false
+            for _, name in ipairs(campaign.hierarchy or {}) do
+                if not known[tostring(name):lower()] then lost = true end
+            end
+            if lost then labels[#labels + 1] = tostring(campaign.label or id) end
+        end
+    end
+    table.sort(labels)
+    return labels
+end
+
+--------------------------------------------------------------------------------
 -- WoW-facing state. Nothing below here runs at file scope.
 --------------------------------------------------------------------------------
 
@@ -323,19 +387,12 @@ function Roster.Add(name, class, isSelf)
 end
 
 --- Drop from every campaign's hierarchy and from the template any name the character
--- table no longer holds. A hierarchy naming a character that is gone is invisible:
--- Campaign.HierarchyRows filters it out of the display, so displayed positions and
--- stored indices diverge and a move reorders the wrong pair.
+-- table no longer holds.
 local function pruneHierarchies(chars)
-    local known = {}
-    for name in pairs(chars) do known[name:lower()] = true end
-    local function prune(list)
-        for i = #list, 1, -1 do
-            if not known[tostring(list[i]):lower()] then table.remove(list, i) end
-        end
+    for _, campaign in pairs(ns.Database.Campaigns()) do
+        Roster.PruneToChars(campaign.hierarchy or {}, chars)
     end
-    for _, campaign in pairs(ns.Database.Campaigns()) do prune(campaign.hierarchy or {}) end
-    prune(ns.Database.DefaultHierarchy())
+    Roster.PruneToChars(ns.Database.DefaultHierarchy(), chars)
 end
 
 --- Take a character out of your roster entirely: it is global, so it leaves every
@@ -689,7 +746,10 @@ function Roster.Publish()
     ns.Comms.Send(C.OPS.ROSTER, body)
 end
 
---- Host-side: ask everyone to resend their roster.
+--- Ask everyone to resend their roster. Not host-only: Campaign.Switch calls it from
+-- any client, because the members already in the campaign being switched to have no
+-- event of their own to republish on and their entries would be rejected as
+-- NOT_PUBLISHED (spec 012 section 8).
 function Roster.RequestAll()
     ns.Comms.Send(C.OPS.RREQ, "")
 end
@@ -741,6 +801,9 @@ function Roster.ApplyImport(order, chars)
     -- The character table is replaced wholesale, so every other campaign's hierarchy
     -- can be left naming a character this import dropped.
     pruneHierarchies(chars)
+    -- Pruning alone empties the template, which seeds every new campaign and every
+    -- join (spec 012 section 7); the imported ordering is what belongs in it now.
+    Roster.SeedTemplate(ns.Database.DefaultHierarchy(), order)
     return commit(order, chars)
 end
 

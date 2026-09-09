@@ -481,10 +481,17 @@ local function buildTransferPanel(parent)
         -- how many characters you have, not how many this campaign ranks.
         local current = 0
         for _ in pairs(ns.Database.Roster().chars) do current = current + 1 end
-        StaticPopup_Show("RLS_CONFIRM_IMPORT",
-            string.format("Replace your current roster of %d characters with these %d?\n\n%s",
-                current, #order, preview),
-            nil, { order = order, chars = chars })
+        local text = string.format("Replace your current roster of %d characters with these %d?"
+            .. "\n\n%s", current, #order, preview)
+        -- The other campaigns lose every name this import drops, and that loss is
+        -- invisible until the raid night you next open one of them.
+        local losing = ns.Roster.ImportLosses(ns.Database.Campaigns(), chars,
+            ns.Campaign.ActiveId())
+        if #losing > 0 then
+            text = text .. string.format("\n\nThis also drops characters from: %s.",
+                table.concat(losing, ", "))
+        end
+        StaticPopup_Show("RLS_CONFIRM_IMPORT", text, nil, { order = order, chars = chars })
     end)
     importButton:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 10, 8)
 
