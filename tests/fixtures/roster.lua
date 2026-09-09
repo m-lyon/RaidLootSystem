@@ -348,5 +348,21 @@ return {
                       } },
             expected = {},
         },
+        {
+            -- Labels are cosmetic, not unique (Campaign.ValidLabel never checks for a
+            -- collision); two campaigns sharing one must print once, not "X, X".
+            name = "import losses dedupes campaigns that share a label",
+            input = { kind = "importLosses", activeId = "Steve-1",
+                      chars = { Bonk = { class = "WARRIOR" } },
+                      campaigns = {
+                          ["Steve-1"] = { id = "Steve-1", label = "Main",
+                                          hierarchy = { "Steve" } },
+                          ["Steve-2"] = { id = "Steve-2", label = "Alt run",
+                                          hierarchy = { "Steve" } },
+                          ["Steve-3"] = { id = "Steve-3", label = "Alt run",
+                                          hierarchy = { "Sneaky" } },
+                      } },
+            expected = { "Alt run" },
+        },
     },
 }

@@ -242,14 +242,21 @@ end
 function Roster.ImportLosses(campaigns, chars, activeId)
     local known = {}
     for name in pairs(chars or {}) do known[name:lower()] = true end
-    local labels = {}
+    -- Campaign labels are cosmetic, not unique (Campaign.ValidLabel never checks
+    -- for a collision), so two distinct campaigns can print the same string here.
+    -- Dedupe rather than list a label twice with nothing to tell them apart.
+    local seen, labels = {}, {}
     for id, campaign in pairs(campaigns or {}) do
         if id ~= activeId then
             local lost = false
             for _, name in ipairs(campaign.hierarchy or {}) do
                 if not known[tostring(name):lower()] then lost = true end
             end
-            if lost then labels[#labels + 1] = tostring(campaign.label or id) end
+            local label = tostring(campaign.label or id)
+            if lost and not seen[label] then
+                seen[label] = true
+                labels[#labels + 1] = label
+            end
         end
     end
     table.sort(labels)

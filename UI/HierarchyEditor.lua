@@ -486,7 +486,7 @@ local function buildTransferPanel(parent)
         -- The other campaigns lose every name this import drops, and that loss is
         -- invisible until the raid night you next open one of them.
         local losing = ns.Roster.ImportLosses(ns.Database.Campaigns(), chars,
-            ns.Campaign.ActiveId())
+            ns.Campaign.Active().id)
         if #losing > 0 then
             text = text .. string.format("\n\nThis also drops characters from: %s.",
                 table.concat(losing, ", "))
