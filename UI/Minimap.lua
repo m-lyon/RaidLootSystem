@@ -11,7 +11,7 @@ local BUTTON_NAME = "LibDBIcon10_RaidLootSystem"   -- LibDBIcon names its button
 local pulseFrame
 local pulseElapsed = 0
 
---- Fade the button in and out while a batch is open and this player is not in
+--- Fade the button in and out while a round is open and this player is not in
 -- (spec 005 section 6). Checked on a light throttle; nothing to do most of the time.
 local sinceCheck = 0
 local attention = false
@@ -47,7 +47,7 @@ function Minimap.Init()
             elseif IsShiftKeyDown() or not ns.RollWindow.HasContent() then
                 ns.HierarchyEditor.Toggle()
             else
-                -- A live batch, or the last result, is what the button is for.
+                -- A live round, or the last result, is what the button is for.
                 ns.RollWindow.Toggle()
             end
         end,
@@ -61,7 +61,7 @@ function Minimap.Init()
             end
             tooltip:AddLine("Right-click: republish your roster", 1, 1, 1)
             if ns.RollWindow.NeedsAttention() then
-                tooltip:AddLine("A batch is open and you have not submitted.", 1, 0.8, 0.2)
+                tooltip:AddLine("A round is open and you have not submitted.", 1, 0.8, 0.2)
             end
             local contested = ns.Roster.ContestedNames()
             if #contested > 0 then

@@ -56,7 +56,7 @@ return {
             name = "a new record expires two hours after it was taken",
             input = { op = "new", now = T,
                       award = { char = "Bonk", owner = "Dave", itemString = "item:1",
-                                sessionId = "Steve-100", itemIdx = 1, copy = 2,
+                                roundId = "Steve-100", itemIdx = 1, copy = 2,
                                 priorIndex = 3, presentIndices = { 1, 3, 5 } } },
             expected = { winner = "Bonk", takenAt = T, expiresAt = T + 7200,
                          delivered = false, expired = false, copy = 2,
@@ -117,17 +117,17 @@ return {
             expected = { "Ann" },
         },
         {
-            name = "the record for a copy is found by session, item and copy",
-            input = { op = "find", award = { sessionId = "S", itemIdx = 2, copy = 2 }, records = {
-                { winner = "Ann", sessionId = "S", itemIdx = 2, copy = 1, delivered = false },
-                { winner = "Bob", sessionId = "S", itemIdx = 2, copy = 2, delivered = false },
+            name = "the record for a copy is found by round, item and copy",
+            input = { op = "find", award = { roundId = "S", itemIdx = 2, copy = 2 }, records = {
+                { winner = "Ann", roundId = "S", itemIdx = 2, copy = 1, delivered = false },
+                { winner = "Bob", roundId = "S", itemIdx = 2, copy = 2, delivered = false },
             } },
             expected = "Bob",
         },
         {
             name = "a delivered record is not found again",
-            input = { op = "find", award = { sessionId = "S", itemIdx = 2, copy = 1 }, records = {
-                { winner = "Ann", sessionId = "S", itemIdx = 2, copy = 1, delivered = true },
+            input = { op = "find", award = { roundId = "S", itemIdx = 2, copy = 1 }, records = {
+                { winner = "Ann", roundId = "S", itemIdx = 2, copy = 1, delivered = true },
             } },
             expected = "",
         },
@@ -135,12 +135,12 @@ return {
             -- Copy 1 is already in the host's bags for its own trade; copy 2 must not
             -- take that unit as its own.
             name = "units held by other records are counted, this record's own is not",
-            input = { op = "units", itemId = 40000, except = { sessionId = "S", itemIdx = 2, copy = 2 },
+            input = { op = "units", itemId = 40000, except = { roundId = "S", itemIdx = 2, copy = 2 },
                       records = {
-                          { itemString = "item:40000:0:0:0:0:0:0:0:0", sessionId = "S", itemIdx = 2, copy = 1, delivered = false },
-                          { itemString = "item:40000:0:0:0:0:0:0:0:0", sessionId = "S", itemIdx = 2, copy = 2, delivered = false },
-                          { itemString = "item:40000:0:0:0:0:0:0:0:0", sessionId = "R", itemIdx = 1, copy = 1, delivered = true },
-                          { itemString = "item:41000:0:0:0:0:0:0:0:0", sessionId = "S", itemIdx = 3, copy = 1, delivered = false },
+                          { itemString = "item:40000:0:0:0:0:0:0:0:0", roundId = "S", itemIdx = 2, copy = 1, delivered = false },
+                          { itemString = "item:40000:0:0:0:0:0:0:0:0", roundId = "S", itemIdx = 2, copy = 2, delivered = false },
+                          { itemString = "item:40000:0:0:0:0:0:0:0:0", roundId = "R", itemIdx = 1, copy = 1, delivered = true },
+                          { itemString = "item:41000:0:0:0:0:0:0:0:0", roundId = "S", itemIdx = 3, copy = 1, delivered = false },
                       } },
             expected = 1,
         },

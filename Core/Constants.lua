@@ -8,7 +8,7 @@ ns.Constants = {}
 local C = ns.Constants
 
 -- Addon version. Keep in step with the .toc "## Version:" field.
-C.VERSION = "0.1.0"
+C.VERSION = "0.2.0"
 
 --------------------------------------------------------------------------------
 -- Comms (spec 000 section 5)
@@ -43,21 +43,42 @@ C.OPS = {
     CFG     = "CFG",
     SKLIST  = "SKLIST",
     SYNC    = "SYNC",
+    CINV    = "CINV",
+}
+
+-- The ops that carry a campaign id as their leading field (spec 012 section 10).
+-- The campaign travels on the messages that establish standing state; roundId
+-- suffices for everything inside a round, so it is not in the envelope.
+C.CAMPAIGN_OPS = {
+    HI     = true,
+    ROSTER = true,
+    OPEN   = true,
+    SKLIST = true,
+    CFG    = true,
+    CINV   = true,
+}
+
+-- The two exceptions to "drop a campaign-bearing message naming a campaign you are
+-- not in" (spec 012 section 10). CINV is what non-membership is for, and OPEN opens
+-- the read-only window of section 6 rather than saying nothing.
+C.CAMPAIGN_OPEN_TO_NONMEMBERS = {
+    CINV = true,
+    OPEN = true,
 }
 
 --------------------------------------------------------------------------------
--- Session lifecycle (spec 002)
+-- Round lifecycle (spec 002)
 --------------------------------------------------------------------------------
 
-C.SESSION_STATE = {
+C.ROUND_STATE = {
     OPEN      = "OPEN",
     RESOLVING = "RESOLVING",
     CLOSED    = "CLOSED",
     ABORTED   = "ABORTED",
 }
 
--- Why a batch ended without a result (spec 002 section 9). Shown in the window,
--- not only in chat, and written to history so a batch never simply vanishes.
+-- Why a round ended without a result (spec 002 section 9). Shown in the window,
+-- not only in chat, and written to history so a round never simply vanishes.
 C.ABORT_REASON = {
     ML_CHANGED = "ML_CHANGED",
     HOST_LEFT  = "HOST_LEFT",
@@ -71,9 +92,9 @@ C.ABORT_TEXT = {
     ML_CHANGED = "the master looter changed",
     HOST_LEFT  = "the host left the raid",
     LOOT_GONE  = "the loot is no longer there",
-    EXPIRED    = "the batch was left unresolved for too long",
+    EXPIRED    = "the round was left unresolved for too long",
     MANUAL     = "the host cancelled it",
-    RESOLVE_FAILED = "the batch could not be resolved",
+    RESOLVE_FAILED = "the round could not be resolved",
 }
 
 -- Per-copy outcome on the wire (spec 000 section 5, RESULT).
@@ -97,7 +118,7 @@ C.REJECT = {
 C.STATE_COALESCE = 0.5        -- trailing timer on STATE broadcasts, seconds
 C.SYNC_INTERVAL = 5           -- a client sends SYNC at most this often
 C.HOST_LEFT_GRACE = 60        -- seconds past endsAt with no RESULT before a client aborts
-C.BATCH_EXPIRY = 15 * 60      -- an unresolved batch aborts as EXPIRED after this
+C.ROUND_EXPIRY = 15 * 60      -- an unresolved round aborts as EXPIRED after this
 
 C.MIN_TIMER_SECONDS = 15
 C.MAX_TIMER_SECONDS = 300
@@ -123,6 +144,17 @@ C.MAX_TIER_COUNT = 5
 
 -- Prefix on an exported roster string. The digit is the protocol version.
 C.EXPORT_PREFIX = "RLS1:"
+
+-- Prefix on an exported campaign string (spec 012 section 12). Same encoding, a
+-- different payload: id, label, host settings and the whole priority list.
+C.CAMPAIGN_EXPORT_PREFIX = "RLSC1:"
+
+-- The label a fresh install's one campaign carries (spec 012 section 5). Its id is
+-- an ordinary <name>-<timestamp>, never a well-known constant: a shared "main"
+-- would put you nominally inside a stranger's campaign.
+C.DEFAULT_CAMPAIGN_LABEL = "Main"
+
+C.MAX_CAMPAIGN_LABEL = 40
 
 -- Reasons a character cannot be entered. Rendered by the roll window (spec 005).
 -- The first four are roster states (spec 001). The rest are the eligibility filter's
@@ -155,7 +187,7 @@ C.LOOT_MODE = { ROLL = "ROLL", SK = "SK" }
 C.ROLL_MIN = 1
 C.ROLL_MAX = 100
 
--- Re-roll rounds allowed on a boundary tie before the result is marked degraded
+-- Re-roll iterations allowed on a boundary tie before the result is marked degraded
 -- (spec 003 section 6). A guard against a pathological rng, not an expected path.
 C.MAX_REROLL = 10
 
@@ -178,7 +210,7 @@ C.ROLL_STATUS_OF_REASON = {
 }
 C.REROLL_JOIN = "+"           -- joins a re-roll list inside one ROLLS element
 
--- The roll window turns amber for the last seconds of a batch (spec 005 section 3) and
+-- The roll window turns amber for the last seconds of a round (spec 005 section 3) and
 -- shows an abort reason in place for this long before closing (section 6).
 C.COUNTDOWN_WARN_SECONDS = 30
 C.ABORT_LINGER_SECONDS = 10
@@ -227,21 +259,14 @@ C.BOT_EQUIP_COMMAND = "equip"
 -- Saved-variable defaults (spec 000 section 4). Database.lua owns the copy.
 --------------------------------------------------------------------------------
 
-C.SCHEMA = 2                  -- 2: priority.seedChars and priority.log (spec 010 section 9)
+-- 3: campaigns (spec 012 section 9). There is no migration to it -- schema ~= 3
+-- rebuilds roster, campaigns, history and pending from these defaults.
+C.SCHEMA = 3
 
-C.DEFAULTS = {
-    schema = C.SCHEMA,
-    roster = {
-        order = {},
-        chars = {},
-    },
-    settings = {
-        eligibilityFilter = true,
-        autoEquipWinners  = true,
-        verbosity         = "SUMMARY",
-        minimap           = { hide = false, minimapPos = 220 },
-        windows           = {},
-    },
+-- The per-campaign tables (spec 012 section 3). `host` and `priority` no longer
+-- exist at the top level of the saved variables; they live on each campaign and are
+-- read through Campaign.Active().
+C.CAMPAIGN_DEFAULTS = {
     host = {
         tierCount        = 3,
         timerSeconds     = 180,
@@ -256,12 +281,31 @@ C.DEFAULTS = {
         order     = {},
         log       = {},           -- every mutation since the seed, for verify's replay
     },
+    hierarchy = {},               -- THIS client's ordering, for this campaign
+}
+
+C.DEFAULTS = {
+    schema = C.SCHEMA,
+    roster = {
+        -- roster.order is gone: it lives on each campaign as `hierarchy`.
+        chars = {},               -- global and mutable: a class is a fact about a character
+        defaultHierarchy = {},    -- a template that resolves nothing (spec 012 section 7)
+    },
+    activeCampaign = "",
+    campaigns = {},
+    settings = {
+        eligibilityFilter = true,
+        autoEquipWinners  = true,
+        verbosity         = "SUMMARY",
+        minimap           = { hide = false, minimapPos = 220 },
+        windows           = {},
+    },
     history = {},
     pending = {},
     -- Ticks the player has made in the roll window but not yet submitted. Kept in saved
-    -- variables so a /reload mid-batch loses nothing (spec 005 section 6).
+    -- variables so a /reload mid-round loses nothing (spec 005 section 6).
     scratch = {
-        sessionId = "",
+        roundId = "",
         ticks = {},               -- itemIdx -> charName -> { override, star }
     },
 }

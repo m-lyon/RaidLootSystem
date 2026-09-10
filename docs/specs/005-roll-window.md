@@ -8,21 +8,21 @@
 
 ## 1. Scope
 
-The window every player uses to enter a batch and to read its result. This is the screen that
+The window every player uses to enter a round and to read its result. This is the screen that
 gets used hundreds of times; it is the addon's centre of gravity.
 
 **Out of scope:** host-only controls (006), awarding (007).
 
 ## 2. Two modes, one window
 
-The window has an **entry mode** (batch is `OPEN`) and a **results mode** (batch is `CLOSED`).
+The window has an **entry mode** (round is `OPEN`) and a **results mode** (round is `CLOSED`).
 It switches in place rather than opening a second frame, so people's eyes stay in one location.
 
 It opens automatically on `OPEN`, and again on `CLOSED` when the results land. The minimap
-button and a bare `/rls` reach it **only while a batch is live, or while its results are still on
-screen**; once the player closes a concluded batch the button goes back to the hierarchy editor.
-A concluded batch has nothing left to do in it, and leaving it on the button meant every click
-for the rest of the night reopened a stale result. Old batches are read in the history browser
+button and a bare `/rls` reach it **only while a round is live, or while its results are still on
+screen**; once the player closes a concluded round the button goes back to the hierarchy editor.
+A concluded round has nothing left to do in it, and leaving it on the button meant every click
+for the rest of the night reopened a stale result. Old rounds are read in the history browser
 (008), which is what that screen is for.
 
 ## 3. Entry mode: the grid
@@ -51,7 +51,7 @@ for the rest of the night reopened a stale result. Old batches are read in the h
 ### Rows — your roster
 
 - Ordered by hierarchy position, so your highest priority is at the top.
-- **Tier badge** on every row, computed for the batch's frozen tier count. Colour-coded, with
+- **Tier badge** on every row, computed for the round's frozen tier count. Colour-coded, with
   Rest visually distinct from the numbered tiers.
 - **Priority position** beside it under `lootMode = "SK"` (010 §11) — the character's index in
   the list, with positions above the raid's median visually distinct. *Am I near the top* is the
@@ -64,7 +64,7 @@ for the rest of the night reopened a stale result. Old batches are read in the h
   enterable cell. Off by default — seeing that your Warrior *can't* use anything here is
   useful information.
 
-### Columns — the batch's items
+### Columns — the round's items
 
 - Item icon with the standard `GameTooltip` on hover, and a click that chat-links the item.
 - A `x2` badge for duplicate drops.
@@ -140,7 +140,7 @@ On `RESULT` + `ROLLS`, the window switches. Per item:
 
 For the host only, each item's row carries its **award control** (007). Nobody else sees it.
 
-Results stay readable until the next batch opens, and older ones are reachable from the history
+Results stay readable until the next round opens, and older ones are reachable from the history
 browser (008).
 
 ## 6. Behaviour details
@@ -148,14 +148,14 @@ browser (008).
 - **Never steals focus or key input.** People are still fighting; the window must not eat
   keybinds.
 - Draggable, position saved per character in `settings.windows`, closable with Escape.
-- If closed during an open batch, the minimap button pulses until submitted.
+- If closed during an open round, the minimap button pulses until submitted.
 - On `ABORT`, the window shows the reason in place for 10 seconds before closing itself.
-- A `/reload` mid-batch restores state via `SYNC` (002 §10), including local ticks that were
+- A `/reload` mid-round restores state via `SYNC` (002 §10), including local ticks that were
   never submitted, which are held in a scratch table that survives the reload.
 
 ## 7. Acceptance criteria
 
-- A batch of 6 items with a 9-character roster renders without scrolling at default UI scale.
+- A round of 6 items with a 9-character roster renders without scrolling at default UI scale.
 - A plate item disables every cloth/leather/mail row, with a class-specific tooltip reason.
 - Right-clicking a `WRONG_ARMOR` cell enables it with a visible override marker; right-clicking
   a `NOT_IN_RAID` cell does nothing.
@@ -164,5 +164,5 @@ browser (008).
 - Submitting, then re-ticking, shows the dirty indicator; re-submitting clears it.
 - Pass all marks the player as submitted with zero entries.
 - Results mode shows not-consulted entries as such, not as losses.
-- Closing and reopening the window mid-batch preserves unsubmitted ticks.
-- `/reload` mid-batch restores the grid, the countdown, and unsubmitted ticks.
+- Closing and reopening the window mid-round preserves unsubmitted ticks.
+- `/reload` mid-round restores the grid, the countdown, and unsubmitted ticks.

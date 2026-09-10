@@ -129,12 +129,12 @@ When an award's delivery reaches a state it cannot recover from — `LOST`, or `
 **restored to the index it held immediately before that suicide**, the affected present
 characters shift back down, the version bumps, and it is announced. A *retryable* failure (out of
 range, bags full) does not restore: the retry is expected to succeed, and restoring then
-re-suiciding would land the winner at a different bottom than the one the batch gave them. A
+re-suiciding would land the winner at a different bottom than the one the round gave them. A
 delivery that succeeds after a restore suicides the character again, from wherever it then stands.
 
 The restore uses the **present indices the suicide used**, recorded on the award, not the raid as
 it stands at restore time. That is what makes it an exact inverse whoever has come or gone since.
-When the list has moved in between (a later batch's suicides, a removal) those indices no longer
+When the list has moved in between (a later round's suicides, a removal) those indices no longer
 describe it; the restore then refuses rather than silently doing nothing, and the host restores
 the character to its prior index **against the raid as it stands**, saying so. The pending record
 carries the same data, because the award records do not survive a `/reload` and a two-hour trade
@@ -169,12 +169,12 @@ ascending** and the top `k` win. No rolls, no ties, no re-rolls.
 > falls down the list and stops winning the *contested* items — tokens, weapons, trinkets. The
 > list self-corrects where people are actually competing and is inert where nobody is.
 
-### Across a batch
+### Across a round
 
 Two SK-only rules, neither of which applies under `ROLL`:
 
-1. **One win per character per batch.** A character that wins is withdrawn from the remaining
-   items in that batch.
+1. **One win per character per round.** A character that wins is withdrawn from the remaining
+   items in that round.
 2. **The priority pick.** Each character may star **one** of its ticked items. If it would win
    more than one, the star decides which.
 
@@ -186,7 +186,7 @@ evaporates. People remember that for months.
 
 ```
 loop:
-    resolve every item independently against the list as frozen at batch open
+    resolve every item independently against the list as frozen at round open
     for each character winning more than one item:
         keep its starred item, or its lowest item index if unstarred
         withdraw its entries from the others
@@ -200,7 +200,7 @@ Each iteration strictly removes entries, so it terminates. The star therefore **
 it is consulted only when a character would genuinely have won several items, so starring the
 wrong thing never loses you an item you would otherwise have had.
 
-> **Why the list can be frozen for the batch.** Under rule (1) a winner is withdrawn from later
+> **Why the list can be frozen for the round.** Under rule (1) a winner is withdrawn from later
 > items anyway, and removing one element from an ordered list preserves the relative order of
 > every other element. So resolving against a frozen list and mutating it item by item produce
 > **identical** results. Freezing is chosen because it is simpler to reason about and removes
@@ -214,7 +214,7 @@ wrong thing never loses you an item you would otherwise have had.
 
 ```lua
 opts.lootMode  = "SK"
-opts.priority  = { Chop = 1, Sneaky = 2, ... }   -- name -> index, frozen at batch open
+opts.priority  = { Chop = 1, Sneaky = 2, ... }   -- name -> index, frozen at round open
 opts.stars     = { Chop = 4 }                    -- name -> starred itemIdx
 ```
 
@@ -227,11 +227,11 @@ The list is order-sensitive shared state that must survive raids, relogs and hos
 
 **Stored by everyone, with derivation as a repair tool.** Every client keeps `priority` in saved
 variables and applies the same deterministic mutation on `RESULT`. The host broadcasts the
-authoritative copy when a batch opens.
+authoritative copy when a round opens.
 
 Pure derivation from history was considered and rejected. It is the right answer for an
 append-only tally, but Suicide Kings degrades **catastrophically** rather than gracefully: one
-missing batch permanently corrupts the order of everything after it, and does so silently.
+missing round permanently corrupts the order of everything after it, and does so silently.
 
 New op, added to the 000 §5 table:
 
@@ -387,7 +387,7 @@ Under `SK`, added to 005:
 - A character that would win items 1 and 4 with a star on 4 takes 4, and item 1 goes to the next
   eligible entry — which is awarded, not left unclaimed.
 - Starring an item a character would not have won changes nothing.
-- The fixed point terminates on a batch of 6 items where every character enters every item.
+- The fixed point terminates on a round of 6 items where every character enters every item.
 - Frozen-list and item-by-item mutation produce identical awards for the same input.
 
 **State**

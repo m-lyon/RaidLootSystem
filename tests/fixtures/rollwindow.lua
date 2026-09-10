@@ -84,7 +84,7 @@ end
 local ITEMS = { { idx = 1, itemString = "item:1", count = 1 },
                 { idx = 2, itemString = "item:2", count = 2 } }
 
--- A resolved two-item batch: Steve took item 1 on a re-roll, item 2 had two copies.
+-- A resolved two-item round: Steve took item 1 on a re-roll, item 2 had two copies.
 local RESULTS = {
     { itemIdx = 1, winner = "Steve", tier = 1, roll = 83, outcome = "WON" },
     { itemIdx = 2, winner = "Bonk", tier = 1, roll = 60, outcome = "WON" },

@@ -1,6 +1,6 @@
 -- tests/fixtures/award.lua
 --
--- The pure half of Modules/Award.lua (spec 007): the award records a resolved batch
+-- The pure half of Modules/Award.lua (spec 007): the award records a resolved round
 -- produces, which delivery path an award takes and why, the confirmation and
 -- failure texts, and the auto-equip rule.
 
@@ -11,7 +11,7 @@ local function run(input, ns)
 
     if input.op == "build" then
         local out = {}
-        for idx, list in pairs(Award.Build(input.session)) do
+        for idx, list in pairs(Award.Build(input.round)) do
             local rows = {}
             for i, r in ipairs(list) do
                 rows[i] = string.format("%d:%s slot=%s %s L%d", r.copy, r.char,
@@ -38,14 +38,14 @@ local function run(input, ns)
         return Award.ShouldAutoEquip(input.record, input.roster, input.settings)
 
     elseif input.op == "outstanding" then
-        -- Begin registers the batch; the deliveries are then set as if the host had
+        -- Begin registers the round; the deliveries are then set as if the host had
         -- worked through some of it, and the section asks what is left.
         Award.Reset()
-        for _, session in ipairs(input.sessions) do
-            Award.Begin(session)
+        for _, round in ipairs(input.rounds) do
+            Award.Begin(round)
             for _, set in ipairs(input.delivered or {}) do
-                if set.sessionId == session.id then
-                    local record = Award.Get(set.sessionId, set.itemIdx, set.copy)
+                if set.roundId == round.id then
+                    local record = Award.Get(set.roundId, set.itemIdx, set.copy)
                     if record then
                         record.delivery = set.delivery
                         record.failure = set.failure
@@ -55,7 +55,7 @@ local function run(input, ns)
         end
         local out = {}
         for i, record in ipairs(Award.OutstandingRecords()) do
-            out[i] = string.format("%s/%d/%d %s %s", record.sessionId, record.itemIdx,
+            out[i] = string.format("%s/%d/%d %s %s", record.roundId, record.itemIdx,
                 record.copy, record.char, record.delivery)
         end
         return out
@@ -72,12 +72,12 @@ local function run(input, ns)
     error("unknown op: " .. tostring(input.op))
 end
 
-local SESSION = {
+local ROUND = {
     id = "Steve-100",
     items = {
         { idx = 1, itemString = "item:1", count = 1, lootSlot = 2, lootSlots = { 2 } },
         { idx = 2, itemString = "item:2", count = 2, lootSlot = 3, lootSlots = { 3, 5 } },
-        { idx = 3, itemString = "item:3", count = 1 },                 -- item-link batch
+        { idx = 3, itemString = "item:3", count = 1 },                 -- item-link round
         { idx = 4, itemString = "item:4", count = 1, lootSlot = 6, lootSlots = { 6 } },
     },
     results = {
@@ -101,9 +101,9 @@ return {
     cases = {
         {
             -- Acceptance: a duplicate drop awards both copies, each from its own slot;
-            -- an item-link batch has no slot; an unclaimed item has no records.
+            -- an item-link round has no slot; an unclaimed item has no records.
             name = "records are one per copy with their own loot slot",
-            input = { op = "build", session = SESSION },
+            input = { op = "build", round = ROUND },
             expected = {
                 ["1"] = { "1:Bonk slot=2 AWAITING L3" },
                 ["2"] = { "1:Ann slot=3 AWAITING L0", "2:Bob slot=5 AWAITING L0" },
@@ -116,7 +116,7 @@ return {
             -- A stacked slot holds several units in one slot: every copy past the slot
             -- count is awarded from the last slot.
             name = "copies beyond the slot count share the last slot",
-            input = { op = "build", session = {
+            input = { op = "build", round = {
                 id = "Steve-101",
                 items = { { idx = 1, itemString = "item:9", count = 3, lootSlot = 4, lootSlots = { 4 } } },
                 results = { { itemIdx = 1, unclaimed = false,
@@ -149,14 +149,14 @@ return {
         { name = "shift-click with the corpse closed and nothing in bags falls through to the instruction",
           input = { op = "path", record = CORPSE, ctx = { forceTrade = true, lootMethod = "master", windowOpen = false, inBags = false } },
           expected = { path = "", why = "Open the corpse to award from it, or loot the item yourself and award again." } },
-        { name = "an item-link batch goes to trade when the item is in bags",
+        { name = "an item-link round goes to trade when the item is in bags",
           input = { op = "path", record = LINKED, ctx = { inBags = true } },
           expected = { path = "TRADE", why = "" } },
-        { name = "an item-link batch with nothing in bags cannot be awarded",
+        { name = "an item-link round with nothing in bags cannot be awarded",
           input = { op = "path", record = LINKED, ctx = { inBags = false } },
           expected = { path = "", why = "The item is not in your bags." } },
 
-        -- What the host holds (section 5). The regression: an item-link batch is
+        -- What the host holds (section 5). The regression: an item-link round is
         -- opened on an item already in the host's bags, so the open-time baseline
         -- covers the very copy being awarded and must not be charged against it.
         { name = "an item-link copy counts even though the baseline covered it",
@@ -165,7 +165,7 @@ return {
         { name = "an item-link copy already promised to another record does not count twice",
           input = { op = "spare", record = LINKED, held = 1, baseline = 1, claimed = 1 },
           expected = 0 },
-        { name = "a corpse copy the host owned before the batch does not count",
+        { name = "a corpse copy the host owned before the round does not count",
           input = { op = "spare", record = CORPSE, held = 1, baseline = 1, claimed = 0 },
           expected = 0 },
         { name = "a corpse copy looted on top of one the host owned counts once",
@@ -176,20 +176,20 @@ return {
         -- this; an unclaimed item contributes nothing, and a copy that has moved on to
         -- Pending or been delivered has left.
         { name = "every won copy is outstanding before the host does anything",
-          input = { op = "outstanding", sessions = { SESSION } },
+          input = { op = "outstanding", rounds = { ROUND } },
           expected = { "Steve-100/1/1 Bonk AWAITING", "Steve-100/2/1 Ann AWAITING",
                        "Steve-100/2/2 Bob AWAITING", "Steve-100/3/1 Cat AWAITING" } },
         { name = "delivered and pending copies drop out, the rest keep item order",
-          input = { op = "outstanding", sessions = { SESSION }, delivered = {
-              { sessionId = "Steve-100", itemIdx = 1, copy = 1, delivery = "DELIVERED" },
-              { sessionId = "Steve-100", itemIdx = 2, copy = 1, delivery = "PENDING" },
+          input = { op = "outstanding", rounds = { ROUND }, delivered = {
+              { roundId = "Steve-100", itemIdx = 1, copy = 1, delivery = "DELIVERED" },
+              { roundId = "Steve-100", itemIdx = 2, copy = 1, delivery = "PENDING" },
           } },
           expected = { "Steve-100/2/2 Bob AWAITING", "Steve-100/3/1 Cat AWAITING" } },
         { name = "a failed award stays outstanding, an expired trade does not",
-          input = { op = "outstanding", sessions = { SESSION }, delivered = {
-              { sessionId = "Steve-100", itemIdx = 1, copy = 1, delivery = "FAILED",
+          input = { op = "outstanding", rounds = { ROUND }, delivered = {
+              { roundId = "Steve-100", itemIdx = 1, copy = 1, delivery = "FAILED",
                 failure = "NOT_A_CANDIDATE" },
-              { sessionId = "Steve-100", itemIdx = 2, copy = 1, delivery = "FAILED",
+              { roundId = "Steve-100", itemIdx = 2, copy = 1, delivery = "FAILED",
                 failure = "TRADE_EXPIRED" },
           } },
           expected = { "Steve-100/1/1 Bonk FAILED", "Steve-100/2/2 Bob AWAITING",

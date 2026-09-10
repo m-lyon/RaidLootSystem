@@ -28,7 +28,7 @@ The gap is presentational. 010 §10 placed "the list itself, ordered" in the hos
 
 - `/rls sk list` — the whole list, as 25 lines of chat text.
 - The roll window's per-row position (010 §11) — but only for **their own** characters, and only
-  while a batch is open.
+  while a round is open.
 
 Neither answers "where do I sit relative to everyone else", which is the question an SK list
 exists to answer. 010 §10 already argues that "a silent edit to a public priority list would end
@@ -100,7 +100,7 @@ and should not drag the midpoint of a list of who is actually here.
 
 - **Everyone, host included.** The host has the editable section, but gating the read-only one
   would leave them unable to see what the raid sees. It is the same window for everybody.
-- **Live.** Refreshes off `Priority.RegisterListener`, so a suicide applied mid-batch reorders an
+- **Live.** Refreshes off `Priority.RegisterListener`, so a suicide applied mid-round reorders an
   open viewer rather than going stale behind the reader's back.
 - **Not seeded** — the window opens and says the list is not seeded, rather than refusing to
   open. "Nothing happened when I typed the command" is indistinguishable from a broken addon.
@@ -134,7 +134,7 @@ and should not drag the midpoint of a list of who is actually here.
 
 **`/rls simulate`**
 
-- With a seeded list and an SK batch, the viewer lists the same order, version and seed the host
+- With a seeded list and an SK round, the viewer lists the same order, version and seed the host
   panel's section shows.
-- A suicide applied during an open batch reorders an already-open viewer without reopening it.
-- With the list seeded but the batch running under `ROLL`, the header says `SK` is not in force.
+- A suicide applied during an open round reorders an already-open viewer without reopening it.
+- With the list seeded but the round running under `ROLL`, the header says `SK` is not in force.

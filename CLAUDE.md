@@ -56,7 +56,7 @@ with the reasoning.
 - **The priority list is per character; the hierarchy is per player.** They are orthogonal on
   purpose: the hierarchy picks your bucket, the list decides who wins inside it. Spec 010 §3.
 - **The priority list is stored, not derived.** Unlike a tally, it degrades catastrophically —
-  one missing batch silently corrupts every later position. `verify` replays history to *detect*
+  one missing round silently corrupts every later position. `verify` replays history to *detect*
   drift; it never repairs. Spec 010 §8.
 - **Under `SK` the resolution engine calls `rng` zero times.** There are no ties to break; the
   003 §6 re-roll path is unreachable and should assert rather than sit there as dead code.
@@ -64,11 +64,10 @@ with the reasoning.
   Never recompute it — by then the list has moved. Spec 010 §6.
 - **Absent characters hold their absolute index.** The naive remove-and-append rewards not
   showing up. Spec 010 §6.
-- **SK batches are a fixed point, not a sequential pass.** Loot-slot order must not decide who
+- **SK rounds are a fixed point, not a sequential pass.** Loot-slot order must not decide who
   wins what; only the order suicides are applied in. Spec 010 §7.
 - **`itemLevel` / `quality` / `equipLoc` are logged on every item under both modes.** Nothing in
   v1 reads them; they cannot be backfilled once the client cache is cold.
-
 ## Testing
 
 `lua tests/run.lua` runs the pure-core fixture suites with no dependencies beyond a Lua 5.1
@@ -97,20 +96,26 @@ Add a fixture case for every bug fixed in `Core/`.
   raid-night check.
 - **The exact mod-playerbots `equip` command syntax** (spec 007) is still unconfirmed against
   the server build.
+- **Blizzard's `StaticPopupDialogs` `button3` / `OnAlt` is unconfirmed on 3.3.5a.**
+  `UI/Campaigns.lua`'s non-members warning uses it for "Open anyway" (deliberately not `button2`,
+  so Escape cancels rather than opening the round). ElvUI uses `button3`/`OnAlt` but through its
+  *own* popup system, so it is not evidence for Blizzard's. If `OnAlt` never fires, that button is
+  inert -- Invite and Cancel still work, so a host is blocked rather than misled, but it wants a
+  raid-night check. Fall back to a second confirmed dialog if it turns out unsupported.
 
 ## What is and isn't in the tree
 
 Specs 001, 002, 003 and 004 are built. In the tree: `RaidLootSystem.toc`, `RaidLootSystem.lua`,
 `Core/{Constants,Util,Serialize,Tiers,Eligibility,Resolve}.lua`,
-`Modules/{Database,Comms,Roster,ItemInfo,LootDetect,Session,Client}.lua`,
+`Modules/{Database,Comms,Roster,ItemInfo,LootDetect,Round,Client}.lua`,
 `UI/{Widgets,HierarchyEditor,Minimap}.lua`, `Libs/`, `Data/`, and `tests/` with the `tiers`,
-`serialize`, `roster`, `session`, `eligibility`, `resolve`, `iteminfo` and `lootdetect` suites
+`serialize`, `roster`, `round`, `eligibility`, `resolve`, `iteminfo` and `lootdetect` suites
 plus `tests/purity.sh`.
 
-`Modules/{Session,Roster,ItemInfo,LootDetect}.lua` each have a pure half above a "WoW-facing"
+`Modules/{Round,Roster,ItemInfo,LootDetect}.lua` each have a pure half above a "WoW-facing"
 divider; the fixture runner loads all four. Keep new pure logic above that line.
 
-`Session.Open` is reachable now. Until the host panel (006) exists, `/rls loot`, `/rls start`
+`Round.Open` is reachable now. Until the host panel (006) exists, `/rls loot`, `/rls start`
 and `/rls roll <link>` are the seam that drives it.
 
 Specs 005 through 008 and 010 are built too: `UI/{RollWindow,HostPanel,HistoryBrowser}.lua`,
@@ -124,6 +129,35 @@ Spec 011 adds `UI/PriorityViewer.lua` beyond 000 §3: the read-only priority lis
 can open with `/rls sk`. Its row model is `PriorityList.viewRows` in `Core/`, and
 `PriorityList.aboveMedian` is the single definition of the near-the-top rule --
 `RollWindow.AboveMedian` delegates to it so the two screens cannot disagree.
+
+**Spec 012 (campaigns) is built**, in the two commits it was specified to land in:
+
+1. **The rename**, 012 §2. One loot source's roll is a `round` everywhere in code, wire
+   and docs; `Modules/Session.lua` became `Modules/Round.lua` and specs 002 and 004 were renamed
+   with it. No behavioural change.
+2. **The feature** — `Modules/Campaign.lua`, `UI/Campaigns.lua`, `schema` 3 with no migration
+   (defaults are rebuilt), the `CINV` op, and campaign ids on `HI` / `ROSTER` / `OPEN` / `SKLIST` /
+   `CFG`, plus the `campaign` suite. `host` and `priority` no longer exist at the top level of the
+   saved variables and live on each campaign; read them through `Campaign.Active()`, and read a
+   client's own ordering through `Database.Hierarchy()` — `roster.order` is gone.
+
+The rules that are easiest to get wrong when working on it, each with its spec section:
+
+- **A campaign-bearing message is applied to the campaign it names, if you are a member of it;
+  otherwise it is dropped and logged.** Exceptions are `CINV` and `OPEN` only. This one rule is
+  what stops a foreign master looter's `SKLIST` from replacing your priority list and wiping its
+  log — the bug the whole spec exists to fix. 012 §10.
+- **A pending delivery carries its `campaignId`** and a restore-on-failure targets *that*
+  campaign's list, never the active one. The 2-hour trade window routinely outlives a campaign
+  switch, and restoring into the wrong list is invisible by inspection. 012 §14.
+- **`roster.defaultHierarchy` resolves nothing.** It seeds new campaigns and is never consulted for
+  a tier, an entry or an award. The ordering that counts lives on the campaign. 012 §7.
+- **Joining is invitation-only and stores nothing on refusal.** No ambient detection, no
+  ignore-list, no durations. Re-inviting is the whole recovery mechanism, and adding state to
+  "remember" a refusal reintroduces every question that design removed. 012 §6.
+- **`round` never means a tie re-roll iteration** — those stay `rerolls`. And some uses of
+  "session" mean a *login* session (002 §11's once-per-sender warning); the §2 sweep left those
+  alone. 012 §2.
 
 ## Conventions
 

@@ -15,7 +15,7 @@ local Resolve = ns.Resolve
 --------------------------------------------------------------------------------
 -- Preconditions (spec 003 section 3)
 --------------------------------------------------------------------------------
--- These raise. In production the host catches, aborts the batch with a visible error
+-- These raise. In production the host catches, aborts the round with a visible error
 -- and writes the failure to history. Resolving a loot roll on corrupt input is worse
 -- than not resolving it.
 
@@ -97,12 +97,12 @@ local function resolveBoundaryTies(bucket, k, rng, maxReroll, rollMin, rollMax)
     local first, last = boundaryTie(bucket, k)
     if not first then return false end
 
-    local rounds = 0
+    local iterations = 0
     while true do
         local group = {}
         for i = first, last do group[#group + 1] = bucket[i] end
 
-        if rounds >= maxReroll then
+        if iterations >= maxReroll then
             -- Guard against a pathological rng, not an expected path. It must be
             -- visible if it ever fires, so the result is marked degraded.
             table.sort(group, function(a, b) return a.ord < b.ord end)
@@ -110,7 +110,7 @@ local function resolveBoundaryTies(bucket, k, rng, maxReroll, rollMin, rollMax)
             return true
         end
 
-        rounds = rounds + 1
+        iterations = iterations + 1
         for i = 1, #group do
             local e = group[i]
             local roll = rng(rollMin, rollMax)
@@ -131,7 +131,7 @@ end
 --- Resolve one item.
 -- @param item     { idx, itemString, count }
 -- @param entries  { { char, owner, tier, override, withdrawn }, ... }
---                 `withdrawn` is set by Resolve.batch under SK only (spec 010 section 7).
+--                 `withdrawn` is set by Resolve.round under SK only (spec 010 section 7).
 -- @param opts     { rng, tierCount, maxReroll, lootMode, priority, stars }
 -- @return result  { itemIdx, unclaimed, degraded, awards, record, tiersConsulted }
 function Resolve.item(item, entries, opts)
@@ -253,12 +253,12 @@ function Resolve.item(item, entries, opts)
 end
 
 --------------------------------------------------------------------------------
--- A batch (spec 003 section 7, spec 010 section 7)
+-- A round (spec 003 section 7, spec 010 section 7)
 --------------------------------------------------------------------------------
 
 local function keyOf(name) return name:lower() end
 
---- Resolve a whole batch.
+--- Resolve a whole round.
 -- @param items         array of item tables, in loot-slot order
 -- @param entriesByItem item.idx -> entries array
 -- @param opts          as Resolve.item
@@ -266,11 +266,11 @@ local function keyOf(name) return name:lower() end
 --
 -- Under ROLL the items are fully independent -- there is no cross-item interaction of
 -- any kind. Under SK they are coupled by two rules (spec 010 section 7):
---   1. a character that wins is withdrawn from the batch's remaining items;
+--   1. a character that wins is withdrawn from the round's remaining items;
 --   2. its starred item decides which one it takes if it would win several.
--- That is computed as a bounded fixed point over the whole batch, not a sequential
+-- That is computed as a bounded fixed point over the whole round, not a sequential
 -- pass, so loot-slot order does not decide who wins what.
-function Resolve.batch(items, entriesByItem, opts)
+function Resolve.round(items, entriesByItem, opts)
     local C = ns.Constants
     items = items or {}
     entriesByItem = entriesByItem or {}
@@ -305,7 +305,7 @@ function Resolve.batch(items, entriesByItem, opts)
     local star = {}
     for name, itemIdx in pairs(opts.stars or {}) do star[keyOf(name)] = itemIdx end
 
-    -- Each round strictly removes entries, so the fixed point terminates. The bound is
+    -- Each iteration strictly removes entries, so the fixed point terminates. The bound is
     -- the entry count; exceeding it is a bug, not a slow convergence.
     for _ = 1, total + 1 do
         local results = resolveAll()
@@ -330,7 +330,7 @@ function Resolve.batch(items, entriesByItem, opts)
             local won = wonBy[key]
 
             -- Rule 2: keep the starred item when it is among the wins, else the lowest
-            -- item index. Rule 1: withdraw from everything else in the batch.
+            -- item index. Rule 1: withdraw from everything else in the round.
             local keep = won[1]
             for _, idx in ipairs(won) do
                 if idx < keep then keep = idx end
@@ -357,5 +357,5 @@ function Resolve.batch(items, entriesByItem, opts)
         if not changed then return results end
     end
 
-    check(false, "SK batch resolution did not reach a fixed point")
+    check(false, "SK round resolution did not reach a fixed point")
 end

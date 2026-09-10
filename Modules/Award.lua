@@ -4,7 +4,7 @@
 -- states, the hand-off to the trade path, and the auto-equip whisper.
 --
 -- Everything above the "WoW-facing" divider is pure and fixture-tested by the `award`
--- suite: the award records a resolved batch produces, which path an award takes and
+-- suite: the award records a resolved round produces, which path an award takes and
 -- why, the confirmation text, and whether a delivery earns an equip whisper. The
 -- frame code below performs the award and reports what happened.
 --
@@ -23,18 +23,18 @@ local C = ns.Constants
 -- Pure: award records (sections 2 and 3)
 --------------------------------------------------------------------------------
 
---- One record per awarded copy, from a resolved session.
+--- One record per awarded copy, from a resolved round.
 --
 -- Each copy is awarded separately from its own loot slot, in copy order (section 3).
 -- A stacked slot holds several units, so the last slot stands in for any copy past
--- the slot count. An item-link batch has no slot and goes straight to the trade path.
+-- the slot count. An item-link round has no slot and goes straight to the trade path.
 --
--- @param session  the host session after Resolve: items and results
+-- @param round  the host round after Resolve: items and results
 -- @return itemIdx -> array of records, one per copy
-function Award.Build(session)
+function Award.Build(round)
     local awards = {}
-    for _, result in ipairs(session.results or {}) do
-        local item = ns.Session.ItemByIdx(session, result.itemIdx)
+    for _, result in ipairs(round.results or {}) do
+        local item = ns.Round.ItemByIdx(round, result.itemIdx)
         local slots = item and (item.lootSlots or (item.lootSlot and { item.lootSlot })) or {}
         local list = {}
         if not result.unclaimed then
@@ -44,7 +44,8 @@ function Award.Build(session)
                     if e.char == a.char then listIdx = e.listIdx end
                 end
                 list[copy] = {
-                    sessionId = session.id, itemIdx = result.itemIdx, copy = copy,
+                    roundId = round.id, campaignId = round.campaignId,
+                    itemIdx = result.itemIdx, copy = copy,
                     itemString = item and item.itemString,
                     char = a.char, owner = a.owner, tier = a.tier, roll = a.roll or 0,
                     listIdx = listIdx or 0,
@@ -79,7 +80,7 @@ function Award.PathFor(record, ctx)
     if record.delivery == C.DELIVERY.DELIVERED then return nil, "already delivered" end
 
     if not record.lootSlot then
-        -- An item-link batch: the item is wherever the host put it (section 2).
+        -- An item-link round: the item is wherever the host put it (section 2).
         if ctx.inBags then return P.TRADE end
         return nil, "The item is not in your bags."
     end
@@ -100,11 +101,11 @@ end
 --- How many units of this record's item the host holds that this record may
 -- claim (section 5).
 --
--- `held` is what the bags hold now, `baseline` what they held when the batch
+-- `held` is what the bags hold now, `baseline` what they held when the round
 -- opened, `claimed` what other pending records already account for.
 --
--- The baseline is subtracted for a corpse batch: a copy that predates the loot
--- is not the looted copy. It is NOT subtracted for an item-link batch, which has
+-- The baseline is subtracted for a corpse round: a copy that predates the loot
+-- is not the looted copy. It is NOT subtracted for an item-link round, which has
 -- no corpse -- there the copy the host already held IS the one being awarded, so
 -- charging it against the baseline leaves the host holding an item the addon
 -- insists is not in their bags.
@@ -220,13 +221,13 @@ end
 -- WoW-facing. Nothing below here runs at file scope.
 --------------------------------------------------------------------------------
 
-Award.bySession = {}           -- sessionId -> itemIdx -> array of records
-local sessionOrder = {}        -- session ids in the order their batches closed
+Award.byRound = {}           -- roundId -> itemIdx -> array of records
+local roundOrder = {}        -- round ids in the order they closed
 
 local listeners = {}
 local frame
 local watching                 -- { record, slot, deadline, mode = "give" | "take" }
-local baseline = {}            -- sessionId -> itemId -> units in the host's bags at open
+local baseline = {}            -- roundId -> itemId -> units in the host's bags at open
 
 function Award.RegisterListener(fn)
     listeners[#listeners + 1] = fn
@@ -248,7 +249,7 @@ end
 --
 -- A bag lookup by item id alone cannot tell "this copy was looted" from "the host
 -- owns one of these anyway" or from "copy 1 is already in my bags for its own
--- trade". So the count is taken against a baseline recorded when the batch opened,
+-- trade". So the count is taken against a baseline recorded when the round opened,
 -- less whatever other pending records already account for.
 --------------------------------------------------------------------------------
 
@@ -289,21 +290,21 @@ local function findInBags(itemString)
 end
 Award.FindInBags = findInBags
 
---- Called by Session.Open, host side: what the host already had of each item.
-function Award.Snapshot(session)
+--- Called by Round.Open, host side: what the host already had of each item.
+function Award.Snapshot(round)
     local map = {}
-    for _, item in ipairs(session.items or {}) do
+    for _, item in ipairs(round.items or {}) do
         local _, id = ns.ItemInfo.ParseLink(item.itemString)
         if id then map[id] = countInBags(id) end
     end
-    baseline[session.id] = map
+    baseline[round.id] = map
 end
 
 --- Units of this record's item the host holds that no other record explains.
 local function spareUnits(record)
     local _, id = ns.ItemInfo.ParseLink(record.itemString)
     if not id then return 0 end
-    local base = baseline[record.sessionId] and baseline[record.sessionId][id] or 0
+    local base = baseline[record.roundId] and baseline[record.roundId][id] or 0
     local claimed = ns.Pending.UnitsHeld(ns.Pending.Records(), id, record)
     return Award.SpareUnits(record, countInBags(id), base, claimed)
 end
@@ -312,44 +313,44 @@ end
 -- Records and their transitions
 --------------------------------------------------------------------------------
 
---- Called by Session.Close, host side. Builds the records the results view offers.
-function Award.Begin(session)
-    session.awards = Award.Build(session)
-    if Award.bySession[session.id] == nil then
-        sessionOrder[#sessionOrder + 1] = session.id
+--- Called by Round.Close, host side. Builds the records the results view offers.
+function Award.Begin(round)
+    round.awards = Award.Build(round)
+    if Award.byRound[round.id] == nil then
+        roundOrder[#roundOrder + 1] = round.id
     end
-    Award.bySession[session.id] = session.awards
+    Award.byRound[round.id] = round.awards
     fireChanged()
 end
 
-function Award.Get(sessionId, itemIdx, copy)
-    local awards = Award.bySession[sessionId]
+function Award.Get(roundId, itemIdx, copy)
+    local awards = Award.byRound[roundId]
     local list = awards and awards[itemIdx]
     return list and list[copy] or nil
 end
 
-function Award.Records(sessionId)
-    return Award.bySession[sessionId]
+function Award.Records(roundId)
+    return Award.byRound[roundId]
 end
 
---- Test and simulation seam: forget every batch's records, order included.
+--- Test and simulation seam: forget every round's records, order included.
 function Award.Reset()
-    Award.bySession = {}
-    sessionOrder = {}
+    Award.byRound = {}
+    roundOrder = {}
 end
 
 --- Award records the host still has to act on: won by someone, but not delivered
--- and not sitting in Pending, which tracks its own. Oldest batch first, so a copy
+-- and not sitting in Pending, which tracks its own. Oldest round first, so a copy
 -- left behind two kills ago does not sort below tonight's.
 --
 -- These live in memory only, unlike pending deliveries: a reload between the roll
--- resolving and the award being made loses them, and the batch is then in history
+-- resolving and the award being made loses them, and the round is then in history
 -- rather than here (spec 007 section 4).
 function Award.OutstandingRecords()
     local D = C.DELIVERY
     local out = {}
-    for _, sessionId in ipairs(sessionOrder) do
-        local awards = Award.bySession[sessionId]
+    for _, roundId in ipairs(roundOrder) do
+        local awards = Award.byRound[roundId]
         if awards then
             -- Sorted, not pairs(): the table is keyed by itemIdx, and hash order
             -- would reshuffle the list under the host on every refresh.
@@ -493,7 +494,7 @@ local function giveFromCorpse(record)
     end
 
     -- LootDetect must not read our own clear as the corpse being looted out from
-    -- under a batch; the watch below turns the clear, or its absence, into a result.
+    -- under a round; the watch below turns the clear, or its absence, into a result.
     ns.LootDetect.ExpectClear(slot)
     watching = { record = record, slot = slot, mode = "give",
                  deadline = GetTime() + C.AWARD_CLEAR_TIMEOUT }
@@ -536,7 +537,7 @@ end
 --------------------------------------------------------------------------------
 
 local function execute(payload)
-    local record = Award.Get(payload.sessionId, payload.itemIdx, payload.copy)
+    local record = Award.Get(payload.roundId, payload.itemIdx, payload.copy)
     if not record then return end
     if payload.path == C.DELIVERY_PATH.MASTER_LOOT then
         giveFromCorpse(record)
@@ -547,14 +548,14 @@ end
 
 --- Offer to award one copy. Host only. `forceTrade` (shift-click) takes the trade path
 -- even when the corpse is available, for a host who wants to move on.
-function Award.Prompt(sessionId, itemIdx, copy, forceTrade)
-    if not ns.Session.IsHost() then
+function Award.Prompt(roundId, itemIdx, copy, forceTrade)
+    if not ns.Round.IsHost() then
         ns.Print("only the master looter awards.")
         return false
     end
-    local record = Award.Get(sessionId, itemIdx, copy)
+    local record = Award.Get(roundId, itemIdx, copy)
     if not record then
-        ns.Print("no award record for that item; was the batch resolved on this client?")
+        ns.Print("no award record for that item; was the round resolved on this client?")
         return false
     end
     if not Award.Retryable(record) then
@@ -595,7 +596,7 @@ function Award.Prompt(sessionId, itemIdx, copy, forceTrade)
     end
 
     StaticPopup_Show("RLS_CONFIRM_AWARD", Award.ConfirmText(record, labelFor(record), path),
-        nil, { sessionId = sessionId, itemIdx = itemIdx, copy = copy, path = path })
+        nil, { roundId = roundId, itemIdx = itemIdx, copy = copy, path = path })
     return true
 end
 

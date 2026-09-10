@@ -1,17 +1,17 @@
--- Modules/Session.lua
+-- Modules/Round.lua
 --
--- The host side of a batch (spec 002): opening, validating submissions, keeping
+-- The host side of a round (spec 002): opening, validating submissions, keeping
 -- every client in sync, closing and aborting.
 --
 -- Everything above the "WoW-facing" divider is pure and fixture-tested by the
--- `session` suite; the file creates no frame and calls no WoW API while loading.
+-- `round` suite; the file creates no frame and calls no WoW API while loading.
 -- The host is whoever holds master looter, re-derived on the loot-method and
 -- roster events (spec 000 section 5).
 
 local ADDON, ns = ...
 
-ns.Session = {}
-local Session = ns.Session
+ns.Round = {}
+local Round = ns.Round
 
 local C = ns.Constants
 local Util = ns.Util
@@ -23,43 +23,43 @@ local function key(name)
 end
 
 --------------------------------------------------------------------------------
--- Pure: constructing a batch (section 2)
+-- Pure: constructing a round (section 2)
 --------------------------------------------------------------------------------
 
 --- "<hostName>-<timestamp>": globally unique and readable in a log.
-function Session.NewId(host, timestamp)
+function Round.NewId(host, timestamp)
     return tostring(host) .. "-" .. tostring(math.floor(timestamp or 0))
 end
 
---- Build the host-side session table. `items` are the 004 candidates; `lootSlot`
+--- Build the host-side round table. `items` are the 004 candidates; `lootSlot`
 -- is kept here and never transmitted, because it goes stale on the client.
-function Session.New(id, host, tierCount, endsAt, items)
-    local session = {
+function Round.New(id, host, tierCount, endsAt, items)
+    local round = {
         id = id, host = host, tierCount = tierCount, endsAt = endsAt,
         items = {}, entries = {}, submitted = {},
-        state = C.SESSION_STATE.OPEN,
+        state = C.ROUND_STATE.OPEN,
     }
     for i = 1, #items do
         local item = items[i]
-        session.items[i] = {
+        round.items[i] = {
             idx = item.idx or i,
             itemString = item.itemString,
             count = item.count or 1,
             lootSlot = item.lootSlot,
             -- Every slot this item occupies. Two loot slots of one drop collapse into one
-            -- batch item (spec 004 section 2) and the award step needs both of them.
+            -- round item (spec 004 section 2) and the award step needs both of them.
             lootSlots = item.lootSlots,
             slotQuantities = item.slotQuantities,
             info = item.info,
         }
-        session.entries[session.items[i].idx] = {}
+        round.entries[round.items[i].idx] = {}
     end
-    return session
+    return round
 end
 
-function Session.ItemByIdx(session, itemIdx)
-    for i = 1, #session.items do
-        if session.items[i].idx == itemIdx then return session.items[i] end
+function Round.ItemByIdx(round, itemIdx)
+    for i = 1, #round.items do
+        if round.items[i].idx == itemIdx then return round.items[i] end
     end
     return nil
 end
@@ -81,7 +81,7 @@ end
 --------------------------------------------------------------------------------
 
 --- @return accepted array, rejected array of { itemIdx, char, reason }
-function Session.Validate(session, sender, entries, ctx)
+function Round.Validate(round, sender, entries, ctx)
     local accepted, rejected = {}, {}
     local seen = {}
 
@@ -93,7 +93,7 @@ function Session.Validate(session, sender, entries, ctx)
         local e = entries[i]
         local reason
 
-        local item = Session.ItemByIdx(session, e.itemIdx)
+        local item = Round.ItemByIdx(round, e.itemIdx)
         if not item then
             reason = C.REJECT.NO_SUCH_ITEM
         else
@@ -139,27 +139,27 @@ end
 --- Replace this sender's entries with `accepted` (section 5: submissions are
 -- idempotent replacements, never deltas). The tier recorded here is a snapshot:
 -- reordering a hierarchy afterwards does not move a pending entry (section 6).
-function Session.Apply(session, sender, accepted, now)
+function Round.Apply(round, sender, accepted, now)
     local senderKey = key(sender)
 
-    for _, list in pairs(session.entries) do
+    for _, list in pairs(round.entries) do
         for i = #list, 1, -1 do
             if key(list[i].owner) == senderKey then table.remove(list, i) end
         end
     end
 
-    local record = session.submitted[sender]
+    local record = round.submitted[sender]
     if record then
         record.revisedAt = now
     else
         record = { submittedAt = now }
-        session.submitted[sender] = record
+        round.submitted[sender] = record
     end
     record.count = #accepted
 
     for i = 1, #accepted do
         local e = accepted[i]
-        local list = session.entries[e.itemIdx]
+        local list = round.entries[e.itemIdx]
         list[#list + 1] = {
             char = e.char, owner = e.owner, tier = e.tier,
             override = e.override, star = e.star,
@@ -167,26 +167,26 @@ function Session.Apply(session, sender, accepted, now)
         }
     end
 
-    return session
+    return round
 end
 
 --------------------------------------------------------------------------------
 -- Pure: the STATE aggregate (section 7)
 --------------------------------------------------------------------------------
 
-function Session.SubmittedNames(session)
+function Round.SubmittedNames(round)
     local names = {}
-    for name in pairs(session.submitted) do names[#names + 1] = name end
+    for name in pairs(round.submitted) do names[#names + 1] = name end
     table.sort(names)
     return names
 end
 
 --- Every accepted entry, in item order then submission order, for the wire.
-function Session.StateEntries(session)
+function Round.StateEntries(round)
     local out = {}
-    for i = 1, #session.items do
-        local idx = session.items[i].idx
-        for _, e in ipairs(session.entries[idx] or {}) do
+    for i = 1, #round.items do
+        local idx = round.items[i].idx
+        for _, e in ipairs(round.entries[idx] or {}) do
             out[#out + 1] = { itemIdx = idx, char = e.char, owner = e.owner, tier = e.tier }
         end
     end
@@ -197,13 +197,13 @@ end
 -- Pure: resolution input and output (section 8)
 --------------------------------------------------------------------------------
 
---- The entries map Core/Resolve.batch expects, keyed by item index.
-function Session.ResolveInput(session)
+--- The entries map Core/Resolve.round expects, keyed by item index.
+function Round.ResolveInput(round)
     local byItem = {}
-    for i = 1, #session.items do
-        local idx = session.items[i].idx
+    for i = 1, #round.items do
+        local idx = round.items[i].idx
         local list = {}
-        for _, e in ipairs(session.entries[idx] or {}) do
+        for _, e in ipairs(round.entries[idx] or {}) do
             list[#list + 1] = { char = e.char, owner = e.owner, tier = e.tier,
                                 override = e.override }
         end
@@ -214,11 +214,11 @@ end
 
 --- Which item each character starred, for spec 010 section 7. One per character;
 -- the last star in item order wins, which is what the roll window's radio enforces.
-function Session.Stars(session)
+function Round.Stars(round)
     local stars = {}
-    for i = 1, #session.items do
-        local idx = session.items[i].idx
-        for _, e in ipairs(session.entries[idx] or {}) do
+    for i = 1, #round.items do
+        local idx = round.items[i].idx
+        for _, e in ipairs(round.entries[idx] or {}) do
             if e.star then stars[e.char] = idx end
         end
     end
@@ -226,7 +226,7 @@ function Session.Stars(session)
 end
 
 --- RESULT rows: one per awarded copy, one UNCLAIMED row for an item nobody took.
-function Session.ResultRows(results)
+function Round.ResultRows(results)
     local rows = {}
     for i = 1, #results do
         local r = results[i]
@@ -249,18 +249,18 @@ end
 --- How many entries each item has, in item order. Drives the host panel's per-item
 -- counts (spec 006 section 3), so "item 4 has nothing on it" is visible at a glance.
 -- @return array of { idx, count }
-function Session.EntryCounts(session)
+function Round.EntryCounts(round)
     local out = {}
-    for i = 1, #session.items do
-        local idx = session.items[i].idx
-        out[i] = { idx = idx, count = #(session.entries[idx] or {}) }
+    for i = 1, #round.items do
+        local idx = round.items[i].idx
+        out[i] = { idx = idx, count = #(round.entries[idx] or {}) }
     end
     return out
 end
 
 --- ROLLS rows: the complete record behind the table, entries that never rolled
 -- included. An entry that vanished from the results is indistinguishable from a bug.
-function Session.RollRows(results)
+function Round.RollRows(results)
     local rows = {}
     for i = 1, #results do
         local r = results[i]
@@ -280,8 +280,9 @@ end
 -- WoW-facing state. Nothing below here runs at file scope.
 --------------------------------------------------------------------------------
 
-Session.current = nil        -- the open batch, host side only
-Session.peers = {}           -- player -> addon version, from HI (section 11)
+Round.current = nil        -- the open round, host side only
+Round.peers = {}           -- player -> addon version, from HI (section 11)
+Round.peerCampaign = {}    -- player -> campaign id, from HI (spec 012 section 10)
 
 local listeners = {}
 local frame
@@ -289,12 +290,12 @@ local stateDirty, stateTimer = false, 0
 local lastHost                            -- for detecting a master-looter change
 local lastHi = 0                          -- HI is cheap, but roster events are not rare
 
-function Session.RegisterListener(fn)
+function Round.RegisterListener(fn)
     listeners[#listeners + 1] = fn
 end
 
 local function fireChanged()
-    for _, fn in ipairs(listeners) do fn(Session.current) end
+    for _, fn in ipairs(listeners) do fn(Round.current) end
 end
 
 --- Only the host writes to raid chat (spec 000 section 5). Announce.lua owns the
@@ -312,7 +313,7 @@ end
 --------------------------------------------------------------------------------
 
 --- The current master looter's name, or nil when the group is not on master loot.
-function Session.HostName()
+function Round.HostName()
     local method, partyIndex, raidIndex = GetLootMethod()
     if method ~= "master" then return nil end
 
@@ -325,15 +326,15 @@ function Session.HostName()
     return nil
 end
 
-function Session.IsHost()
-    local host = Session.HostName()
+function Round.IsHost()
+    local host = Round.HostName()
     local me = UnitName("player")
     return host ~= nil and me ~= nil and host:lower() == me:lower()
 end
 
---- Is `sender` the client that is allowed to drive a batch right now?
-function Session.IsAuthoritative(sender)
-    local host = Session.HostName()
+--- Is `sender` the client that is allowed to drive a round right now?
+function Round.IsAuthoritative(sender)
+    local host = Round.HostName()
     return host ~= nil and sender ~= nil and host:lower() == sender:lower()
 end
 
@@ -341,12 +342,12 @@ end
 -- Opening (section 4)
 --------------------------------------------------------------------------------
 
-local function buildContext(session)
+local function buildContext(round)
     local Roster = ns.Roster
     local filterEnabled = ns.Database.Settings().eligibilityFilter
 
     return {
-        tierCount = session.tierCount,
+        tierCount = round.tierCount,
         rosterOf = function(sender) return Roster.published[sender] end,
         isContested = function(char) return Roster.IsContested(char) end,
         isPresent = function(char) return Roster.IsPresent(char) end,
@@ -362,14 +363,14 @@ local function buildContext(session)
     }
 end
 
---- Open a batch over `items` (spec 004 supplies them).
+--- Open a round over `items` (spec 004 supplies them).
 -- @return true, or false plus a reason the host can show
-function Session.Open(items)
-    if not Session.IsHost() then
+function Round.Open(items)
+    if not Round.IsHost() then
         return false, "you are not the master looter."
     end
-    if Session.current and Session.current.state == C.SESSION_STATE.OPEN then
-        return false, "a batch is already open. Close or cancel it first."
+    if Round.current and Round.current.state == C.ROUND_STATE.OPEN then
+        return false, "a round is already open. Close or cancel it first."
     end
     if not items or #items == 0 then
         return false, "there is nothing in this loot worth rolling for."
@@ -381,35 +382,39 @@ function Session.Open(items)
         C.MIN_TIMER_SECONDS, C.MAX_TIMER_SECONDS)
 
     local me = UnitName("player")
-    local session = Session.New(Session.NewId(me, time()), me, tierCount,
+    local round = Round.New(Round.NewId(me, time()), me, tierCount,
         GetTime() + seconds, items)
-    session.openedAt = time()
-    session.openedAtLocal = GetTime()      -- GetTime for elapsed, time() for history
+    -- The round belongs to the campaign it was opened in, and every message that
+    -- establishes standing state carries that id (spec 012 section 10).
+    round.campaignId = ns.Campaign.ActiveId()
+    round.campaignLabel = ns.Campaign.ActiveLabel()
+    round.openedAt = time()
+    round.openedAtLocal = GetTime()      -- GetTime for elapsed, time() for history
 
     -- The loot mode and the priority list are frozen here, not at close (spec 010
-    -- section 7): a batch resolves against the list as it stood when it opened.
-    session.lootMode, session.priority = Session.LootModeNow()
-    session.priorityAtOpen = Util.deepCopy(ns.Database.Priority())
+    -- section 7): a round resolves against the list as it stood when it opened.
+    round.lootMode, round.priority = Round.LootModeNow()
+    round.priorityAtOpen = Util.deepCopy(ns.Database.Priority())
     if items[1].lootSlot then
-        session.source = ns.LootDetect.sourceName      -- nil when no dead target (spec 008)
+        round.source = ns.LootDetect.sourceName      -- nil when no dead target (spec 008)
     else
-        session.source = "Item link"
+        round.source = "Item link"
     end
-    Session.current = session
-    if ns.Award then ns.Award.Snapshot(session) end     -- spec 007: what the host already had
+    Round.current = round
+    if ns.Award then ns.Award.Snapshot(round) end     -- spec 007: what the host already had
 
-    local body, err = Serialize.encodeOpen(session.id, tierCount, seconds, session.items,
-        session.lootMode)
+    local body, err = Serialize.encodeOpen(round.campaignId, round.id, tierCount, seconds,
+        round.items, round.lootMode)
     if not body then
-        Session.current = nil
+        Round.current = nil
         return false, "this loot could not be encoded (" .. tostring(err) .. ")."
     end
     ns.Comms.Send(C.OPS.OPEN, body)
     -- The list follows OPEN, never inside it (spec 010 section 8).
-    if session.lootMode == C.LOOT_MODE.SK and ns.Priority then ns.Priority.Broadcast() end
+    if round.lootMode == C.LOOT_MODE.SK and ns.Priority then ns.Priority.Broadcast() end
 
     local labels = {}
-    for i, item in ipairs(session.items) do
+    for i, item in ipairs(round.items) do
         labels[i] = labelOf(item) .. (item.count > 1 and (" x" .. item.count) or "")
     end
     say("OPEN", { labels = labels, seconds = seconds })
@@ -417,27 +422,27 @@ function Session.Open(items)
     return true
 end
 
---- Add time to the open batch (spec 006 section 3, "Extend"). Clients learn the new
+--- Add time to the open round (spec 006 section 3, "Extend"). Clients learn the new
 -- deadline from a same-id OPEN carrying the seconds left.
-function Session.Extend(seconds)
-    local session = Session.current
-    if not session or session.state ~= C.SESSION_STATE.OPEN then
-        return false, "there is no batch open."
+function Round.Extend(seconds)
+    local round = Round.current
+    if not round or round.state ~= C.ROUND_STATE.OPEN then
+        return false, "there is no round open."
     end
-    if not Session.IsHost() then return false, "you are not the master looter." end
+    if not Round.IsHost() then return false, "you are not the master looter." end
 
     seconds = seconds or C.EXTEND_SECONDS
-    local endsAt = session.endsAt + seconds
+    local endsAt = round.endsAt + seconds
     local secondsLeft = math.max(0, endsAt - GetTime())
-    local body, err = Serialize.encodeOpen(session.id, session.tierCount, secondsLeft,
-        session.items, session.lootMode)
+    local body, err = Serialize.encodeOpen(round.campaignId, round.id, round.tierCount,
+        secondsLeft, round.items, round.lootMode)
     if not body then
         -- Extending locally while the clients keep the old deadline would close their
-        -- windows under an open batch. Refuse, loudly.
+        -- windows under an open round. Refuse, loudly.
         return false, "the extension could not be encoded (" .. tostring(err) .. "); "
             .. "the deadline is unchanged."
     end
-    session.endsAt = endsAt
+    round.endsAt = endsAt
     ns.Comms.Send(C.OPS.OPEN, body)
     say("EXTEND", { seconds = seconds, left = secondsLeft })
     fireChanged()
@@ -445,54 +450,54 @@ function Session.Extend(seconds)
 end
 
 --------------------------------------------------------------------------------
--- Losing loot under an open batch (spec 004 section 3)
+-- Losing loot under an open round (spec 004 section 3)
 --------------------------------------------------------------------------------
 
---- Remove the copies sitting in `goneSlots` from the open batch.
+--- Remove the copies sitting in `goneSlots` from the open round.
 --
 -- Called by LootDetect when a loot slot is emptied by someone other than our own award.
--- A batch that loses every item aborts as LOOT_GONE; a batch that loses some carries on
+-- A round that loses every item aborts as LOOT_GONE; a round that loses some carries on
 -- with the survivors and says what went (spec 004 section 3). Nothing is dropped quietly.
 --
 -- @param goneSlots set of loot slot -> true
--- @return true when the batch changed
-function Session.DropSlots(goneSlots)
-    local session = Session.current
-    if not session or session.state ~= C.SESSION_STATE.OPEN then return false end
-    if not Session.IsHost() then return false end
+-- @return true when the round changed
+function Round.DropSlots(goneSlots)
+    local round = Round.current
+    if not round or round.state ~= C.ROUND_STATE.OPEN then return false end
+    if not Round.IsHost() then return false end
 
-    local kept, lost = ns.LootDetect.Prune(session.items,
+    local kept, lost = ns.LootDetect.Prune(round.items,
         function(slot) return goneSlots[slot] == true end)
     if #lost == 0 then return false end
 
-    session.items = kept
+    round.items = kept
 
-    -- A batch that lost everything at once gets one abort message, not one line per item
+    -- A round that lost everything at once gets one abort message, not one line per item
     -- followed by the abort. The entries are dropped either way.
     if #kept == 0 then
         for _, entry in ipairs(lost) do
-            session.entries[entry.item.idx] = nil
+            round.entries[entry.item.idx] = nil
         end
-        Session.Abort(C.ABORT_REASON.LOOT_GONE)
+        Round.Abort(C.ABORT_REASON.LOOT_GONE)
         return true
     end
 
     for _, entry in ipairs(lost) do
         local label = labelOf(entry.item)
-        if Session.ItemByIdx(session, entry.item.idx) then
+        if Round.ItemByIdx(round, entry.item.idx) then
             say("LOOT_LOST", { label = label, count = entry.quantity or #entry.slots,
                                remaining = true })
         else
-            session.entries[entry.item.idx] = nil
+            round.entries[entry.item.idx] = nil
             say("LOOT_LOST", { label = label, remaining = false })
         end
     end
 
     -- Clients replace their item list on a same-id OPEN (spec 002 section 3), so the
-    -- shrunken batch reaches them the same way the original did.
-    local secondsLeft = math.max(0, session.endsAt - GetTime())
-    local body = Serialize.encodeOpen(session.id, session.tierCount, secondsLeft, session.items,
-        session.lootMode)
+    -- shrunken round reaches them the same way the original did.
+    local secondsLeft = math.max(0, round.endsAt - GetTime())
+    local body = Serialize.encodeOpen(round.campaignId, round.id, round.tierCount, secondsLeft,
+        round.items, round.lootMode)
     if body then ns.Comms.Send(C.OPS.OPEN, body) end
     stateDirty = true
     fireChanged()
@@ -504,12 +509,12 @@ end
 --------------------------------------------------------------------------------
 
 local function broadcastState()
-    local session = Session.current
-    if not session then return end
-    local body, err = Serialize.encodeState(session.id,
-        Session.SubmittedNames(session), Session.StateEntries(session))
+    local round = Round.current
+    if not round then return end
+    local body, err = Serialize.encodeState(round.id,
+        Round.SubmittedNames(round), Round.StateEntries(round))
     if not body then
-        ns.Print("the batch state could not be encoded (" .. tostring(err)
+        ns.Print("the round state could not be encoded (" .. tostring(err)
             .. "); ask everyone to resubmit.")
         return
     end
@@ -518,19 +523,19 @@ end
 
 local function expectedPlayers()
     -- Raid members running a compatible version, i.e. who have sent HI this
-    -- session. Players without the addon never block a close (section 8).
+    -- round. Players without the addon never block a close (section 8).
     local expected = {}
     for _, member in ipairs(ns.Roster.GroupMembers()) do
-        if Session.peers[member.name] then expected[#expected + 1] = member.name end
+        if Round.peers[member.name] then expected[#expected + 1] = member.name end
     end
     return expected
 end
 
-local function allExpectedIn(session)
+local function allExpectedIn(round)
     local expected = expectedPlayers()
     if #expected == 0 then return false end
     for _, name in ipairs(expected) do
-        if not session.submitted[name] then return false end
+        if not round.submitted[name] then return false end
     end
     return true
 end
@@ -538,17 +543,17 @@ end
 --- Close early once every expected player is in, if the host asked for that.
 -- Two things can make it true: the last expected submission arriving, and the
 -- last player who had not submitted leaving the group.
-local function maybeAutoClose(session)
-    if session.state ~= C.SESSION_STATE.OPEN then return end
+local function maybeAutoClose(round)
+    if round.state ~= C.ROUND_STATE.OPEN then return end
     if not ns.Database.Host().autoClose then return end
-    if not allExpectedIn(session) then return end
-    Session.Close()
+    if not allExpectedIn(round) then return end
+    Round.Close()
 end
 
 local function onSubmit(sender, body)
-    local session = Session.current
-    if not Session.IsHost() then return end
-    if not session then return end
+    local round = Round.current
+    if not Round.IsHost() then return end
+    if not round then return end
 
     local msg, why = Serialize.decodeSubmit(body)
     if not msg then
@@ -556,13 +561,13 @@ local function onSubmit(sender, body)
         return
     end
     -- A stale client, or one whose timer has not caught up: drop it whole. There is
-    -- nothing useful to merge from a batch that is no longer the batch.
-    if msg.sessionId ~= session.id then return end
-    if session.state ~= C.SESSION_STATE.OPEN then return end
+    -- nothing useful to merge from a round that is no longer the round.
+    if msg.roundId ~= round.id then return end
+    if round.state ~= C.ROUND_STATE.OPEN then return end
 
-    local accepted, rejected = Session.Validate(session, sender, msg.entries,
-        buildContext(session))
-    Session.Apply(session, sender, accepted, time())
+    local accepted, rejected = Round.Validate(round, sender, msg.entries,
+        buildContext(round))
+    Round.Apply(round, sender, accepted, time())
 
     if #rejected > 0 then
         -- The submitting client compares the count it sees in STATE with what it
@@ -576,26 +581,44 @@ local function onSubmit(sender, body)
     stateDirty = true                      -- coalesced, section 7
     fireChanged()
 
-    maybeAutoClose(session)
+    maybeAutoClose(round)
 end
 
 local function onSync(sender, body)
-    if not Session.IsHost() then return end
-    local session = Session.current
-    if not session or session.state ~= C.SESSION_STATE.OPEN then return end
+    if not Round.IsHost() then return end
+    local round = Round.current
+    if not round or round.state ~= C.ROUND_STATE.OPEN then return end
 
-    local secondsLeft = math.max(0, session.endsAt - GetTime())
-    local body2 = Serialize.encodeOpen(session.id, session.tierCount, secondsLeft,
-        session.items, session.lootMode)
+    local secondsLeft = math.max(0, round.endsAt - GetTime())
+    local body2 = Serialize.encodeOpen(round.campaignId, round.id, round.tierCount, secondsLeft,
+        round.items, round.lootMode)
     if body2 then ns.Comms.Send(C.OPS.OPEN, body2) end
     -- SYNC resends OPEN, SKLIST and STATE (spec 010 section 8).
-    if session.lootMode == C.LOOT_MODE.SK and ns.Priority then ns.Priority.Broadcast() end
+    if round.lootMode == C.LOOT_MODE.SK and ns.Priority then ns.Priority.Broadcast() end
     broadcastState()
-    ns.Debug("resent the batch to " .. tostring(sender))
+    ns.Debug("resent the round to " .. tostring(sender))
 end
 
+--- HI carries the sender's active campaign and its label as well as their version
+-- (spec 012 section 10), so the host panel can say "Dave is in 'Alt Run'" and count
+-- who has joined rather than showing an opaque timestamp.
 local function onHi(sender, body)
-    Session.peers[sender] = body
+    local msg = Serialize.decodeHi(body)
+    if not msg then
+        Round.peers[sender] = body        -- a version-only HI from an older build
+        return
+    end
+    Round.peers[sender] = msg.version
+    Round.peerCampaign[sender] = msg.campaignId
+    if msg.campaignId then ns.Campaign.RememberLabel(msg.campaignId, msg.label) end
+    if ns.HostPanel then ns.HostPanel.Refresh() end
+end
+
+--- The HI body this client sends: version, active campaign, its label.
+function Round.HiBody()
+    local campaign = ns.Campaign.Active()
+    return Serialize.encodeHi(C.VERSION, campaign and campaign.id or "",
+        campaign and campaign.label or "")
 end
 
 --------------------------------------------------------------------------------
@@ -603,13 +626,13 @@ end
 --------------------------------------------------------------------------------
 
 --- The rng Resolve draws from. A field, so /rls simulate can script it (spec 009).
-function Session.rng(low, high)
+function Round.rng(low, high)
     return math.random(low, high)
 end
 
---- The loot mode a batch opened now would resolve under, and the name -> index map
+--- The loot mode a round opened now would resolve under, and the name -> index map
 -- of the priority list. SK needs a seeded list; without one this reads ROLL.
-function Session.LootModeNow()
+function Round.LootModeNow()
     local host = ns.Database.Host()
     local priority = ns.Database.Priority()
     if host.lootMode == C.LOOT_MODE.SK and #priority.order > 0 then
@@ -621,59 +644,59 @@ function Session.LootModeNow()
 end
 
 --- Resolve and broadcast. Called by the timer, by the host panel, or by autoClose.
-function Session.Close()
-    local session = Session.current
-    if not session or session.state ~= C.SESSION_STATE.OPEN then return false end
-    if not Session.IsHost() then return false end
+function Round.Close()
+    local round = Round.current
+    if not round or round.state ~= C.ROUND_STATE.OPEN then return false end
+    if not Round.IsHost() then return false end
 
-    session.state = C.SESSION_STATE.RESOLVING
+    round.state = C.ROUND_STATE.RESOLVING
     fireChanged()
 
-    local lootMode, priority = session.lootMode or C.LOOT_MODE.ROLL, session.priority
-    local ok, results = pcall(ns.Resolve.batch, session.items, Session.ResolveInput(session),
-        { rng = function(lo, hi) return Session.rng(lo, hi) end,
+    local lootMode, priority = round.lootMode or C.LOOT_MODE.ROLL, round.priority
+    local ok, results = pcall(ns.Resolve.round, round.items, Round.ResolveInput(round),
+        { rng = function(lo, hi) return Round.rng(lo, hi) end,
           lootMode = lootMode, priority = priority,
-          stars = Session.Stars(session) })
+          stars = Round.Stars(round) })
 
     if not ok then
         -- Resolving on corrupt input is worse than not resolving (spec 003 section 3).
-        ns.Print("the batch could not be resolved: " .. tostring(results)
+        ns.Print("the round could not be resolved: " .. tostring(results)
             .. ". It has been cancelled; nothing was awarded.")
-        session.state = C.SESSION_STATE.OPEN      -- so Abort has something to abort
-        Session.Abort(C.ABORT_REASON.RESOLVE_FAILED)
+        round.state = C.ROUND_STATE.OPEN      -- so Abort has something to abort
+        Round.Abort(C.ABORT_REASON.RESOLVE_FAILED)
         return false
     end
 
-    session.results = results
-    session.closedAt = time()
+    round.results = results
+    round.closedAt = time()
 
-    local resultBody = Serialize.encodeResult(session.id, Session.ResultRows(results))
-    local rollBody = Serialize.encodeRolls(session.id, Session.RollRows(results))
+    local resultBody = Serialize.encodeResult(round.id, Round.ResultRows(results))
+    local rollBody = Serialize.encodeRolls(round.id, Round.RollRows(results))
     if resultBody then ns.Comms.Send(C.OPS.RESULT, resultBody) end
     if rollBody then ns.Comms.Send(C.OPS.ROLLS, rollBody) end
 
-    session.state = C.SESSION_STATE.CLOSED
+    round.state = C.ROUND_STATE.CLOSED
 
     if ns.Announce then
         local labelled = {}
-        for i, item in ipairs(session.items) do
+        for i, item in ipairs(round.items) do
             labelled[i] = { idx = item.idx, itemString = item.itemString, label = labelOf(item) }
         end
-        ns.Announce.SayAll(ns.Announce.BatchLines(labelled, results, {
+        ns.Announce.SayAll(ns.Announce.RoundLines(labelled, results, {
             verbosity = ns.Database.Settings().verbosity,
             isSK = (lootMode == C.LOOT_MODE.SK),
-            tierCount = session.tierCount,
+            tierCount = round.tierCount,
         }))
     end
 
     -- Award records first, then the suicides they earn (spec 010 section 7), so the
     -- history record written last carries the prior indices.
-    if ns.Award then ns.Award.Begin(session) end
-    if ns.Priority then ns.Priority.ApplyAwards(session) end
-    if ns.History then ns.History.Record(session) end
+    if ns.Award then ns.Award.Begin(round) end
+    if ns.Priority then ns.Priority.ApplyAwards(round) end
+    if ns.History then ns.History.Record(round) end
     -- These items have been rolled for; they stop being candidates for the next
-    -- batch (spec 006 section 3). Abort does not do this, so a retry still has them.
-    if ns.LootDetect then ns.LootDetect.Consume(session.items) end
+    -- round (spec 006 section 3). Abort does not do this, so a retry still has them.
+    if ns.LootDetect then ns.LootDetect.Consume(round.items) end
 
     fireChanged()
     return true
@@ -683,27 +706,27 @@ end
 -- Aborting (section 9)
 --------------------------------------------------------------------------------
 
---- Cancel the open batch. Aborted batches are never migrated to a new host.
-function Session.Abort(reason)
-    local session = Session.current
-    if not session or session.state ~= C.SESSION_STATE.OPEN then return false end
+--- Cancel the open round. Aborted rounds are never migrated to a new host.
+function Round.Abort(reason)
+    local round = Round.current
+    if not round or round.state ~= C.ROUND_STATE.OPEN then return false end
 
-    session.state = C.SESSION_STATE.ABORTED
-    session.abortReason = reason
-    session.closedAt = time()
+    round.state = C.ROUND_STATE.ABORTED
+    round.abortReason = reason
+    round.closedAt = time()
 
     -- A host that has just lost master looter is no longer authoritative, and every
     -- client hard-rejects ops from a non-ML sender (spec 000 section 5). So an
     -- ML_CHANGED abort is not broadcast at all: each client sees the same loot-method
     -- event and ends its own mirror (Client.lua), which needs no message to arrive.
-    if reason ~= C.ABORT_REASON.ML_CHANGED and Session.IsHost() then
-        ns.Comms.Send(C.OPS.ABORT, Serialize.encodeAbort(session.id, reason))
+    if reason ~= C.ABORT_REASON.ML_CHANGED and Round.IsHost() then
+        ns.Comms.Send(C.OPS.ABORT, Serialize.encodeAbort(round.id, reason))
     end
-    if Session.IsHost() then
+    if Round.IsHost() then
         say("ABORT", { reason = reason, reasonText = C.ABORT_TEXT[reason] })
     end
 
-    if ns.History then ns.History.Record(session) end
+    if ns.History then ns.History.Record(round) end
     fireChanged()
     return true
 end
@@ -712,31 +735,32 @@ end
 -- Settings broadcast (section 4)
 --------------------------------------------------------------------------------
 
---- Tier count is frozen at open, so this is refused mid-batch rather than applied.
+--- Tier count is frozen at open, so this is refused mid-round rather than applied.
 -- @return true, or false plus a reason
-function Session.BroadcastConfig()
-    if not Session.IsHost() then return false, "you are not the master looter." end
-    if Session.current and Session.current.state == C.SESSION_STATE.OPEN then
-        return false, "settings are frozen while a batch is open; "
+function Round.BroadcastConfig()
+    if not Round.IsHost() then return false, "you are not the master looter." end
+    if Round.current and Round.current.state == C.ROUND_STATE.OPEN then
+        return false, "settings are frozen while a round is open; "
             .. "your change applies to the next one."
     end
     local host = ns.Database.Host()
     ns.Comms.Send(C.OPS.CFG,
-        Serialize.encodeConfig(host.tierCount, host.timerSeconds, host.lootMode))
+        Serialize.encodeConfig(ns.Campaign.ActiveId(), host.tierCount, host.timerSeconds,
+            host.lootMode))
     return true
 end
 
 --- Change one host setting from the host panel (spec 006 section 3). Tier count,
--- timer and loot mode are frozen while a batch is open, are broadcast as CFG, and are
+-- timer and loot mode are frozen while a round is open, are broadcast as CFG, and are
 -- announced: they change the rules everyone is playing by. The rest are local.
 -- @return true, or false plus a reason
-function Session.ChangeSetting(key, value)
+function Round.ChangeSetting(key, value)
     local host = ns.Database.Host()
     local settings = ns.Database.Settings()
     local shared = (key == "tierCount" or key == "timerSeconds" or key == "lootMode")
 
-    if shared and Session.current and Session.current.state == C.SESSION_STATE.OPEN then
-        return false, "frozen while a batch is open; the change applies to the next one."
+    if shared and Round.current and Round.current.state == C.ROUND_STATE.OPEN then
+        return false, "frozen while a round is open; the change applies to the next one."
     end
 
     local kind
@@ -775,8 +799,8 @@ function Session.ChangeSetting(key, value)
     host[key] = value
 
     if key == "qualityThreshold" and ns.LootDetect.Rescan then ns.LootDetect.Rescan() end
-    if shared and Session.IsHost() then
-        Session.BroadcastConfig()
+    if shared and Round.IsHost() then
+        Round.BroadcastConfig()
         say(kind, { tierCount = value, seconds = value, lootMode = value })
     end
     if ns.HierarchyEditor then ns.HierarchyEditor.Refresh() end
@@ -785,19 +809,19 @@ function Session.ChangeSetting(key, value)
 end
 
 --- Raid members running the addon who have not submitted, for the host panel.
-function Session.OutstandingPlayers()
-    local session = Session.current
+function Round.OutstandingPlayers()
+    local round = Round.current
     local out = {}
-    if not session then return out end
+    if not round then return out end
     for _, name in ipairs(expectedPlayers()) do
-        if not session.submitted[name] then out[#out + 1] = name end
+        if not round.submitted[name] then out[#out + 1] = name end
     end
     table.sort(out)
     return out
 end
 
 --------------------------------------------------------------------------------
--- The pump: the batch timer, coalesced STATE, and the expiry guard
+-- The pump: the round timer, coalesced STATE, and the expiry guard
 --------------------------------------------------------------------------------
 
 local function onUpdate(_, elapsed)
@@ -809,69 +833,69 @@ local function onUpdate(_, elapsed)
         end
     end
 
-    local session = Session.current
-    if not session or session.state ~= C.SESSION_STATE.OPEN then return end
-    if not Session.IsHost() then return end
+    local round = Round.current
+    if not round or round.state ~= C.ROUND_STATE.OPEN then return end
+    if not Round.IsHost() then return end
 
     local now = GetTime()
-    if now >= session.endsAt then
+    if now >= round.endsAt then
         if stateDirty then                 -- do not resolve on a state nobody has seen
             stateDirty, stateTimer = false, 0
             broadcastState()
         end
-        Session.Close()
-    elseif now - (session.openedAtLocal or now) > C.BATCH_EXPIRY then
-        Session.Abort(C.ABORT_REASON.EXPIRED)
+        Round.Close()
+    elseif now - (round.openedAtLocal or now) > C.ROUND_EXPIRY then
+        Round.Abort(C.ABORT_REASON.EXPIRED)
     end
 end
 
 --------------------------------------------------------------------------------
--- Events: the master looter changing under an open batch
+-- Events: the master looter changing under an open round
 --------------------------------------------------------------------------------
 
 --- Re-derive the host. Public so /rls simulate can change hands without an event.
-function Session.CheckHost()
-    local host = Session.HostName()
+function Round.CheckHost()
+    local host = Round.HostName()
     if host ~= lastHost then
         lastHost = host
-        local session = Session.current
-        if session and session.state == C.SESSION_STATE.OPEN then
-            -- Whoever was hosting can no longer speak for this batch, and the new
+        local round = Round.current
+        if round and round.state == C.ROUND_STATE.OPEN then
+            -- Whoever was hosting can no longer speak for this round, and the new
             -- master looter never received its entries. It ends here (section 9).
-            Session.Abort(C.ABORT_REASON.ML_CHANGED)
+            Round.Abort(C.ABORT_REASON.ML_CHANGED)
         end
     end
 end
 
 local function onGroupEvent()
-    Session.CheckHost()
+    Round.CheckHost()
 
     -- Someone leaving can be what completes the set: they were expected and had
     -- not submitted, and now nobody outstanding is left to wait for.
-    local session = Session.current
-    if session and Session.IsHost() then maybeAutoClose(session) end
+    local round = Round.current
+    if round and Round.IsHost() then maybeAutoClose(round) end
 
     -- Version handshake (section 11), throttled: roster events arrive in bursts.
     local now = GetTime()
     if now - lastHi > 5 then
         lastHi = now
-        ns.Comms.Send(C.OPS.HI, C.VERSION)
+        ns.Comms.Send(C.OPS.HI, Round.HiBody())
     end
 end
 
-function Session.Init()
+function Round.Init()
     if frame then return end
 
     ns.Comms.RegisterHandler(C.OPS.SUBMIT, onSubmit)
     ns.Comms.RegisterHandler(C.OPS.SYNC, onSync)
     ns.Comms.RegisterHandler(C.OPS.HI, onHi)
 
-    frame = CreateFrame("Frame", "RaidLootSystemSessionFrame")
+    frame = CreateFrame("Frame", "RaidLootSystemRoundFrame")
     frame:RegisterEvent("PARTY_LOOT_METHOD_CHANGED")
     frame:RegisterEvent("RAID_ROSTER_UPDATE")
     frame:RegisterEvent("PARTY_MEMBERS_CHANGED")
     frame:SetScript("OnEvent", onGroupEvent)
     frame:SetScript("OnUpdate", onUpdate)
 
-    lastHost = Session.HostName()
+    lastHost = Round.HostName()
 end

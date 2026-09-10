@@ -1,6 +1,6 @@
 -- UI/HistoryBrowser.lua
 --
--- The history window (spec 008 section 5): batches newest-first, each expandable to
+-- The history window (spec 008 section 5): rounds newest-first, each expandable to
 -- the same results table the roll window shows; filters; the per-character summary;
 -- and export to a selectable text box (section 6).
 --
@@ -18,7 +18,7 @@ local Widgets = ns.Widgets
 local WIDTH = 600
 local INNER = WIDTH - 60
 -- Rows stop short of the scroll frame's right edge; the bar the template builds
--- overhangs it, and the batch badge is right-aligned into exactly that strip.
+-- overhangs it, and the round badge is right-aligned into exactly that strip.
 local SCROLL_WIDTH = INNER - 30
 local ROW_WIDTH = SCROLL_WIDTH - Widgets.SCROLLBAR_GUTTER
 local ROW_H = 22
@@ -35,7 +35,7 @@ local START_HEIGHT = 640        -- provisional; layoutPanels measures the real o
 
 local frame, content, filters, exportPanel, summaryPanel
 local layoutPanels
-local batchRows, detail, detailRows = {}, nil, {}
+local roundRows, detail, detailRows = {}, nil, {}
 local expandedKey
 local filtered = {}
 
@@ -57,7 +57,7 @@ local function formatDate(ts)
 end
 
 local function keyOf(record)
-    return record.sessionId .. (record.recordedAsHost and "/host" or "/client")
+    return record.roundId .. (record.recordedAsHost and "/host" or "/client")
 end
 
 --------------------------------------------------------------------------------
@@ -68,7 +68,7 @@ local function currentFilter()
     local roster
     if filters.mine:GetChecked() == 1 then
         roster = {}
-        for _, name in ipairs(DB().Roster().order) do roster[name:lower()] = true end
+        for _, name in ipairs(DB().Hierarchy()) do roster[name:lower()] = true end
     end
     local days = tonumber(filters.days:GetText())
     return {
@@ -77,6 +77,9 @@ local function currentFilter()
         item = filters.item:GetText(),
         since = days and (time() - days * 86400) or nil,
         roster = roster,
+        -- Defaults to the active campaign (spec 012 section 13); All campaigns is
+        -- the toggle, and records written before campaigns existed only show there.
+        campaignId = (filters.allCampaigns:GetChecked() ~= 1) and ns.Campaign.ActiveId() or nil,
         includeSimulated = filters.simulated:GetChecked() == 1,
         labelOf = nameOf,
     }
@@ -112,6 +115,10 @@ local function buildFilters(parent)
         function() Browser.Refresh() end)
     panel.simulated:SetPoint("LEFT", panel.mine, "RIGHT", 110, 0)
 
+    panel.allCampaigns = Widgets.CheckBox(panel, "RaidLootSystemHistoryAllCampaigns",
+        "All campaigns", function() Browser.Refresh() end)
+    panel.allCampaigns:SetPoint("LEFT", panel.simulated, "RIGHT", 120, 0)
+
     panel.apply = Widgets.Button(panel, "Apply", 70, 20, function() Browser.Refresh() end)
     panel.apply:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -8, 6)
     return panel
@@ -121,8 +128,8 @@ end
 -- The list
 --------------------------------------------------------------------------------
 
-local function batchRow(i)
-    local row = batchRows[i]
+local function roundRow(i)
+    local row = roundRows[i]
     if row then return row end
     row = CreateFrame("Button", nil, content)
     row:SetWidth(ROW_WIDTH)
@@ -158,7 +165,7 @@ local function batchRow(i)
         expandedKey = (expandedKey == self.key) and nil or self.key
         Browser.Refresh()
     end)
-    batchRows[i] = row
+    roundRows[i] = row
     return row
 end
 
@@ -197,12 +204,19 @@ function Browser.Refresh()
     local n = 0
     for _, record in ipairs(filtered) do
         n = n + 1
-        local row = batchRow(n)
+        local row = roundRow(n)
         row.key = keyOf(record)
         row:ClearAllPoints()
         row:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -y)
         row.when:SetText(formatDate(record.timestamp))
-        row.where:SetText((record.zone or "?") .. " / " .. (record.source or "?"))
+        -- A record whose campaign is gone still renders its name, with a marker
+        -- (spec 012 sections 11 and 13).
+        local campaignText = ""
+        if record.campaignId then
+            campaignText = "  |cff888888[" .. (record.campaignLabel or record.campaignId)
+                .. (ns.Campaign.Get(record.campaignId) and "" or " - deleted") .. "]|r"
+        end
+        row.where:SetText((record.zone or "?") .. " / " .. (record.source or "?") .. campaignText)
         for j, icon in ipairs(row.icons) do
             local item = record.items[j]
             if item then
@@ -238,7 +252,7 @@ function Browser.Refresh()
             y = y + height + 6
         end
     end
-    for i = n + 1, #batchRows do batchRows[i]:Hide() end
+    for i = n + 1, #roundRows do roundRows[i]:Hide() end
     if detail and not expandedKey then detail:Hide() end
     if detail and expandedKey then
         local found = false
@@ -246,8 +260,8 @@ function Browser.Refresh()
         if not found then detail:Hide() end
     end
 
-    frame.empty:SetText(#filtered == 0 and "No batches match." or "")
-    frame.count:SetText(string.format("%d batch%s", #filtered, #filtered == 1 and "" or "es"))
+    frame.empty:SetText(#filtered == 0 and "No rounds match." or "")
+    frame.count:SetText(string.format("%d round%s", #filtered, #filtered == 1 and "" or "s"))
     content:SetHeight(math.max(y, 1))
     layoutPanels()
 end
@@ -320,13 +334,13 @@ end
 local function exportText()
     local text = ns.History.ExportText(filtered, { labelOf = nameOf, formatDate = formatDate })
     ns.History.MarkExported(filtered)
-    showText(exportPanel, string.format("Plain text, %d batch(es). Ctrl-C to copy.", #filtered), text)
+    showText(exportPanel, string.format("Plain text, %d round(s). Ctrl-C to copy.", #filtered), text)
 end
 
 local function exportCSV()
     local text = ns.History.ExportCSV(filtered, { nameOf = nameOf })
     ns.History.MarkExported(filtered)
-    showText(exportPanel, string.format("CSV, one row per entry, %d batch(es). Ctrl-C to copy.", #filtered), text)
+    showText(exportPanel, string.format("CSV, one row per entry, %d round(s). Ctrl-C to copy.", #filtered), text)
 end
 
 local function characterSummary()
@@ -376,12 +390,12 @@ local function build()
     exportTextButton:SetPoint("TOPLEFT", listPanel, "BOTTOMLEFT", 0, -8)
     frame.exportRow = exportTextButton
     Widgets.Tooltip(exportTextButton, "Export text",
-        "The batches shown, one line per award, for pasting into Discord.")
+        "The rounds shown, one line per award, for pasting into Discord.")
 
     local exportCSVButton = Widgets.Button(frame, "Export CSV", 100, 22, exportCSV)
     exportCSVButton:SetPoint("LEFT", exportTextButton, "RIGHT", 6, 0)
     Widgets.Tooltip(exportCSVButton, "Export CSV",
-        "The batches shown, one row per entry, for a spreadsheet.")
+        "The rounds shown, one row per entry, for a spreadsheet.")
 
     local summaryButton = Widgets.Button(frame, "Character summary", 130, 22, characterSummary)
     summaryButton:SetPoint("LEFT", exportCSVButton, "RIGHT", 6, 0)

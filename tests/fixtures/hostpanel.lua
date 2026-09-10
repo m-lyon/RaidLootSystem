@@ -11,7 +11,7 @@ local function run(input, ns)
     if input.op == "start" then
         return HP.StartBlocker(input.ctx) or ""
     elseif input.op == "setting" then
-        return HP.SettingBlocker(input.key, input.batchOpen) or ""
+        return HP.SettingBlocker(input.key, input.roundOpen) or ""
     elseif input.op == "tierNote" then
         return HP.TierExplanation(input.tierCount, input.lootMode)
     elseif input.op == "status" then
@@ -42,9 +42,9 @@ return {
         { name = "master loot but somebody else holds it",
           input = { op = "start", ctx = { isHost = false, lootMethod = "master", ticked = 2 } },
           expected = "You are not the master looter." },
-        { name = "a batch is already open",
-          input = { op = "start", ctx = { isHost = true, lootMethod = "master", batchOpen = true, ticked = 2 } },
-          expected = "A batch is already open. Close or cancel it first." },
+        { name = "a round is already open",
+          input = { op = "start", ctx = { isHost = true, lootMethod = "master", roundOpen = true, ticked = 2 } },
+          expected = "A round is already open. Close or cancel it first." },
         { name = "the scan is still running",
           input = { op = "start", ctx = { isHost = true, lootMethod = "master", scanning = true, ticked = 2 } },
           expected = "Still looking the loot up." },
@@ -55,20 +55,20 @@ return {
           input = { op = "start", ctx = { isHost = true, lootMethod = "master", ticked = 3 } },
           expected = "" },
 
-        -- Acceptance: tier count and timer are disabled while a batch is open, with a reason.
-        { name = "tier count is frozen mid-batch",
-          input = { op = "setting", key = "tierCount", batchOpen = true },
-          expected = "Frozen while a batch is open. Your change would apply to the next one." },
-        { name = "the timer is frozen mid-batch",
-          input = { op = "setting", key = "timerSeconds", batchOpen = true },
-          expected = "Frozen while a batch is open. Your change would apply to the next one." },
-        { name = "the loot mode is frozen mid-batch",
-          input = { op = "setting", key = "lootMode", batchOpen = true },
-          expected = "Frozen while a batch is open. Your change would apply to the next one." },
+        -- Acceptance: tier count and timer are disabled while a round is open, with a reason.
+        { name = "tier count is frozen mid-round",
+          input = { op = "setting", key = "tierCount", roundOpen = true },
+          expected = "Frozen while a round is open. Your change would apply to the next one." },
+        { name = "the timer is frozen mid-round",
+          input = { op = "setting", key = "timerSeconds", roundOpen = true },
+          expected = "Frozen while a round is open. Your change would apply to the next one." },
+        { name = "the loot mode is frozen mid-round",
+          input = { op = "setting", key = "lootMode", roundOpen = true },
+          expected = "Frozen while a round is open. Your change would apply to the next one." },
         { name = "the quality threshold changes any time",
-          input = { op = "setting", key = "qualityThreshold", batchOpen = true }, expected = "" },
-        { name = "tier count is free between batches",
-          input = { op = "setting", key = "tierCount", batchOpen = false }, expected = "" },
+          input = { op = "setting", key = "qualityThreshold", roundOpen = true }, expected = "" },
+        { name = "tier count is free between rounds",
+          input = { op = "setting", key = "tierCount", roundOpen = false }, expected = "" },
 
         { name = "a tier count of zero explains the flat roll",
           input = { op = "tierNote", tierCount = 0, lootMode = "ROLL" },

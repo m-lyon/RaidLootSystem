@@ -29,14 +29,14 @@ is correct, and the fields that makes possible are in §3.
 
 ## 3. Record schema
 
-One record per **batch**, not per item — items in a batch share a loot source and a settings
+One record per **round**, not per item — items in a round share a loot source and a settings
 context, and splitting them loses that.
 
 ```lua
 {
-  sessionId  = "Steve-1757155200",
+  roundId  = "Steve-1757155200",
   recordedAsHost = true,
-  timestamp  = 1757155200,               -- time() at batch open
+  timestamp  = 1757155200,               -- time() at round open
   closedAt   = 1757155380,
   zone       = "Icecrown Citadel",
   source     = "Lord Marrowgar",         -- creature name, or "Item link" for the manual path.
@@ -49,7 +49,7 @@ context, and splitting them loses that.
     lootMode  = "SK",                     -- ROLL | SK                    (010 §2)
   },
 
-  priorityAtOpen = {                      -- the list when the batch opened (010 §9)
+  priorityAtOpen = {                      -- the list when the round opened (010 §9)
     version = 47, order = { "Chop", "Sneaky", "Steve", "Botty" },
   },
 
@@ -95,7 +95,7 @@ reflects what actually happened rather than what was intended at resolution time
 
 A client's record has no `submittedAt`/`revisedAt`, `lootSlot`, `star`, `override` or delivery
 fields: none of those reach the wire. On the host's own machine only the host record is written;
-the host's mirror of its own broadcast would otherwise duplicate the batch.
+the host's mirror of its own broadcast would otherwise duplicate the round.
 
 Under `SK` this update also **triggers a list restore** (010 §6): an award moving away from
 `DELIVERED` returns the character to `priorIndex`. That is why `priorIndex` is recorded rather
@@ -118,18 +118,18 @@ per item now, or a permanently unusable history later.
 
 Bounded so the saved-variables file cannot grow without limit:
 
-- Keep the most recent **500 batches** or **90 days**, whichever bites first.
+- Keep the most recent **500 rounds** or **90 days**, whichever bites first.
 - Prune on load, not continuously.
 - Warn before pruning if the oldest records have never been exported.
 
-Aborted batches are retained with their reason and their submitted entries. A batch never simply
+Aborted rounds are retained with their reason and their submitted entries. A round never simply
 vanishes — "we rolled and then nothing happened" must always be explicable afterwards.
 
 ## 5. History browser
 
-A window listing batches newest-first: date, zone, source, item icons, and an outcome badge.
+A window listing rounds newest-first: date, zone, source, item icons, and an outcome badge.
 
-Expanding a batch shows each item with the same results table as 005 §5 — full entries, tiers,
+Expanding a round shows each item with the same results table as 005 §5 — full entries, tiers,
 rolls, re-rolls, not-consulted markers, awards and delivery state. One rendering component,
 used in both places.
 
@@ -143,7 +143,7 @@ Botty actually got out of this raid tier" is the question people will ask most.
 Two formats, both to a selectable text box (the standard addon idiom, since a WoW client cannot
 write files):
 
-- **Plain text** — human-readable, for pasting into Discord. One line per award, with a batch
+- **Plain text** — human-readable, for pasting into Discord. One line per award, with a round
   header.
 - **CSV** — one row per **entry**, not per award, so the data is analysable:
   `timestamp, zone, source, item, itemLevel, quality, equipLoc, character, owner, tier, listIdx,
@@ -155,16 +155,16 @@ The addon never transmits history anywhere. Export is manual, local, and user-in
 
 ## 7. Acceptance criteria
 
-- A resolved batch produces exactly one record containing every item and every entry, including
+- A resolved round produces exactly one record containing every item and every entry, including
   entries that were never rolled.
 - The settings block captures the tier count in force at open, and is unaffected by later changes.
-- An aborted batch is recorded with its reason and its submitted entries.
+- An aborted round is recorded with its reason and its submitted entries.
 - A pending item delivered 40 minutes later updates the original record's delivery state in
   place; no second record is created.
-- Loading with 501 batches prunes to 500, oldest first.
-- Client and host records of the same batch are both present and distinguishable by
+- Loading with 501 rounds prunes to 500, oldest first.
+- Client and host records of the same round are both present and distinguishable by
   `recordedAsHost`.
-- CSV export of a 6-item batch with 20 entries produces 20 rows plus a header.
+- CSV export of a 6-item round with 20 entries produces 20 rows plus a header.
 - `itemLevel`, `quality` and `equipLoc` are written under `lootMode = "ROLL"` too.
 - `priorityAtOpen` captures the list version and order at open and is unaffected by later
   suicides.

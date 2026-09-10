@@ -28,9 +28,9 @@ end
 --------------------------------------------------------------------------------
 
 local function status()
-    local roster = ns.Database.Roster()
-    ns.Print(string.format("version %s, %d characters in your roster, tier count %d.",
-        C.VERSION, #roster.order, ns.Database.DefaultTierCount()))
+    local campaign = ns.Campaign.Active()
+    ns.Print(string.format("version %s, campaign \"%s\", %d characters in it, tier count %d.",
+        C.VERSION, campaign.label, #campaign.hierarchy, ns.Database.DefaultTierCount()))
 
     local contested = ns.Roster.ContestedNames()
     if #contested > 0 then
@@ -43,14 +43,14 @@ local function status()
         ns.Print("in the group but in nobody's roster: " .. table.concat(unclaimed, ", "))
     end
 
-    local host = ns.Session.HostName()
+    local host = ns.Round.HostName()
     ns.Print("master looter: " .. (host or "nobody - the group is not on master loot")
-        .. (ns.Session.IsHost() and " (you host)" or ""))
+        .. (ns.Round.IsHost() and " (you host)" or ""))
 
-    local session = ns.Client.session
-    if session then
-        ns.Print(string.format("batch %s: %d item(s), %s.",
-            session.id, #session.items, session.state:lower()))
+    local round = ns.Client.round
+    if round then
+        ns.Print(string.format("round %s: %d item(s), %s.",
+            round.id, #round.items, round.state:lower()))
     end
 end
 
@@ -61,17 +61,17 @@ local function setTierCount(argument)
             C.MIN_TIER_COUNT, C.MAX_TIER_COUNT))
         return
     end
-    local ok, why = ns.Session.ChangeSetting("tierCount", count)
+    local ok, why = ns.Round.ChangeSetting("tierCount", count)
     if not ok then
         ns.Print(why)
         return
     end
-    ns.Print("tier count set to " .. math.floor(count) .. ". It applies to the next batch.")
+    ns.Print("tier count set to " .. math.floor(count) .. ". It applies to the next round.")
 end
 
 --------------------------------------------------------------------------------
 -- Loot (spec 004). The host panel (spec 006) will own these; until it exists they are
--- the seam that makes detection and batching usable and demonstrable.
+-- the seam that makes detection and rounds usable and demonstrable.
 --------------------------------------------------------------------------------
 
 local function lootList()
@@ -93,7 +93,7 @@ local function lootList()
             ns.Print(string.format("  %d. %s%s%s", i, ns.LootDetect.Label(item),
                 item.count > 1 and (" x" .. item.count) or "", marker))
         end
-        ns.Print("/rls start opens a batch on all of them.")
+        ns.Print("/rls start opens a round on all of them.")
     end
 
     for _, skip in ipairs(LootDetect.skipped) do
@@ -103,14 +103,17 @@ local function lootList()
     end
 end
 
-local function startBatch()
+local function startRound()
     local items = ns.LootDetect.candidates
     if #items == 0 then
         ns.Print("there are no candidates. /rls loot to see what was found.")
         return
     end
-    local ok, why = ns.Session.Open(items)
-    if not ok then ns.Print(why) end
+    -- A host cannot disenfranchise anyone without being told (spec 012 section 6).
+    ns.Campaigns.GuardOpen(function()
+        local ok, why = ns.Round.Open(items)
+        if not ok then ns.Print(why) end
+    end)
 end
 
 local function rollFor(argument)
@@ -120,7 +123,7 @@ local function rollFor(argument)
     end
     ns.LootDetect.FromLink(argument, function(items)
         if not items then return end
-        local ok, why = ns.Session.Open(items)
+        local ok, why = ns.Round.Open(items)
         if not ok then ns.Print(why) end
     end)
 end
@@ -128,7 +131,7 @@ end
 --- The quality bar the corpse scan applies (spec 004 section 2). The host panel (spec 006)
 -- owns this setting; this is here so the bar can be moved without one.
 local function setQuality(argument)
-    local ok, why = ns.Session.ChangeSetting("qualityThreshold", tonumber(argument))
+    local ok, why = ns.Round.ChangeSetting("qualityThreshold", tonumber(argument))
     if not ok then
         ns.Print(why)
         return
@@ -136,13 +139,61 @@ local function setQuality(argument)
     ns.Print("only loot of quality " .. tonumber(argument) .. " and above is offered.")
 end
 
+--- `/rls campaign ...` (spec 012 section 13).
+local function campaignCommand(argument)
+    local sub, rest = argument:match("^(%S*)%s*(.-)$")
+    sub = (sub or ""):lower()
+    local Campaign = ns.Campaign
+
+    if sub == "" then
+        Campaign.PrintList()
+    elseif sub == "new" then
+        if rest == "" then
+            ns.Print("give a label: /rls campaign new Tuesday 25")
+        else
+            ns.Campaigns.ShowCreate(rest)
+        end
+    elseif sub == "switch" then
+        local campaign = Campaign.ByIndex(rest)
+        if not campaign then
+            ns.Print("no campaign " .. rest .. "; /rls campaign lists them.")
+        else
+            local ok, why = Campaign.Switch(campaign.id)
+            if not ok then ns.Print(why) end
+        end
+    elseif sub == "rename" then
+        local ok, why = Campaign.Rename(Campaign.ActiveId(), rest)
+        if not ok then ns.Print(why) else ns.Print("renamed to \"" .. rest .. "\".") end
+    elseif sub == "delete" then
+        local campaign = Campaign.ByIndex(rest)
+        if not campaign then
+            ns.Print("no campaign " .. rest .. "; /rls campaign lists them.")
+        else
+            ns.Campaigns.PromptDelete(campaign.id)
+        end
+    elseif sub == "invite" then
+        local ok, why = Campaign.Invite()
+        if not ok then ns.Print(why) end
+    elseif sub == "export" then
+        ns.Campaigns.ShowExport(Campaign.ActiveId())
+    elseif sub == "import" then
+        if rest == "" then ns.Campaigns.ShowImport() else ns.Campaigns.Import(rest) end
+    else
+        ns.Print("/rls campaign [new <label> | switch <n> | rename <label> | delete <n> "
+            .. "| invite | export | import <string>]")
+    end
+end
+
 local function help()
     ns.Print("commands:")
-    ns.Print("  /rls              open the roll window, or your hierarchy when no batch is live")
+    ns.Print("  /rls              open the roll window, or your hierarchy when no round is live")
     ns.Print("  /rls window       open the roll window")
     ns.Print("  /rls hierarchy    open your hierarchy")
     ns.Print("  /rls host         open the host panel (master looter)")
     ns.Print("  /rls history      open the history browser")
+    ns.Print("  /rls campaign     list your campaigns, marking the active one")
+    ns.Print("  /rls campaign new <label> | switch <n> | rename <label> | delete <n>")
+    ns.Print("  /rls campaign invite | export | import <string>")
     ns.Print("  /rls sk list      print the priority list")
     ns.Print("  /rls sk verify    replay the priority list from its seed and report drift")
     ns.Print("  /rls simulate [items=N] [players=N] [scenario=name]  run the pipeline solo")
@@ -155,12 +206,12 @@ local function help()
     ns.Print("  /rls publish      resend your roster to the raid")
     ns.Print("  /rls request      ask everyone to resend theirs")
     ns.Print("  /rls loot         list what the open corpse has worth rolling for")
-    ns.Print("  /rls start        open a batch on those items (host)")
+    ns.Print("  /rls start        open a round on those items (host)")
     ns.Print("  /rls quality <3|4> set the quality bar the corpse scan applies (rare/epic)")
-    ns.Print("  /rls roll <link>  open a batch on one item link (host)")
-    ns.Print("  /rls close        resolve the open batch now (host)")
-    ns.Print("  /rls cancel       cancel the open batch (host)")
-    ns.Print("  /rls sync         ask the host to resend the open batch")
+    ns.Print("  /rls roll <link>  open a round on one item link (host)")
+    ns.Print("  /rls close        resolve the open round now (host)")
+    ns.Print("  /rls cancel       cancel the open round (host)")
+    ns.Print("  /rls sync         ask the host to resend the open round")
     ns.Print("  /rls itemclasses  print this client's item class order (verification)")
     ns.Print("  /rls debug        toggle debug messages")
 end
@@ -203,6 +254,8 @@ local function dispatch(input)
             ns.Print("/rls sk for the list window, /rls sk list to print it, "
                 .. "/rls sk verify to check it. Seeding and edits are in the host panel.")
         end
+    elseif command == "campaign" then
+        campaignCommand(argument)
     elseif command == "pending" then
         ns.Pending.PrintList()
     elseif command == "deliver" then
@@ -234,7 +287,7 @@ local function dispatch(input)
     elseif command == "loot" then
         lootList()
     elseif command == "start" then
-        startBatch()
+        startRound()
     elseif command == "quality" then
         setQuality(argument)
     elseif command == "roll" then
@@ -242,16 +295,16 @@ local function dispatch(input)
     elseif command == "itemclasses" then
         ns.ItemInfo.DumpClasses()
     elseif command == "close" then
-        if not ns.Session.Close() then
-            ns.Print("there is no batch of yours to close.")
+        if not ns.Round.Close() then
+            ns.Print("there is no round of yours to close.")
         end
     elseif command == "cancel" then
-        if not ns.Session.Abort(C.ABORT_REASON.MANUAL) then
-            ns.Print("there is no batch of yours to cancel.")
+        if not ns.Round.Abort(C.ABORT_REASON.MANUAL) then
+            ns.Print("there is no round of yours to cancel.")
         end
     elseif command == "sync" then
         if ns.Client.RequestSync() then
-            ns.Print("asked the host to resend the open batch.")
+            ns.Print("asked the host to resend the open round.")
         else
             ns.Print("you asked less than " .. C.SYNC_INTERVAL .. " seconds ago; wait a moment.")
         end
@@ -288,19 +341,21 @@ loader:SetScript("OnEvent", function(_, event, addonName)
         end
     elseif event == "PLAYER_LOGIN" then
         ns.Comms.Init()
+        ns.Campaign.Init()
         ns.History.Init()
         ns.Announce.Init()
         ns.Roster.Init()
         ns.ItemInfo.Init()
         ns.LootDetect.Init()
-        ns.Session.Init()
+        ns.Round.Init()
         ns.Client.Init()
         ns.Award.Init()
         ns.Pending.Init()
         ns.Priority.Init()
         ns.RollWindow.Init()
         ns.HostPanel.Init()
+        ns.Campaigns.Init()
         ns.Minimap.Init()
-        ns.Comms.Send(C.OPS.HI, C.VERSION)
+        ns.Comms.Send(C.OPS.HI, ns.Round.HiBody())
     end
 end)

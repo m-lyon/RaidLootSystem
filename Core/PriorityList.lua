@@ -174,7 +174,7 @@ function PriorityList.restoreNow(order, char, index, presentSet)
     return out, present
 end
 
---- Apply a batch's suicides once per winning character, in (item index, copy) order
+--- Apply a round's suicides once per winning character, in (item index, copy) order
 -- (section 7). The present set is the raid at close, the same for every suicide.
 -- @param awards  array of { itemIdx, copy, char } in that order
 -- @return order', array of { char, from, to, present } in the order applied

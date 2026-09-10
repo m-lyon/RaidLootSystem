@@ -61,7 +61,7 @@ local function run(input, ns)
         end
         return starred
     elseif input.op == "resolve" then
-        -- Feed a plan through Resolve.batch as the host would: tiers from roster
+        -- Feed a plan through Resolve.round as the host would: tiers from roster
         -- position under tier count 3, the rng replaying plan.rolls.
         local plan = S.Build(input.scenario)
         local items, entriesByItem = {}, {}
@@ -77,7 +77,7 @@ local function run(input, ns)
             end
         end
         local n = 0
-        local results = ns.Resolve.batch(items, entriesByItem, {
+        local results = ns.Resolve.round(items, entriesByItem, {
             rng = function() n = n + 1; return plan.rolls[n] end,
             lootMode = plan.lootMode,
         })
@@ -115,7 +115,7 @@ return {
           expected = { why = "unknown scenario: nope" } },
         { name = "the scenario list is the spec's table",
           input = { op = "scenarios" },
-          expected = "abort, absent, chunked, contested, default, duplicate, restore, sk, special, star, tie, token, unclaimed" },
+          expected = "abort, absent, campaign, chunked, contested, default, duplicate, restore, sk, special, star, tie, token, unclaimed" },
 
         consistent("default", nil, { players = 3, items = 4, entries = 24 }),
         consistent("default", { items = 6, players = 5 }, { players = 5, items = 6, entries = 60 }),

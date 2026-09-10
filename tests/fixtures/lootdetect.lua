@@ -1,7 +1,7 @@
 -- tests/fixtures/lootdetect.lua
 --
 -- Spec 004 sections 2 and 3: the candidate rule, duplicate stacks, and losing loot
--- under an open batch.
+-- under an open round.
 
 local ns = ...
 
@@ -88,8 +88,8 @@ local MOUNT = info(44083, { special = true })
 local COLD = info(50000, { quality = nil, special = true, unresolved = true })
 local GREEN = info(41000, { equipLoc = "INVTYPE_CHEST", quality = 2 })
 
---- A batch item as LootDetect.Collapse would produce it.
-local function batchItem(idx, id, count, slots, slotQuantities)
+--- A round item as LootDetect.Collapse would produce it.
+local function roundItem(idx, id, count, slots, slotQuantities)
     if not slotQuantities then
         slotQuantities = {}
         for i = 1, #slots do slotQuantities[slots[i]] = 1 end
@@ -165,7 +165,7 @@ return {
         -- Duplicate stacks (section 2)
         ----------------------------------------------------------------------
         {
-            name = "two loot slots of one item become one batch item with count 2",
+            name = "two loot slots of one item become one round item with count 2",
             input = { op = "collapse", rows = {
                 { lootSlot = 1, quantity = 1, info = info(40000) },
                 { lootSlot = 3, quantity = 1, info = info(40000) },
@@ -215,7 +215,7 @@ return {
             } },
         },
         {
-            name = "an item-link batch has no loot slot",
+            name = "an item-link round has no loot slot",
             input = { op = "collapse", rows = {
                 { quantity = 1, info = info(40000) },
             } },
@@ -306,7 +306,7 @@ return {
 
         ----------------------------------------------------------------------
         -- Withdrawn items (spec 006 section 3): taken out by hand, or already
-        -- rolled by a batch that closed. Unlike a filtered row these are not
+        -- rolled by a round that closed. Unlike a filtered row these are not
         -- offered back under `skipped` -- the question has been answered.
         ----------------------------------------------------------------------
         {
@@ -341,13 +341,13 @@ return {
         },
 
         ----------------------------------------------------------------------
-        -- Losing loot mid-batch (section 3)
+        -- Losing loot mid-round (section 3)
         ----------------------------------------------------------------------
         {
             name = "nothing gone means nothing changes",
             input = { op = "prune", gone = {}, items = {
-                batchItem(1, 40000, 1, { 1 }),
-                batchItem(2, 40001, 1, { 2 }),
+                roundItem(1, 40000, 1, { 1 }),
+                roundItem(2, 40001, 1, { 2 }),
             } },
             expected = {
                 kept = {
@@ -364,8 +364,8 @@ return {
             -- by it, so renumbering would move everyone's submission to another item.
             name = "a lost item leaves the rest with their indices intact",
             input = { op = "prune", gone = { [1] = true }, items = {
-                batchItem(1, 40000, 1, { 1 }),
-                batchItem(2, 40001, 1, { 2 }),
+                roundItem(1, 40000, 1, { 1 }),
+                roundItem(2, 40001, 1, { 2 }),
             } },
             expected = {
                 kept = {
@@ -378,7 +378,7 @@ return {
         {
             name = "losing one copy of two drops the count, not the item",
             input = { op = "prune", gone = { [3] = true }, items = {
-                batchItem(1, 40000, 2, { 1, 3 }),
+                roundItem(1, 40000, 2, { 1, 3 }),
             } },
             expected = {
                 kept = {
@@ -392,8 +392,8 @@ return {
             -- The host reads an empty result as LOOT_GONE (spec 002 section 9).
             name = "losing everything leaves nothing to roll for",
             input = { op = "prune", gone = { [1] = true, [2] = true }, items = {
-                batchItem(1, 40000, 1, { 1 }),
-                batchItem(2, 40001, 1, { 2 }),
+                roundItem(1, 40000, 1, { 1 }),
+                roundItem(2, 40001, 1, { 2 }),
             } },
             expected = {
                 kept = {},
@@ -401,7 +401,7 @@ return {
             },
         },
         {
-            name = "an item-link batch has no slot to lose",
+            name = "an item-link round has no slot to lose",
             input = { op = "prune", gone = { [1] = true }, items = {
                 { idx = 1, itemString = "item:40000:0:0:0:0:0:0:0:0", count = 1,
                   lootSlots = {} },
@@ -417,7 +417,7 @@ return {
             -- losing that slot loses the whole stack, not one unit of it.
             name = "losing a stacked slot subtracts the stack, not one unit",
             input = { op = "prune", gone = { [2] = true }, items = {
-                batchItem(1, 40000, 4, { 1, 2 }, { [1] = 1, [2] = 3 }),
+                roundItem(1, 40000, 4, { 1, 2 }, { [1] = 1, [2] = 3 }),
             } },
             expected = {
                 kept = {
@@ -430,7 +430,7 @@ return {
         {
             name = "losing the single unit next to a stack keeps the stack's count",
             input = { op = "prune", gone = { [1] = true }, items = {
-                batchItem(1, 40000, 4, { 1, 2 }, { [1] = 1, [2] = 3 }),
+                roundItem(1, 40000, 4, { 1, 2 }, { [1] = 1, [2] = 3 }),
             } },
             expected = {
                 kept = {
@@ -441,7 +441,7 @@ return {
             },
         },
         {
-            -- A batch record from before slotQuantities existed still prunes sanely.
+            -- A round record from before slotQuantities existed still prunes sanely.
             name = "a slot with no recorded quantity counts as one unit",
             input = { op = "prune", gone = { [3] = true }, items = {
                 { idx = 1, itemString = "item:40000:0:0:0:0:0:0:0:0", count = 2,

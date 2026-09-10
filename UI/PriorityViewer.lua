@@ -30,17 +30,17 @@ local frame, content, rows
 
 local function DB() return ns.Database.Priority() end
 
---- Is SK the mode in force? true, false, or nil when no batch is open.
+--- Is SK the mode in force? true, false, or nil when no round is open.
 --
--- The host reads its own session, a client reads the one the host sent it. A list
+-- The host reads its own round, a client reads the one the host sent it. A list
 -- can sit seeded through a whole ROLL night, and a viewer that does not say so
 -- invites the reader to assume tonight's loot is going by these positions.
 local function skInForce()
-    local session = (ns.Session and ns.Session.current)
-        or (ns.Client and ns.Client.session)
+    local round = (ns.Round and ns.Round.current)
+        or (ns.Client and ns.Client.round)
         or nil
-    if not session or session.state ~= C.SESSION_STATE.OPEN then return nil end
-    return session.lootMode == C.LOOT_MODE.SK
+    if not round or round.state ~= C.ROUND_STATE.OPEN then return nil end
+    return round.lootMode == C.LOOT_MODE.SK
 end
 
 --- Resolve every WoW-facing lookup the row model needs, so PriorityList.viewRows
@@ -92,8 +92,11 @@ function Viewer.Refresh()
     local db = DB()
     local order = db.order or {}
 
+    -- The header names the campaign, so a screenshot is unambiguous about which
+    -- list it shows (spec 012 section 13).
+    local label = ns.Campaign.ActiveLabel()
     if #order == 0 then
-        frame.header:SetText("The priority list is not seeded.")
+        frame.header:SetText(string.format("\"%s\": the priority list is not seeded.", label))
         frame.mode:SetText("|cff888888Suicide Kings is unavailable until the master looter "
             .. "seeds it.|r")
         for _, row in ipairs(rows) do row:Hide() end
@@ -101,17 +104,17 @@ function Viewer.Refresh()
         return
     end
 
-    frame.header:SetText(string.format("%d characters, version %d, seed %d",
-        #order, db.version or 0, db.seed or 0))
+    frame.header:SetText(string.format("\"%s\" - %d characters, version %d, seed %d",
+        label, #order, db.version or 0, db.seed or 0))
 
     local sk = skInForce()
     if sk == nil then
-        frame.mode:SetText("|cff888888No batch is open. These positions apply to the next one "
+        frame.mode:SetText("|cff888888No round is open. These positions apply to the next one "
             .. "the host opens under SK.|r")
     elseif sk then
-        frame.mode:SetText("|cff66ff66The open batch is running under SK.|r")
+        frame.mode:SetText("|cff66ff66The open round is running under SK.|r")
     else
-        frame.mode:SetText("|cffffaa00The open batch is running under ROLL; these positions "
+        frame.mode:SetText("|cffffaa00The open round is running under ROLL; these positions "
             .. "are not deciding it.|r")
     end
 
@@ -177,10 +180,11 @@ local function build()
 
     frame:SetScript("OnShow", function() Viewer.Refresh() end)
 
-    -- A suicide mid-batch reorders an open window rather than going stale behind
+    -- A suicide mid-round reorders an open window rather than going stale behind
     -- the reader; presence changes regrade the median and the greying.
     ns.Priority.RegisterListener(function() Viewer.Refresh() end)
     ns.Roster.RegisterListener(function() Viewer.Refresh() end)
+    ns.Campaign.RegisterListener(function() Viewer.Refresh() end)
 end
 
 function Viewer.Show()

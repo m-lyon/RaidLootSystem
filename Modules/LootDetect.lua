@@ -1,6 +1,6 @@
 -- Modules/LootDetect.lua
 --
--- Which items become a batch (spec 004 sections 2 and 3). Two ways in: scanning the loot
+-- Which items become a round (spec 004 sections 2 and 3). Two ways in: scanning the loot
 -- window as master looter, and an item link handed to us directly.
 --
 -- Everything above the "WoW-facing" divider is pure and fixture-tested by the `lootdetect`
@@ -13,7 +13,7 @@ local LootDetect = ns.LootDetect
 
 local C = ns.Constants
 
--- Why a loot slot was not offered as a batch candidate. Shown by the host panel next to the
+-- Why a loot slot was not offered as a round candidate. Shown by the host panel next to the
 -- manual-add control (spec 006), so "why is this not in the list" is never a mystery.
 LootDetect.SKIP = {
     NO_LINK        = "NO_LINK",          -- a coin slot
@@ -31,7 +31,7 @@ LootDetect.SKIP_TEXT = {
 -- Pure: the candidate rule (section 2)
 --------------------------------------------------------------------------------
 
---- Should this loot slot be offered as a batch candidate?
+--- Should this loot slot be offered as a round candidate?
 --
 -- @param info       an itemInfo from Modules/ItemInfo.lua
 -- @param quality    the loot slot's quality. Preferred over info.quality: the loot window
@@ -78,7 +78,7 @@ end
 -- @param manualRows item-link additions with no loot slot: { quantity, info }
 -- @param threshold  host.qualityThreshold
 -- @param removedIds set of item ids withdrawn from the list: taken out by hand, or
---                   already rolled by a batch that closed. They are not offered back
+--                   already rolled by a round that closed. They are not offered back
 --                   under `skipped` either -- the host said no, or the question has
 --                   been answered. "Add item" on the link puts one back.
 -- @return rows for Collapse, skipped array of { lootSlot, info, quality, reason }
@@ -108,7 +108,7 @@ end
 -- Pure: duplicate stacks (section 2)
 --------------------------------------------------------------------------------
 
---- Collapse rows that hold the same item into one batch item with a count.
+--- Collapse rows that hold the same item into one round item with a count.
 --
 -- Both loot slots are kept: the award step needs every slot it will have to call
 -- GiveMasterLoot on, and it needs them under one item so that resolution hands out two
@@ -155,13 +155,13 @@ function LootDetect.Collapse(rows)
 end
 
 --------------------------------------------------------------------------------
--- Pure: losing loot mid-batch (section 3)
+-- Pure: losing loot mid-round (section 3)
 --------------------------------------------------------------------------------
 
 --- Drop the loot slots `isGone(slot)` reports as no longer there.
 --
 -- An item with two slots keeps going on one copy rather than vanishing whole -- the count
--- drops instead. A batch that loses every item is what makes the host abort with LOOT_GONE;
+-- drops instead. A round that loses every item is what makes the host abort with LOOT_GONE;
 -- this function reports that rather than deciding it.
 --
 -- @return kept array, lost array of { item, slots, quantity } (the items, the slots removed,
@@ -175,7 +175,7 @@ function LootDetect.Prune(items, isGone)
         local quantities = item.slotQuantities or {}
 
         if #slots == 0 then
-            kept[#kept + 1] = item             -- an item-link batch has no slot to lose
+            kept[#kept + 1] = item             -- an item-link round has no slot to lose
         else
             local live, gone, goneUnits = {}, {}, 0
             for j = 1, #slots do
@@ -183,7 +183,7 @@ function LootDetect.Prune(items, isGone)
                 if isGone(slot) then
                     gone[#gone + 1] = slot
                     -- A slot that held a stack loses the whole stack. A slot with no
-                    -- recorded quantity (an older batch record) counts as one unit.
+                    -- recorded quantity (an older round record) counts as one unit.
                     goneUnits = goneUnits + (quantities[slot] or 1)
                     quantities[slot] = nil
                 else
@@ -216,7 +216,7 @@ end
 -- WoW-facing. Nothing below here runs at file scope.
 --------------------------------------------------------------------------------
 
--- The candidates from the last corpse scan, waiting for the host to start a batch
+-- The candidates from the last corpse scan, waiting for the host to start a round
 -- (spec 006 owns the panel; this owns the list).
 LootDetect.candidates = {}     -- from Collapse
 LootDetect.skipped = {}        -- { lootSlot, info, quality, reason } -- the manual-add list
@@ -227,7 +227,7 @@ LootDetect.sourceName = nil    -- the looted creature, as far as 3.3.5a lets us 
 local scanRows = {}            -- every slot of the last scan: { lootSlot, quantity, quality, info }
 local manualIds = {}           -- item ids the host added by hand from the skipped list
 local manualRows = {}          -- item-link additions with no loot slot: { quantity, info }
-local removedIds = {}          -- ids withdrawn by hand or consumed by a closed batch
+local removedIds = {}          -- ids withdrawn by hand or consumed by a closed round
 
 local listeners = {}
 local expectedClears = {}      -- loot slots our own award is about to empty
@@ -261,7 +261,7 @@ local function rebuild(newScan)
 end
 
 --- Scan the open loot window. Asynchronous, because an uncached item takes up to five
--- seconds to resolve and a batch must not open on a half-classified list.
+-- seconds to resolve and a round must not open on a half-classified list.
 -- @param callback optional, called with the candidate array
 function LootDetect.Scan(callback)
     local slots, links = {}, {}
@@ -348,8 +348,8 @@ function LootDetect.RemoveCandidate(itemId)
     rebuild()
 end
 
---- The items a batch closed on stop being candidates for the next one (spec 006
--- section 3). Called on close, not on open: an aborted batch leaves its items in
+--- The items a round closed on stop being candidates for the next one (spec 006
+-- section 3). Called on close, not on open: an aborted round leaves its items in
 -- place so the host can start it again.
 function LootDetect.Consume(items)
     for _, item in ipairs(items or {}) do
@@ -369,7 +369,7 @@ end
 -- The item-link path (section 2)
 --------------------------------------------------------------------------------
 
---- Start a batch on one item link. No loot slot, so the award step goes to the trade
+--- Start a round on one item link. No loot slot, so the award step goes to the trade
 -- path (spec 007 section 5) rather than GiveMasterLoot.
 -- @param callback optional, called with the single-item array
 function LootDetect.FromLink(link, callback)
@@ -394,7 +394,7 @@ end
 --------------------------------------------------------------------------------
 
 --- Award tells us before it empties a slot, so that its own clear is not read as the
--- corpse being looted out from under the batch.
+-- corpse being looted out from under the round.
 function LootDetect.ExpectClear(lootSlot)
     if lootSlot then expectedClears[lootSlot] = true end
 end
@@ -416,15 +416,15 @@ function LootDetect.SlotHolds(lootSlot, itemString)
     return wantedId ~= nil and wantedId == liveId
 end
 
---- Items in the open batch that are still sitting on the corpse. Drives the host panel's
+--- Items in the open round that are still sitting on the corpse. Drives the host panel's
 -- "loot still on corpse" banner (section 3) -- three minutes is long enough to walk away.
 function LootDetect.UnresolvedItems()
-    local session = ns.Session.current
-    if not session or not session.items then return {} end
+    local round = ns.Round.current
+    if not round or not round.items then return {} end
 
     local out = {}
-    for i = 1, #session.items do
-        local item = session.items[i]
+    for i = 1, #round.items do
+        local item = round.items[i]
         local slots = item.lootSlots or (item.lootSlot and { item.lootSlot }) or {}
         for j = 1, #slots do
             if LootDetect.SlotHolds(slots[j], item.itemString) then
@@ -442,11 +442,11 @@ local function onSlotCleared(lootSlot)
         return
     end
 
-    -- Somebody else took it, or it was looted by hand. Whatever the batch thought it was
-    -- rolling for is not there any more, and a silently shrinking batch costs an item.
-    local session = ns.Session.current
-    if session and session.state == C.SESSION_STATE.OPEN and ns.Session.IsHost() then
-        ns.Session.DropSlots({ [lootSlot] = true })
+    -- Somebody else took it, or it was looted by hand. Whatever the round thought it was
+    -- rolling for is not there any more, and a silently shrinking round costs an item.
+    local round = ns.Round.current
+    if round and round.state == C.ROUND_STATE.OPEN and ns.Round.IsHost() then
+        ns.Round.DropSlots({ [lootSlot] = true })
     end
 
     local kept = {}
@@ -469,8 +469,8 @@ local function onEvent(_, event, arg1)
         else
             LootDetect.sourceName = nil
         end
-        -- Only the master looter builds a batch, and only they see the candidate list.
-        if not ns.Session.IsHost() then return end
+        -- Only the master looter builds a round, and only they see the candidate list.
+        if not ns.Round.IsHost() then return end
         LootDetect.Scan(function(items)
             if #items == 0 then return end
             if ns.HostPanel then
@@ -479,7 +479,7 @@ local function onEvent(_, event, arg1)
                 -- Until spec 006's panel exists, the host is told rather than railroaded:
                 -- auto-opening on every corpse would fire on trash and on other people's kills.
                 ns.Print(string.format("%d item(s) here are worth rolling for. "
-                    .. "/rls loot to list them, /rls start to open a batch.", #items))
+                    .. "/rls loot to list them, /rls start to open a round.", #items))
             end
         end)
     elseif event == "LOOT_SLOT_CLEARED" then

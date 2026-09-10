@@ -35,10 +35,11 @@ local DATA_FILES = {
 -- Modules that are pure at file scope and expose pure helpers worth testing.
 -- Anything here must create no frame and call no WoW API while loading.
 local MODULE_FILES = {
+    "Modules/Campaign.lua",
     "Modules/Roster.lua",
     "Modules/ItemInfo.lua",
     "Modules/LootDetect.lua",
-    "Modules/Session.lua",
+    "Modules/Round.lua",
     "Modules/Award.lua",
     "Modules/Pending.lua",
     "Modules/History.lua",
@@ -49,9 +50,10 @@ local MODULE_FILES = {
     "UI/HostPanel.lua",
 }
 
-local SUITES = { "tiers", "serialize", "roster", "session", "eligibility", "resolve",
+local SUITES = { "tiers", "serialize", "roster", "round", "eligibility", "resolve",
                  "iteminfo", "lootdetect", "rollwindow", "announce", "hostpanel",
-                 "award", "pending", "history", "priority", "sk", "simulate" }
+                 "award", "pending", "history", "priority", "sk", "simulate",
+                 "campaign" }
 
 --------------------------------------------------------------------------------
 -- Comparison and reporting

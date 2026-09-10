@@ -1,7 +1,7 @@
 -- Modules/PriorityList.lua
 --
 -- The stateful half of Suicide Kings (spec 010 sections 5, 6, 8, 9 and 10): the list
--- in saved variables, seeding, the suicides a resolved batch applies, the restore a
+-- in saved variables, seeding, the suicides a resolved round applies, the restore a
 -- failed delivery earns, the SKLIST broadcast and its client side, the event log
 -- that `verify` replays, and the host panel section.
 --
@@ -100,9 +100,12 @@ function Priority.SeedCandidates(claims)
     return names
 end
 
---- The wire form and back (section 8): SKLIST is version^seed^name~name~...
-function Priority.Encode(priority)
-    return ns.Serialize.encodeSklist(priority.version or 0, priority.seed or 0, priority.order or {})
+--- The wire form and back (section 8): SKLIST is campaignId^version^seed^name~...
+-- The campaign id is what stops a foreign master looter's list replacing yours
+-- (spec 012 section 10).
+function Priority.Encode(campaignId, priority)
+    return ns.Serialize.encodeSklist(campaignId, priority.version or 0, priority.seed or 0,
+        priority.order or {})
 end
 
 --- Does a received list differ from the stored one? Same version and same order is
@@ -127,7 +130,13 @@ local listeners = {}
 local rows = {}
 local noticeText                    -- shown in the roll window after a replace
 
-local function DB() return ns.Database.Priority() end
+--- The stored list of one campaign, defaulting to the active one. Every mutation
+-- below takes a campaign id so that a restore-on-failure lands in the campaign the
+-- award was made in, never in whichever campaign happens to be active
+-- (spec 012 section 14).
+local function DB(campaignId)
+    return ns.Database.Priority(campaignId)
+end
 
 function Priority.RegisterListener(fn)
     listeners[#listeners + 1] = fn
@@ -139,18 +148,21 @@ local function fireChanged()
     if ns.RollWindow then ns.RollWindow.Refresh() end
 end
 
-local function store(priority)
-    local db = DB()
+local function store(priority, campaignId)
+    local db = DB(campaignId)
+    if not db then return end
     db.version, db.seed, db.seedChars, db.order, db.log =
         priority.version, priority.seed, priority.seedChars, priority.order, priority.log
 end
 
-function Priority.Seeded()
-    return #(DB().order or {}) > 0
+function Priority.Seeded(campaignId)
+    local priority = DB(campaignId)
+    return priority ~= nil and #(priority.order or {}) > 0
 end
 
-function Priority.Version()
-    return DB().version or 0
+function Priority.Version(campaignId)
+    local priority = DB(campaignId)
+    return priority and priority.version or 0
 end
 
 --- The present set the list operations take: lowercase character names in the raid.
@@ -166,26 +178,37 @@ local function announce(text)
     if ns.Announce then ns.Announce.Emit("PRIORITY", { text = text }) end
 end
 
---- Send the authoritative list (host only).
-function Priority.Broadcast()
-    if not ns.Session.IsHost() then return false end
-    if not Priority.Seeded() then return false end
-    return ns.Comms.Send(C.OPS.SKLIST, Priority.Encode(DB()))
+--- Send the authoritative list (host only). Always for a named campaign, defaulting
+-- to the active one, so a broadcast can never carry one campaign's list under
+-- another's id.
+function Priority.Broadcast(campaignId)
+    if not ns.Round.IsHost() then return false end
+    campaignId = campaignId or ns.Campaign.ActiveId()
+    local priority = DB(campaignId)
+    if not priority or #(priority.order or {}) == 0 then return false end
+    return ns.Comms.Send(C.OPS.SKLIST, Priority.Encode(campaignId, priority))
 end
 
 --- Apply one mutation on the host: store, log, announce, broadcast.
 -- @param quiet  skip the broadcast; the caller sends one list once it is done
-local function hostMutate(event, text, quiet)
+-- @param campaignId  whose list this mutates; the active campaign by default
+local function hostMutate(event, text, quiet, campaignId)
+    campaignId = campaignId or ns.Campaign.ActiveId()
+    local priority = DB(campaignId)
+    if not priority then
+        ns.Print("the priority list was not changed: that campaign is gone.")
+        return false, "no such campaign"
+    end
     event.at = time()
     event.by = UnitName("player")
-    local next_, why = Priority.Mutate(DB(), event)
+    local next_, why = Priority.Mutate(priority, event)
     if not next_ then
         ns.Print("the priority list was not changed: " .. tostring(why))
         return false, why
     end
-    store(next_)
+    store(next_, campaignId)
     if text then announce(text) end
-    if not quiet then Priority.Broadcast() end
+    if not quiet then Priority.Broadcast(campaignId) end
     fireChanged()
     return true
 end
@@ -248,7 +271,7 @@ end
 --- Newly claimed, uncontested characters join at the bottom. Host only; nothing is
 -- ever removed here.
 function Priority.SyncRoster()
-    if not ns.Session.IsHost() or not Priority.Seeded() then return end
+    if not ns.Round.IsHost() or not Priority.Seeded() then return end
     local order = DB().order
     local added = false
     for _, name in ipairs(Priority.SeedCandidates(ns.Roster.claims)) do
@@ -265,27 +288,30 @@ end
 -- Suicides at close, restores on failure (sections 6 and 7)
 --------------------------------------------------------------------------------
 
---- Called by Session.Close after Award.Begin, host side, under SK. One suicide per
+--- Called by Round.Close after Award.Begin, host side, under SK. One suicide per
 -- winning character in (item index, copy) order; each award record learns the
 -- prior index, the present indices and the version, so a failed delivery can be
 -- undone exactly and `verify` can replay it.
-function Priority.ApplyAwards(session)
-    if session.lootMode ~= C.LOOT_MODE.SK or not session.awards then return end
+function Priority.ApplyAwards(round)
+    if round.lootMode ~= C.LOOT_MODE.SK or not round.awards then return end
+    local campaignId = round.campaignId
     local present = presentSet()
     local done = {}
-    for _, item in ipairs(session.items) do
-        for _, record in ipairs(session.awards[item.idx] or {}) do
+    for _, item in ipairs(round.items) do
+        for _, record in ipairs(round.awards[item.idx] or {}) do
             local key = record.char:lower()
+            record.campaignId = campaignId
             if not done[key] then
                 done[key] = true
-                local from = PriorityList.indexOf(DB().order, record.char)
+                local from = PriorityList.indexOf(DB(campaignId).order, record.char)
                 if from then
-                    local _, _, presentIdx = PriorityList.suicide(DB().order, record.char, present)
+                    local _, _, presentIdx = PriorityList.suicide(DB(campaignId).order,
+                        record.char, present)
                     record.priorIndex = from
                     record.presentIndices = presentIdx
                     hostMutate({ kind = "suicide", char = record.char, from = from, present = presentIdx },
-                        nil, true)
-                    record.listVersion = Priority.Version()
+                        nil, true, campaignId)
+                    record.listVersion = Priority.Version(campaignId)
                 else
                     ns.Print(record.char .. " won under Suicide Kings but is not on the list; "
                         .. "nothing moved. Seed or add them.")
@@ -293,11 +319,11 @@ function Priority.ApplyAwards(session)
             else
                 -- A second copy to the same character (unreachable under rule 1, but a
                 -- record must still say where it stood).
-                record.priorIndex = PriorityList.indexOf(DB().order, record.char)
+                record.priorIndex = PriorityList.indexOf(DB(campaignId).order, record.char)
             end
         end
     end
-    Priority.Broadcast()
+    Priority.Broadcast(campaignId)
 end
 
 --- Restore a character to its prior index (section 6). The recorded present indices
@@ -306,7 +332,17 @@ end
 -- @param entry  { char, priorIndex, presentIndices } -- an award or a pending record
 -- @return true when the list changed
 local function restoreEntry(entry, why)
-    local order = DB().order
+    -- Into the campaign the award was made in, never the active one: the two-hour
+    -- trade window routinely outlives a campaign switch, and restoring into an
+    -- unrelated list is a corruption invisible by inspection (spec 012 section 14).
+    local campaignId = entry.campaignId
+    local priority = DB(campaignId)
+    if not priority then
+        ns.Print(string.format("%s won in a campaign this client no longer has; its list "
+            .. "cannot be restored.", tostring(entry.char)))
+        return false
+    end
+    local order = priority.order
     local at = PriorityList.indexOf(order, entry.char)
     if not at then
         ns.Print(entry.char .. " is not on the priority list; nothing to restore.")
@@ -314,9 +350,10 @@ local function restoreEntry(entry, why)
     end
     if at == entry.priorIndex then return true end     -- nothing moved it; nothing to undo
 
-    local ok, err = hostMutate({ kind = "restore", char = entry.char, to = entry.priorIndex,
-                                 present = entry.presentIndices or { entry.priorIndex } },
-        string.format("%s restored to position %d (%s)", entry.char, entry.priorIndex, why))
+    local ok = hostMutate({ kind = "restore", char = entry.char, to = entry.priorIndex,
+                            present = entry.presentIndices or { entry.priorIndex } },
+        string.format("%s restored to position %d (%s)", entry.char, entry.priorIndex, why),
+        false, campaignId)
     if ok then return true end
 
     -- The list moved since the suicide. Restore against today's raid rather than leave
@@ -330,17 +367,22 @@ local function restoreEntry(entry, why)
     ns.Print(string.format("the list moved since %s won; restoring against the current raid.",
         entry.char))
     return (hostMutate({ kind = "restore", char = entry.char, to = entry.priorIndex, present = present },
-        string.format("%s restored to position %d (%s)", entry.char, entry.priorIndex, why)))
+        string.format("%s restored to position %d (%s)", entry.char, entry.priorIndex, why),
+        false, campaignId))
 end
 
 --- A character restored earlier was delivered to after all: it drops again, from
--- wherever it now stands.
+-- wherever it now stands -- in the campaign the award was made in.
 local function suicideEntry(entry)
-    local from = PriorityList.indexOf(DB().order, entry.char)
+    local campaignId = entry.campaignId
+    local priority = DB(campaignId)
+    if not priority then return false end
+    local from = PriorityList.indexOf(priority.order, entry.char)
     if not from then return false end
-    local _, _, present = PriorityList.suicide(DB().order, entry.char, presentSet())
+    local _, _, present = PriorityList.suicide(priority.order, entry.char, presentSet())
     local ok = hostMutate({ kind = "suicide", char = entry.char, from = from, present = present },
-        string.format("%s moved to the bottom after all (delivered)", entry.char))
+        string.format("%s moved to the bottom after all (delivered)", entry.char),
+        false, campaignId)
     if ok then
         entry.priorIndex = from
         entry.presentIndices = present
@@ -349,7 +391,7 @@ local function suicideEntry(entry)
 end
 
 local function needsHost(entry)
-    if ns.Session.IsHost() then return true end
+    if ns.Round.IsHost() then return true end
     ns.Print("the priority list needs a change for " .. entry.char
         .. ", but only the master looter can make it. Ask them to restore by hand.")
     return false
@@ -388,8 +430,12 @@ end
 --------------------------------------------------------------------------------
 
 --- SKLIST from the host: replace wholesale when it differs, and say so.
+--
+-- The campaign gate here is the bug this whole feature exists to fix. Before it, a
+-- master looter you were guesting with replaced your own group's list and cleared
+-- its event log, and nothing said so (spec 012 section 10).
 local function onSklist(sender, body)
-    if not ns.Session.IsAuthoritative(sender) then
+    if not ns.Round.IsAuthoritative(sender) then
         ns.Debug("dropped SKLIST from " .. tostring(sender) .. ", who is not the master looter")
         return
     end
@@ -398,23 +444,25 @@ local function onSklist(sender, body)
         ns.Debug("unreadable SKLIST: " .. tostring(why))
         return
     end
+    if not ns.Campaign.AcceptsMessage(C.OPS.SKLIST, msg.campaignId, sender) then return end
 
-    -- The positions matter to a batch only under SK (spec 005 section 3); a list
-    -- edit during a ROLL batch must not make the window render it as Suicide Kings.
-    local session = ns.Client.session
-    if session and session.lootMode == C.LOOT_MODE.SK then
-        session.priority = PriorityList.positions(msg.order)
+    -- The positions matter to a round only under SK (spec 005 section 3); a list
+    -- edit during a ROLL round must not make the window render it as Suicide Kings.
+    local round = ns.Client.round
+    if round and round.lootMode == C.LOOT_MODE.SK and round.campaignId == msg.campaignId then
+        round.priority = PriorityList.positions(msg.order)
     end
 
     if not ns.Comms.IsSelf(sender) then
-        local stored = DB()
-        if Priority.Differs(stored, msg) then
-            noticeText = string.format("Priority list replaced by the host's copy (version %d -> %d).",
+        local stored = DB(msg.campaignId)
+        if stored and Priority.Differs(stored, msg) then
+            noticeText = string.format("Priority list for \"%s\" replaced by the host's copy "
+                .. "(version %d -> %d).", ns.Campaign.LabelFor(msg.campaignId),
                 stored.version or 0, msg.version)
             stored.version, stored.seed, stored.order = msg.version, msg.seed, msg.order
             stored.log = {}                   -- the log is the host's; a client has none
             ns.Print(noticeText)
-            if session then session.priorityNotice = noticeText end
+            if round then round.priorityNotice = noticeText end
         else
             noticeText = nil
         end
@@ -424,22 +472,26 @@ end
 
 --- RESULT on a client: apply the same suicides the host did (section 8), so every
 -- copy agrees before the SKLIST that follows confirms it.
-function Priority.OnClientResult(session)
-    if session.lootMode ~= C.LOOT_MODE.SK then return end
+function Priority.OnClientResult(round)
+    if round.lootMode ~= C.LOOT_MODE.SK then return end
     local me = UnitName("player")
-    if session.host and me and session.host:lower() == me:lower() then return end
-    if not Priority.Seeded() then return end
+    if round.host and me and round.host:lower() == me:lower() then return end
+    -- A round in a campaign this client is not in decides nothing here; its read-only
+    -- window (spec 012 section 6) shows the result and touches no stored list.
+    local campaignId = round.campaignId
+    if not ns.Campaign.IsMemberOf(campaignId) then return end
+    if not Priority.Seeded(campaignId) then return end
 
     local awards = {}
-    for _, item in ipairs(session.items) do
-        for _, r in ipairs(session.results or {}) do
+    for _, item in ipairs(round.items) do
+        for _, r in ipairs(round.results or {}) do
             if r.itemIdx == item.idx and r.winner and r.winner ~= "" then
                 awards[#awards + 1] = { char = r.winner }
             end
         end
     end
-    local order, events = PriorityList.suicideAll(DB().order, awards, presentSet())
-    local db = DB()
+    local db = DB(campaignId)
+    local order, events = PriorityList.suicideAll(db.order, awards, presentSet())
     db.order = order
     db.version = (db.version or 0) + #events
     fireChanged()
@@ -448,7 +500,7 @@ end
 --- `/rls sk verify`: replay and report (section 8). Host only: the log that replay
 -- needs is the host's, and a client holds the host's copy without it.
 function Priority.RunVerify()
-    if not ns.Session.IsHost() then
+    if not ns.Round.IsHost() then
         ns.Print("verify runs on the master looter's client: the event log it replays is theirs. "
             .. "Your copy is version " .. (DB().version or 0) .. ".")
         return nil

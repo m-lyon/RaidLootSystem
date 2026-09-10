@@ -1,11 +1,11 @@
 -- Modules/History.lua
 --
 -- Recording what happened, keeping it bounded, and getting it out of the game
--- (spec 008). One record per batch. Every client records the results it received;
+-- (spec 008). One record per round. Every client records the results it received;
 -- the host's copy is canonical and carries the host-only fields.
 --
 -- Everything above the "WoW-facing" divider is pure and fixture-tested by the
--- `history` suite: building a record from a host or client session, pruning,
+-- `history` suite: building a record from a host or client round, pruning,
 -- updating a delivery in place, filtering, the per-character summary, and both
 -- export formats. Timestamps are passed in (spec 000 section 2).
 --
@@ -37,48 +37,52 @@ local function copyOrder(priority)
     return { version = priority.version or 0, order = Util.copy(priority.order or {}) }
 end
 
-local function outcomeOf(session)
-    if session.state == C.SESSION_STATE.CLOSED then return "RESOLVED" end
+local function outcomeOf(round)
+    if round.state == C.ROUND_STATE.CLOSED then return "RESOLVED" end
     return "ABORTED"
 end
 
 --- The host's record (section 2): every entry with its submission timestamps, every
 -- award with its delivery state, loot slots included.
 --
--- @param session  the host session after Close or Abort
+-- @param round  the host round after Close or Abort
 -- @param ctx      { now, zone, source, raid, timerSeconds, qualityThreshold, simulated }
-function History.FromHost(session, ctx)
+function History.FromHost(round, ctx)
     ctx = ctx or {}
     local record = {
-        sessionId = session.id,
+        roundId = round.id,
         recordedAsHost = true,
-        timestamp = session.openedAt or ctx.now,
-        closedAt = session.closedAt or ctx.now,
+        timestamp = round.openedAt or ctx.now,
+        closedAt = round.closedAt or ctx.now,
         zone = ctx.zone,
         source = ctx.source,
-        host = session.host,
+        host = round.host,
+        -- Tagged, not scoped (spec 012 section 4): stored once and filtered as a
+        -- view. The label rides along so a deleted campaign still renders a name.
+        campaignId = round.campaignId,
+        campaignLabel = round.campaignLabel or ctx.campaignLabel,
         settings = {
-            tierCount = session.tierCount,
+            tierCount = round.tierCount,
             timerSeconds = ctx.timerSeconds,
             qualityThreshold = ctx.qualityThreshold,
-            lootMode = session.lootMode or C.LOOT_MODE.ROLL,
+            lootMode = round.lootMode or C.LOOT_MODE.ROLL,
         },
-        priorityAtOpen = copyOrder(session.priorityAtOpen),
+        priorityAtOpen = copyOrder(round.priorityAtOpen),
         raid = Util.copy(ctx.raid or {}),
-        outcome = outcomeOf(session),
-        abortReason = session.abortReason,
+        outcome = outcomeOf(round),
+        abortReason = round.abortReason,
         simulated = ctx.simulated or nil,
         items = {},
     }
 
     local resultByIdx = {}
-    for _, r in ipairs(session.results or {}) do resultByIdx[r.itemIdx] = r end
+    for _, r in ipairs(round.results or {}) do resultByIdx[r.itemIdx] = r end
 
-    for i, item in ipairs(session.items) do
+    for i, item in ipairs(round.items) do
         local result = resultByIdx[item.idx]
         local itemLevel, quality, equipLoc = itemFields(item.info)
         local submitted = {}
-        for _, e in ipairs(session.entries and session.entries[item.idx] or {}) do
+        for _, e in ipairs(round.entries and round.entries[item.idx] or {}) do
             submitted[e.char:lower()] = e
         end
 
@@ -99,7 +103,7 @@ function History.FromHost(session, ctx)
             end
         else
             -- Aborted before resolution: what was submitted, none of it rolled.
-            for _, e in ipairs(session.entries and session.entries[item.idx] or {}) do
+            for _, e in ipairs(round.entries and round.entries[item.idx] or {}) do
                 entries[#entries + 1] = {
                     char = e.char, owner = e.owner, tier = e.tier, listIdx = 0,
                     star = e.star and true or false, override = e.override and true or false,
@@ -110,7 +114,7 @@ function History.FromHost(session, ctx)
         end
 
         local awards = {}
-        local records = session.awards and session.awards[item.idx] or {}
+        local records = round.awards and round.awards[item.idx] or {}
         if result and not result.unclaimed then
             for copy, a in ipairs(result.awards) do
                 local rec = records[copy] or {}
@@ -148,42 +152,44 @@ end
 --- A client's record (section 2): what arrived in STATE, RESULT and ROLLS. No
 -- submission timestamps, no loot slots, no delivery state: those are the host's.
 --
--- @param session  the Client mirror after RESULT and ROLLS, or after ABORT
+-- @param round  the Client mirror after RESULT and ROLLS, or after ABORT
 -- @param ctx      { now, zone, raid, infoOf = function(itemString) -> itemInfo, simulated }
-function History.FromClient(session, ctx)
+function History.FromClient(round, ctx)
     ctx = ctx or {}
     local infoOf = ctx.infoOf or function() return nil end
     local record = {
-        sessionId = session.id,
+        roundId = round.id,
         recordedAsHost = false,
-        timestamp = session.openedAt or ctx.now,
-        closedAt = session.closedAt or ctx.now,
+        timestamp = round.openedAt or ctx.now,
+        closedAt = round.closedAt or ctx.now,
         zone = ctx.zone,
         source = ctx.source,
-        host = session.host,
+        host = round.host,
+        campaignId = round.campaignId,
+        campaignLabel = round.campaignLabel or ctx.campaignLabel,
         settings = {
-            tierCount = session.tierCount,
-            lootMode = session.lootMode or C.LOOT_MODE.ROLL,
+            tierCount = round.tierCount,
+            lootMode = round.lootMode or C.LOOT_MODE.ROLL,
         },
-        priorityAtOpen = copyOrder(session.priorityAtOpen),
+        priorityAtOpen = copyOrder(round.priorityAtOpen),
         raid = Util.copy(ctx.raid or {}),
-        outcome = outcomeOf(session),
-        abortReason = session.abortReason,
+        outcome = outcomeOf(round),
+        abortReason = round.abortReason,
         simulated = ctx.simulated or nil,
         items = {},
     }
 
     -- Owners come from STATE; ROLLS does not carry them.
     local owners = {}
-    for _, list in pairs(session.entries or {}) do
+    for _, list in pairs(round.entries or {}) do
         for _, e in ipairs(list) do owners[e.char:lower()] = e.owner end
     end
 
-    for i, item in ipairs(session.items) do
+    for i, item in ipairs(round.items) do
         local itemLevel, quality, equipLoc = itemFields(infoOf(item.itemString))
         local entries = {}
         local sawRolls = false
-        for _, r in ipairs(session.rolls or {}) do
+        for _, r in ipairs(round.rolls or {}) do
             if r.itemIdx == item.idx then
                 sawRolls = true
                 local status = r.status or C.ROLL_STATUS.ROLLED
@@ -199,7 +205,7 @@ function History.FromClient(session, ctx)
             end
         end
         if not sawRolls then
-            for _, e in ipairs(session.entries and session.entries[item.idx] or {}) do
+            for _, e in ipairs(round.entries and round.entries[item.idx] or {}) do
                 entries[#entries + 1] = {
                     char = e.char, owner = e.owner, tier = e.tier, listIdx = 0,
                     star = false, override = false, rolled = false, roll = 0,
@@ -209,7 +215,7 @@ function History.FromClient(session, ctx)
         end
 
         local awards, unclaimed, degraded = {}, false, false
-        for _, r in ipairs(session.results or {}) do
+        for _, r in ipairs(round.results or {}) do
             if r.itemIdx == item.idx then
                 if r.outcome == C.OUTCOME.UNCLAIMED then
                     unclaimed = true
@@ -245,12 +251,12 @@ end
 -- Pure: storage rules (sections 2 and 4)
 --------------------------------------------------------------------------------
 
---- Add or replace a record. A record with the same session id and the same
--- recordedAsHost flag is replaced; the host's and a client's copies of one batch
+--- Add or replace a record. A record with the same round id and the same
+-- recordedAsHost flag is replaced; the host's and a client's copies of one round
 -- coexist (section 2). Records are kept in insertion order, oldest first.
 function History.Upsert(records, record)
     for i, r in ipairs(records) do
-        if r.sessionId == record.sessionId and r.recordedAsHost == record.recordedAsHost then
+        if r.roundId == record.roundId and r.recordedAsHost == record.recordedAsHost then
             records[i] = record
             return records, false
         end
@@ -286,12 +292,12 @@ end
 
 --- Update a delivery in place (section 3): a pending item handed over forty minutes
 -- later changes the original record, never creates a second one.
--- @param award  an Award record: sessionId, itemIdx, copy, delivery, deliveryPath,
+-- @param award  an Award record: roundId, itemIdx, copy, delivery, deliveryPath,
 --               deliveredAt, failure, priorIndex
 -- @return the history award updated, or nil when no record holds it
 function History.UpdateDelivery(records, award)
     for _, r in ipairs(records) do
-        if r.sessionId == award.sessionId and r.recordedAsHost then
+        if r.roundId == award.roundId and r.recordedAsHost then
             for _, item in ipairs(r.items) do
                 if item.itemIdx == award.itemIdx then
                     local a = item.awards[award.copy or 1]
@@ -330,6 +336,10 @@ function History.Filter(records, filter)
         if r.simulated and not filter.includeSimulated then ok = false end
         if ok and filter.since and (r.timestamp or 0) < filter.since then ok = false end
         if ok and filter.until_ and (r.timestamp or 0) > filter.until_ then ok = false end
+        -- The browser defaults to the active campaign, with an All campaigns toggle
+        -- (spec 012 section 13). A record written before campaigns existed has no id
+        -- and only shows under All.
+        if ok and filter.campaignId and r.campaignId ~= filter.campaignId then ok = false end
 
         if ok and (char ~= "" or owner ~= "" or filter.roster or item ~= "") then
             local charHit, ownerHit, rosterHit, itemHit = char == "", owner == "",
@@ -371,7 +381,7 @@ function History.CharacterSummary(records, char)
                     if lower(a.char) == key then
                         out[#out + 1] = {
                             timestamp = r.timestamp, zone = r.zone, source = r.source,
-                            itemString = item.itemString, sessionId = r.sessionId,
+                            itemString = item.itemString, roundId = r.roundId,
                             delivery = a.delivery, tier = a.tier,
                             recordedAsHost = r.recordedAsHost,
                         }
@@ -388,7 +398,7 @@ end
 -- Pure: export (section 6)
 --------------------------------------------------------------------------------
 
---- Plain text: a batch header, one line per award.
+--- Plain text: a round header, one line per award.
 -- @param ctx { labelOf(itemString), formatDate(timestamp) }
 function History.ExportText(records, ctx)
     ctx = ctx or {}
@@ -399,8 +409,13 @@ function History.ExportText(records, ctx)
 
     for _, r in ipairs(records) do
         local where = (r.zone or "?") .. " / " .. (r.source or "?")
-        lines[#lines + 1] = string.format("%s  %s  (host %s, %s, %d tiers%s)",
-            formatDate(r.timestamp), where, r.host or "?", r.settings.lootMode or "ROLL",
+        -- A record from before campaigns existed has no id, and a placeholder on
+        -- every such line is noise. The CSV keeps its column either way (fixed schema).
+        local campaign = r.campaignLabel or r.campaignId
+        lines[#lines + 1] = string.format("%s  %s  %s(host %s, %s, %d tiers%s)",
+            formatDate(r.timestamp), where,
+            campaign and ("[" .. campaign .. "]  ") or "",
+            r.host or "?", r.settings.lootMode or "ROLL",
             r.settings.tierCount or 0, r.simulated and ", simulated" or "")
         if r.outcome == "ABORTED" then
             lines[#lines + 1] = "  aborted: " .. (C.ABORT_TEXT[r.abortReason] or r.abortReason or "?")
@@ -430,8 +445,8 @@ function History.ExportText(records, ctx)
     return table.concat(lines, "\n")
 end
 
-History.CSV_HEADER = "timestamp,zone,source,item,itemLevel,quality,equipLoc,character,owner,"
-    .. "tier,listIdx,star,rolled,roll,withdrawn,awarded,delivery"
+History.CSV_HEADER = "timestamp,zone,source,campaign,campaignId,item,itemLevel,quality,"
+    .. "equipLoc,character,owner,tier,listIdx,star,rolled,roll,withdrawn,awarded,delivery"
 
 local function csvField(v)
     if v == nil then return "" end
@@ -455,7 +470,9 @@ function History.ExportCSV(records, ctx)
             for _, e in ipairs(item.entries) do
                 local a = awarded[lower(e.char)]
                 local fields = {
-                    r.timestamp, r.zone, r.source, nameOf(item.itemString),
+                    r.timestamp, r.zone, r.source,
+                    r.campaignLabel, r.campaignId,
+                    nameOf(item.itemString),
                     item.itemLevel, item.quality, item.equipLoc,
                     e.char, e.owner, e.tier, e.listIdx, e.star, e.rolled, e.roll,
                     e.withdrawn, a ~= nil, a and a.delivery or nil,
@@ -463,7 +480,7 @@ function History.ExportCSV(records, ctx)
                 -- A nil (an item level the cache never gave) is a hole, so the column
                 -- count is fixed rather than read from the array.
                 local out = {}
-                for i = 1, 17 do out[i] = csvField(fields[i]) end
+                for i = 1, 19 do out[i] = csvField(fields[i]) end
                 rows[#rows + 1] = table.concat(out, ",")
             end
         end
@@ -505,7 +522,7 @@ function History.ToView(record)
         end
     end
     return {
-        sessionId = record.sessionId, items = items, results = results, rolls = rolls,
+        roundId = record.roundId, items = items, results = results, rolls = rolls,
         owners = owners, isSK = record.settings.lootMode == C.LOOT_MODE.SK,
         tierCount = record.settings.tierCount or 0, outcome = record.outcome,
         abortReason = record.abortReason,
@@ -541,7 +558,7 @@ local function raidPlayers()
         seen[me] = true
     end
     for _, member in ipairs(ns.Roster.GroupMembers()) do
-        if member.name and not seen[member.name] and ns.Session.peers[member.name] then
+        if member.name and not seen[member.name] and ns.Round.peers[member.name] then
             names[#names + 1] = member.name
             seen[member.name] = true
         end
@@ -553,16 +570,17 @@ local function simulated()
     return ns.Simulate ~= nil and ns.Simulate.active == true
 end
 
---- Host side: called by Session.Close and Session.Abort.
-function History.Record(session)
+--- Host side: called by Round.Close and Round.Abort.
+function History.Record(round)
     local host = ns.Database.Host()
-    local record = History.FromHost(session, {
+    local record = History.FromHost(round, {
         now = time(),
         zone = GetRealZoneText(),
-        source = session.source,
+        source = round.source,
         raid = raidPlayers(),
         timerSeconds = host.timerSeconds,
         qualityThreshold = host.qualityThreshold,
+        campaignLabel = ns.Campaign.ActiveLabel(),
         simulated = simulated(),
     })
     History.Upsert(DB(), record)
@@ -572,12 +590,12 @@ end
 
 --- Client side: called by Client once RESULT and ROLLS have both arrived, or on
 -- ABORT. The host's own mirror is skipped: its canonical record is already written.
-function History.RecordClient(session)
-    -- Judged by the batch's own host name, which is stable for the life of the mirror:
+function History.RecordClient(round)
+    -- Judged by the round's own host name, which is stable for the life of the mirror:
     -- by the time an ML_CHANGED abort fires, IsHost() is already false on the old host.
     local me = UnitName("player")
-    if session.host and me and session.host:lower() == me:lower() then return nil end
-    local record = History.FromClient(session, {
+    if round.host and me and round.host:lower() == me:lower() then return nil end
+    local record = History.FromClient(round, {
         now = time(),
         zone = GetRealZoneText(),
         raid = raidPlayers(),
@@ -602,7 +620,7 @@ function History.Init()
     if #removed > 0 then
         ns.Database.ReplaceHistory(kept)
         if unexported > 0 then
-            ns.Print(string.format("history: %d old batch record(s) were pruned, %d of them never "
+            ns.Print(string.format("history: %d old round record(s) were pruned, %d of them never "
                 .. "exported. Export regularly if you want to keep everything.", #removed, unexported))
         else
             ns.Debug(string.format("history: pruned %d old record(s).", #removed))
