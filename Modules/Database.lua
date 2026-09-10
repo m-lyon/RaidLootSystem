@@ -92,29 +92,36 @@ function DB.Scratch()  return section("scratch")  end
 
 function DB.Campaigns() return section("campaigns") end
 
+--- nil when the player has no active campaign (a fresh install that has not
+-- created or joined one yet).
 function DB.Host()
-    return ns.Campaign.Active().host
+    local campaign = ns.Campaign.Active()
+    return campaign and campaign.host
 end
 
 --- The priority list of one campaign, defaulting to the active one. A message
 -- names its campaign, and it is applied to that campaign's list -- never to
--- whichever happens to be active (spec 012 sections 10 and 14).
+-- whichever happens to be active (spec 012 sections 10 and 14). nil when the
+-- named campaign does not exist, or none is named and there is no active one.
 function DB.Priority(campaignId)
     if campaignId then
         local campaign = ns.Campaign.Get(campaignId)
         if campaign then return ns.Campaign.Normalise(campaign).priority end
         return nil
     end
-    return ns.Campaign.Active().priority
+    local campaign = ns.Campaign.Active()
+    return campaign and campaign.priority
 end
 
 --- This client's ordering for one campaign: what spec 001 called roster.order.
+-- nil under the same rules as DB.Priority above.
 function DB.Hierarchy(campaignId)
     if campaignId then
         local campaign = ns.Campaign.Get(campaignId)
         return campaign and ns.Campaign.Normalise(campaign).hierarchy or nil
     end
-    return ns.Campaign.Active().hierarchy
+    local campaign = ns.Campaign.Active()
+    return campaign and campaign.hierarchy
 end
 
 --- The global template new campaigns are seeded from. It resolves nothing: it is
@@ -131,9 +138,11 @@ function DB.ReplaceHistory(records)
     return records
 end
 
---- The tier count to display outside a raid, or before a host announces one.
+--- The tier count to display outside a raid, before a host announces one, or
+-- before the player has an active campaign at all.
 function DB.DefaultTierCount()
-    return Util.clamp(DB.Host().tierCount or 3, C.MIN_TIER_COUNT, C.MAX_TIER_COUNT)
+    local host = DB.Host()
+    return Util.clamp((host and host.tierCount) or 3, C.MIN_TIER_COUNT, C.MAX_TIER_COUNT)
 end
 
 --- Remembered position of a named frame, for UI/Widgets.

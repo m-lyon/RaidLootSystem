@@ -660,7 +660,7 @@ function Priority.RefreshSection(panel)
         }
     end
 
-    local db = DB()
+    local db = DB() or {}
     local order = db.order or {}
     if #order == 0 then
         panel.note:SetText("Not seeded. Seed the priority list to enable Suicide Kings.")

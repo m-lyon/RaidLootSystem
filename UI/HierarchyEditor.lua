@@ -53,7 +53,9 @@ local function targetList()
         target = ns.Campaign.ActiveId()
         list = Roster().HierarchyList(target)
     end
-    return list
+    -- Falls through here with no active campaign either (a fresh install with
+    -- nothing yet); an empty list draws as an empty editor, not a crash.
+    return list or {}
 end
 
 local function targetOptions()
@@ -72,15 +74,22 @@ end
 -- client's stored default, so the bands are never blank. The number itself is a
 -- host setting and is not shown here (spec 001 section 7); only the bands it draws
 -- are, which is what a player reorders against.
+--
+-- The second return says whether that number is real: an open round's frozen
+-- count, or a CFG this session actually saw from that campaign's host. A joined
+-- campaign's own `host.tierCount` is never synced to the real host's value (only
+-- the ephemeral CFG mirror is), so falling back to it -- or to the schema default
+-- -- is a guess, and the bands below are marked as one rather than presented as
+-- fact.
 --------------------------------------------------------------------------------
 
 local function activeTierCount()
     local client = ns.Client
     if client and client.TierCount then
         local count = client.TierCount()
-        if count then return count end
+        if count then return count, true end
     end
-    return ns.Database.DefaultTierCount()
+    return ns.Database.DefaultTierCount(), false
 end
 
 local function roundIsOpen()
@@ -221,7 +230,7 @@ function Editor.Refresh()
 
     local chars = ns.Database.Roster().chars
     local order = targetList()
-    local tierCount = activeTierCount()
+    local tierCount, tierSynced = activeTierCount()
 
     frame.picker:SetOptions(targetOptions())
     frame.picker:SetValue(target)
@@ -265,7 +274,8 @@ function Editor.Refresh()
         row.name:SetText(label)
 
         local tier = entryRow.position and Tiers.forPosition(entryRow.position, tierCount) or nil
-        row.badge:SetText(tier and ("|cffaaaaaa" .. Tiers.label(tier, tierCount) .. "|r")
+        row.badge:SetText(tier
+            and ((tierSynced and "|cffaaaaaa" or "|cff666666") .. Tiers.label(tier, tierCount) .. "|r")
             or "|cff666666out|r")
 
         local present = Roster().IsPresent(name)
@@ -291,9 +301,12 @@ function Editor.Refresh()
         -- line after every one of the top rows to repeat the tier already on the
         -- row's own badge; the cut-off is the only boundary that changes what a
         -- position means, since below it ordering stops mattering at all.
+        -- Drawn only once the count is real -- an unsynced guess has no business
+        -- claiming a firm cut-off; the badges and the warning above already say
+        -- the ranking is provisional.
         local position = entryRow.position
         local nextTier = position and Tiers.forPosition(position + 1, tierCount) or nil
-        if position and position < #order and nextTier
+        if tierSynced and position and position < #order and nextTier
             and Tiers.isRest(nextTier, tierCount) and not Tiers.isRest(tier, tierCount) then
             bandIndex = bandIndex + 1
             local band = bands[bandIndex]
@@ -485,8 +498,9 @@ local function buildTransferPanel(parent)
             .. "\n\n%s", current, #order, preview)
         -- The other campaigns lose every name this import drops, and that loss is
         -- invisible until the raid night you next open one of them.
+        local active = ns.Campaign.Active()
         local losing = ns.Roster.ImportLosses(ns.Database.Campaigns(), chars,
-            ns.Campaign.Active().id)
+            active and active.id)
         if #losing > 0 then
             text = text .. string.format("\n\nThis also drops characters from: %s.",
                 table.concat(losing, ", "))
@@ -627,7 +641,10 @@ end
 -- raid edits the campaign you just raided in (active campaign is sticky, section 13).
 local function ensureTarget()
     if target == nil or (target ~= ns.Roster.DEFAULT_TARGET and not ns.Campaign.Get(target)) then
-        target = ns.Campaign.ActiveId()
+        -- No active campaign (a fresh install, nothing created or joined yet)
+        -- edits the template instead -- there is nothing else to point at.
+        target = ns.Campaign.Get(ns.Campaign.ActiveId()) and ns.Campaign.ActiveId()
+            or ns.Roster.DEFAULT_TARGET
     end
 end
 

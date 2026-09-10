@@ -270,7 +270,16 @@ end
 local function refreshCampaign()
     local active = ns.Campaign.Active()
     campaign.picker:SetOptions(campaignOptions())
-    campaign.picker:SetValue(active.id)
+    campaign.picker:SetValue(active and active.id or "")
+
+    if not active then
+        campaign.joined:SetText("")
+        campaign.delete:SetOptions(deletableOptions())
+        campaign.delete:SetValue("")
+        campaign.note:SetText("|cffffcc00No campaign yet -- click New to create one.|r")
+        campaign:SetHeight(NOTE_TOP + math.max(campaign.note:GetHeight(), 12) + 10)
+        return
+    end
 
     local joined = ns.Campaign.Joined(active.id)
     if joined.total <= 1 then
@@ -361,10 +370,16 @@ local function buildSettings(parent)
 end
 
 local function refreshSettings()
-    local host = DB().Host()
+    local active = ns.Campaign.Active()
+    -- No active campaign previews the settings a new one would start with,
+    -- rather than crashing; Round.ChangeSetting itself refuses the write until
+    -- one exists, echoed here by reusing the same frozen/disabled treatment a
+    -- round-open freeze already gets below.
+    local host = (active and active.host) or C.CAMPAIGN_DEFAULTS.host
     local roundOpen = ns.Round.current ~= nil
         and ns.Round.current.state == C.ROUND_STATE.OPEN
-    local frozen = HostPanel.SettingBlocker("tierCount", roundOpen)
+    local frozen = (not active) and "Create a campaign first (click New above)."
+        or HostPanel.SettingBlocker("tierCount", roundOpen)
 
     settings.tier:SetValueQuiet(host.tierCount or 3)
     settings.timer:SetValueQuiet(host.timerSeconds or 180)
@@ -373,7 +388,8 @@ local function refreshSettings()
     settings.tierNote:SetText(HostPanel.TierExplanation(host.tierCount, host.lootMode))
     settings.quality:SetValue(host.qualityThreshold or 4)
     settings.verbosity:SetValue(DB().Settings().verbosity or C.VERBOSITY.SUMMARY)
-    settings.lootMode:SetOptions(HostPanel.LootModeOptions(#DB().Priority().order > 0))
+    settings.lootMode:SetOptions(
+        HostPanel.LootModeOptions(#((DB().Priority() or {}).order or {}) > 0))
     settings.lootMode:SetValue(host.lootMode or C.LOOT_MODE.ROLL)
     settings.autoClose:SetChecked(host.autoClose and true or false)
 

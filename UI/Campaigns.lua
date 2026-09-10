@@ -416,6 +416,10 @@ StaticPopupDialogs["RLS_CAMPAIGN_NONMEMBERS"] = {
 --- Run `proceed` unless the raid holds non-members, in which case warn first.
 -- @return true when it ran straight away
 function Campaigns.GuardOpen(proceed)
+    if not Campaign.Active() then
+        ns.Print("create or join a campaign first (/rls campaign new).")
+        return false
+    end
     local missing = Campaign.NonMembersInRaid()
     if #missing == 0 then
         proceed()

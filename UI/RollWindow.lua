@@ -459,8 +459,10 @@ end
 local function rosterRows(round)
     local chars = DB().Roster().chars
     -- The ordering is the active campaign's hierarchy, not a top-level roster.order
-    -- -- that field is gone (spec 012 section 4).
-    local order = DB().Hierarchy()
+    -- -- that field is gone (spec 012 section 4). No active campaign of your own
+    -- (you can still see OPEN as a non-member, spec 012 section 10) means nothing
+    -- to submit, not a crash.
+    local order = DB().Hierarchy() or {}
     local Roster = ns.Roster
     local out = {}
     for i, name in ipairs(order) do

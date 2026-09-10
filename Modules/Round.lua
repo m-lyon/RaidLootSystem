@@ -369,6 +369,9 @@ function Round.Open(items)
     if not Round.IsHost() then
         return false, "you are not the master looter."
     end
+    if not ns.Campaign.Active() then
+        return false, "you have no campaign yet. Create or join one first (/rls campaign new)."
+    end
     if Round.current and Round.current.state == C.ROUND_STATE.OPEN then
         return false, "a round is already open. Close or cancel it first."
     end
@@ -757,6 +760,11 @@ end
 function Round.ChangeSetting(key, value)
     local host = ns.Database.Host()
     local settings = ns.Database.Settings()
+    -- Verbosity is a client setting, not a campaign one (it never reaches `host`
+    -- below), so it is the one key that still works with no active campaign.
+    if not host and key ~= "verbosity" then
+        return false, "you have no campaign yet. Create or join one first (/rls campaign new)."
+    end
     local shared = (key == "tierCount" or key == "timerSeconds" or key == "lootMode")
 
     if shared and Round.current and Round.current.state == C.ROUND_STATE.OPEN then
