@@ -29,8 +29,13 @@ end
 
 local function status()
     local campaign = ns.Campaign.Active()
-    ns.Print(string.format("version %s, campaign \"%s\", %d characters in it, tier count %d.",
-        C.VERSION, campaign.label, #campaign.hierarchy, ns.Database.DefaultTierCount()))
+    if campaign then
+        ns.Print(string.format("version %s, campaign \"%s\", %d characters in it, tier count %d.",
+            C.VERSION, campaign.label, #campaign.hierarchy, ns.Database.DefaultTierCount()))
+    else
+        ns.Print(string.format(
+            "version %s, no campaign yet - create or join one with /rls campaign new.", C.VERSION))
+    end
 
     local contested = ns.Roster.ContestedNames()
     if #contested > 0 then

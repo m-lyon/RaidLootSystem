@@ -89,7 +89,7 @@ end
 function Viewer.Refresh()
     if not frame or not frame:IsShown() then return end
 
-    local db = DB()
+    local db = DB() or {}
     local order = db.order or {}
 
     -- The header names the campaign, so a screenshot is unambiguous about which

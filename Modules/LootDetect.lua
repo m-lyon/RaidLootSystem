@@ -248,7 +248,8 @@ end
 --------------------------------------------------------------------------------
 
 local function threshold()
-    return ns.Database.Host().qualityThreshold or 4
+    local host = ns.Database.Host()
+    return (host and host.qualityThreshold) or 4
 end
 
 --- Recompute the candidate and skipped lists from the retained scan (Partition).

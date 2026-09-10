@@ -274,10 +274,12 @@ local listeners = {}
 local frame
 
 --- The active campaign's hierarchy plus the global character table, in the shape
--- the rest of this file already expected (spec 012 section 4).
+-- the rest of this file already expected (spec 012 section 4). No active
+-- campaign reads as an empty order, not a crash: there is nothing ranked in a
+-- campaign that does not exist.
 local function DB()
     local roster = ns.Database.Roster()
-    return { order = ns.Database.Hierarchy(), chars = roster.chars }
+    return { order = ns.Database.Hierarchy() or {}, chars = roster.chars }
 end
 
 --- Forget what other players published. Claims are rebuilt for the active campaign
@@ -349,8 +351,12 @@ local function commit(order, chars, silent)
     if not ok then return nil, why end
 
     -- The ordering belongs to the active campaign; the characters are global.
+    -- With no active campaign there is nowhere to put `order` -- it was built
+    -- from an empty starting list in the first place (see DB() above) -- but the
+    -- character table still writes, so adding a character works before a
+    -- campaign exists; it just is not ranked anywhere yet.
     local campaign = ns.Campaign.Active()
-    campaign.hierarchy = order
+    if campaign then campaign.hierarchy = order end
     ns.Database.Roster().chars = chars
     if not silent then
         Roster.Publish()

@@ -361,9 +361,10 @@ function Campaign.ActiveId()
     return DB().activeCampaign
 end
 
---- The campaign every read of `host` and `priority` goes through (section 9).
--- Database.lua owns the accessors that call this, so a future scoping change stays
--- a single-file problem.
+--- The campaign every read of `host` and `priority` goes through (section 9), or
+-- nil when the player has never created or joined one. Database.lua owns the
+-- accessors that call this, so a future scoping change stays a single-file
+-- problem, and every one of those accessors is nil-safe for exactly this case.
 function Campaign.Active()
     local db = DB()
     local campaign = db.campaigns[db.activeCampaign]
@@ -376,7 +377,7 @@ function Campaign.Active()
         db.activeCampaign = list[1].id
         return Campaign.Normalise(list[1])
     end
-    return Campaign.Normalise(Campaign.EnsureDefault())
+    return nil
 end
 
 function Campaign.IsMemberOf(campaignId)
@@ -428,22 +429,6 @@ end
 local function store(campaign)
     local db = DB()
     db.campaigns[campaign.id] = campaign
-    return campaign
-end
-
---- A fresh install gets one campaign, labelled "Main", with an ordinary id.
-function Campaign.EnsureDefault()
-    local db = DB()
-    if next(db.campaigns) ~= nil then
-        if db.campaigns[db.activeCampaign] then return db.campaigns[db.activeCampaign] end
-        db.activeCampaign = Campaign.List()[1].id
-        return db.campaigns[db.activeCampaign]
-    end
-    local me = (UnitName and UnitName("player")) or "You"
-    local campaign = Campaign.New(C.DEFAULT_CAMPAIGN_LABEL, nil,
-        { creator = me, timestamp = time(), hierarchy = db.roster.defaultHierarchy })
-    store(campaign)
-    db.activeCampaign = campaign.id
     return campaign
 end
 
@@ -673,8 +658,8 @@ function Campaign.ByIndex(n)
 end
 
 function Campaign.Init()
-    -- At PLAYER_LOGIN, so the default campaign's permanent id carries the real
-    -- player name rather than the fallback.
-    Campaign.EnsureDefault()
+    -- A fresh install starts with no campaign at all: only the template (spec 012
+    -- section 5, revised). The first campaign is whatever the player creates or
+    -- joins; nothing is provisioned for them.
     ns.Comms.RegisterHandler(C.OPS.CINV, onCinv)
 end

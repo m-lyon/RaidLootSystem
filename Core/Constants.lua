@@ -149,11 +149,6 @@ C.EXPORT_PREFIX = "RLS1:"
 -- different payload: id, label, host settings and the whole priority list.
 C.CAMPAIGN_EXPORT_PREFIX = "RLSC1:"
 
--- The label a fresh install's one campaign carries (spec 012 section 5). Its id is
--- an ordinary <name>-<timestamp>, never a well-known constant: a shared "main"
--- would put you nominally inside a stranger's campaign.
-C.DEFAULT_CAMPAIGN_LABEL = "Main"
-
 C.MAX_CAMPAIGN_LABEL = 40
 
 -- Reasons a character cannot be entered. Rendered by the roll window (spec 005).

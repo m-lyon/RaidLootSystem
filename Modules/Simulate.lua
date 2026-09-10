@@ -566,6 +566,10 @@ function Simulate.Run(argument)
         say("refused: a real round is open on this client.")
         return false
     end
+    if not ns.Campaign.Active() then
+        say("refused: create or join a campaign first (/rls campaign new).")
+        return false
+    end
 
     local args = Simulate.ParseArgs(argument)
     local built, why = Simulate.Build(args.scenario, args)

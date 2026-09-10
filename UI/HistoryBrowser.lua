@@ -68,7 +68,7 @@ local function currentFilter()
     local roster
     if filters.mine:GetChecked() == 1 then
         roster = {}
-        for _, name in ipairs(DB().Hierarchy()) do roster[name:lower()] = true end
+        for _, name in ipairs(DB().Hierarchy() or {}) do roster[name:lower()] = true end
     end
     local days = tonumber(filters.days:GetText())
     return {
