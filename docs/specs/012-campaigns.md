@@ -315,8 +315,15 @@ joined by invitation is created with no `host` block at all, so the defaults fil
 default is `ROLL`: hand master loot to a new person in a seeded Suicide Kings campaign and their
 first round resolved by roll, with the list sitting right there and nothing saying a word.
 
-`hierarchy` is the exception and stays local. It is this client's ordering of *its own*
-characters, it is never broadcast, and it is meaningless on anyone else's machine (§7).
+`hierarchy` belongs to the campaign for the same reason `host` does. A hierarchy outside a
+campaign means nothing: `roster.defaultHierarchy` is a template that seeds new campaigns and
+resolves nothing (§7), and the ordering that decides a tier is always the one on the campaign.
+
+The two differ in *who* a campaign-scoped value belongs to, not in whether it is campaign-scoped.
+`host` is one value the whole group plays by, so it comes from whoever holds master loot and
+`CFG`/`CSTATE` carry it. `hierarchy` is one value **per member**: it orders that member's own
+characters, which nobody else has. So the host has no copy of yours to send, and `CSTATE` leaves
+it alone — not because it is loose personal state, but because the host is not its author.
 
 ### Migration
 

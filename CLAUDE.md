@@ -62,7 +62,9 @@ with the reasoning.
   Master looter moves constantly, and an audit trail that dies on handover is not one. Spec 010 §8.
 - **The campaign is the source of truth for how the group plays it.** `CFG` and `CSTATE` write
   `lootMode`, `tierCount` and `timerSeconds` onto `campaign.host` for every member. `hierarchy` is
-  the exception: it is this client's ordering of its own characters and is never sent. Spec 012 §9.
+  campaign-scoped too -- a hierarchy outside a campaign means nothing, and
+  `roster.defaultHierarchy` only seeds -- but it is *per member*, so the host has no copy of yours
+  to send and `CSTATE` leaves it alone. Spec 012 §7 and §9.
 - **The priority list is stored, not derived.** Unlike a tally, it degrades catastrophically —
   one missing round silently corrupts every later position. `verify` replays history to *detect*
   drift; it never repairs. Spec 010 §8.

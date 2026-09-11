@@ -701,8 +701,9 @@ local function onCstate(sender, body)
     ns.Campaign.Normalise(campaign)
 
     -- The campaign is the source of truth for how the group plays it, so the shared
-    -- host settings come with it (spec 012 section 9). The hierarchy does not: it is
-    -- this client's own ordering of its own characters and is never sent.
+    -- host settings come with it (spec 012 section 9). The hierarchy is on the campaign
+    -- too, but it is per member -- it orders this member's own characters -- so the
+    -- host holds no copy of it to send and this leaves it alone.
     campaign.host.tierCount = incoming.host.tierCount
     campaign.host.timerSeconds = incoming.host.timerSeconds
     campaign.host.qualityThreshold = incoming.host.qualityThreshold
