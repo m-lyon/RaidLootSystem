@@ -135,6 +135,17 @@ absence: a bot left at home for three weeks floats upward as everyone else wins 
 back near the top. In a bot raid that is not hypothetical; it is what happens to every bot
 somebody did not bother to summon.
 
+**The consequence is that "the bottom" is the last *present* index, which need not be the last
+row.** With absent characters at the tail of the list, a suicide visibly stops short of the end.
+That is correct, and it is also the single most convincing-looking bug this feature can produce:
+the host clicks a control promising the bottom and watches the character land one row above it.
+
+So every surface that performs a suicide names the destination index rather than saying
+"bottom", and names who holds the rows below it. `PriorityList.suicidePreview` returns the
+landing index and those characters, and it is the one place that answers the question, so the
+panel's confirmation and the chat line cannot describe the same move differently. The host panel
+control is labelled **Suicide**, not **Bottom** (§10).
+
 ### A failed delivery restores the position
 
 The list mutates when the award is made. Delivery is confirmed later (007), or is not.
@@ -353,7 +364,10 @@ A **Priority list** section, added to 006 §3:
 - **Seed list** when none exists — the prompt that enables `SK`. Shows the seed value afterwards.
 - **Reseed**, **manual reorder** (one place up or down per confirmed click; a drag would make
   every accidental drop a confirmed, announced, logged edit), **manual suicide / restore** for any
-  character, and **remove** for a character nobody claims any more. Newly claimed characters
+  character, and **remove** for a character nobody claims any more. The suicide control is
+  labelled **Suicide** and its confirmation reads *"Move Mojojojo from 14 to 16, below every
+  character in the raid? Milhouse is not here and holds 17."* — the destination and the reason
+  for it, before the click rather than argued about after it (§6). Newly claimed characters
   join at the bottom automatically; nothing is ever removed automatically, because a transient
   claim loss (a reload) would otherwise send someone to the bottom.
 - **Version and verification** — the current version, and a `verify` button running §8's replay.

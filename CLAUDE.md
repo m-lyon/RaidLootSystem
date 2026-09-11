@@ -70,7 +70,10 @@ with the reasoning.
 - **A failed delivery restores the winner's list position** from the recorded `priorIndex`.
   Never recompute it — by then the list has moved. Spec 010 §6.
 - **Absent characters hold their absolute index.** The naive remove-and-append rewards not
-  showing up. Spec 010 §6.
+  showing up. Spec 010 §6. The corollary: a suicide lands on the last *present* index, which is
+  not the last row when the tail is absent, so no surface may call it "the bottom" without also
+  naming the index and who holds the rows below. `PriorityList.suicidePreview` is the one place
+  that answers that; the panel control is labelled Suicide, not Bottom.
 - **SK rounds are a fixed point, not a sequential pass.** Loot-slot order must not decide who
   wins what; only the order suicides are applied in. Spec 010 §7.
 - **`itemLevel` / `quality` / `equipLoc` are logged on every item under both modes.** Nothing in

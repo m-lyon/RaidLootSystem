@@ -113,6 +113,26 @@ function PriorityList.suicide(order, char, presentSet)
     return PriorityList.suicideAt(order, from, present), from, present
 end
 
+--- Where a suicide would land `char`, and who holds the positions below it.
+--
+-- The last present index is the bottom of the list as far as a suicide is concerned,
+-- and when anyone below it is absent that is not the last row on screen. The panel
+-- names both before the click, because "Bottom" that visibly is not the bottom reads
+-- as a broken button rather than as the rule in section 6.
+--
+-- Everything below the landing index is absent by construction: the index is the last
+-- present one.
+-- @return to, from, array of the absent characters below `to` in list order, or nil
+function PriorityList.suicidePreview(order, char, presentSet)
+    local from = PriorityList.indexOf(order, char)
+    if not from then return nil end
+    local present = PriorityList.presentIndices(order, presentSet, from)
+    local to = present[#present]
+    local held = {}
+    for i = to + 1, #order do held[#held + 1] = order[i] end
+    return to, from, held
+end
+
 --- Undo a suicide: the character returns to `index`, and the present characters that
 -- moved up shift back down. `present` is the index array the suicide used, so the
 -- restore is an exact inverse whoever has since come or gone.

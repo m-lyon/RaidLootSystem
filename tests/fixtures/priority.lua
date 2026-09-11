@@ -91,6 +91,15 @@ local function run(input, ns)
         return { ok = r.ok, drift = drift, why = r.why or "" }
     elseif input.op == "action" then
         return P.DeliveryAction(input.record) or ""
+    elseif input.op == "preview" then
+        local to, from, held = PL.suicidePreview(input.order, input.char, input.present)
+        return { to = to, from = from, held = held }
+    elseif input.op == "suicideText" then
+        local to, from, held = PL.suicidePreview(input.order, input.char, input.present)
+        return P.SuicideText(input.char, from, to, held)
+    elseif input.op == "suicideAnnounce" then
+        local to, from, held = PL.suicidePreview(input.order, input.char, input.present)
+        return P.SuicideAnnounce(input.by, input.char, from, to, held)
     elseif input.op == "candidates" then
         return P.SeedCandidates(input.claims)
     elseif input.op == "differs" then
@@ -127,6 +136,20 @@ local ORDER = { "Ann", "Bob", "Cat", "Dan", "Eve" }
 local ALL = { ann = true, bob = true, cat = true, dan = true, eve = true }
 -- Bob and Dan are at home.
 local SOME = { ann = true, cat = true, eve = true }
+-- Dan and Eve are at home, so the absent characters are the tail of the list.
+local TAIL_ABSENT = { ann = true, bob = true, cat = true }
+
+-- The raid of 2026-09-11, from the campaign's own event log: a manual suicide on
+-- Mojojojo at 14 landed at 16 rather than 17, because Milhouse was not in the raid
+-- and held the last row. The move was correct (section 6) and the button said
+-- "Bottom", which is what made it read as broken.
+local RAID_NIGHT = { "Zappywitch", "Stormfist", "Jijyun", "Adamm", "Mattehh", "Kargun",
+                     "Warr", "Ino", "Mmattehh", "Kyga", "Maattehh", "Adam", "Matteehh",
+                     "Mojojojo", "Scrivs", "Gravechant", "Milhouse" }
+local RAID_NIGHT_PRESENT = {}
+for _, i in ipairs({ 2, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15, 16 }) do
+    RAID_NIGHT_PRESENT[RAID_NIGHT[i]:lower()] = true
+end
 
 return {
     name = "priority",
@@ -487,6 +510,46 @@ return {
         { name = "the roll window and the core rule agree at every position",
           input = { op = "medianAgrees", upTo = 12, present = { 2, 3, 5, 8, 11 } },
           expected = true },
+
+        ----------------------------------------------------------------------
+        -- Where a suicide lands, and what the panel says about it (sections 6, 10)
+        ----------------------------------------------------------------------
+        { name = "with everyone present a suicide lands on the last row",
+          input = { op = "preview", order = ORDER, char = "Ann", present = ALL },
+          expected = { to = 5, from = 1, held = {} } },
+        { name = "an absent tail holds the rows below the landing index",
+          input = { op = "preview", order = ORDER, char = "Ann", present = TAIL_ABSENT },
+          expected = { to = 3, from = 1, held = { "Dan", "Eve" } } },
+        { name = "the raid-night suicide landed at 16 with Milhouse holding 17",
+          input = { op = "preview", order = RAID_NIGHT, char = "Mojojojo",
+                    present = RAID_NIGHT_PRESENT },
+          expected = { to = 16, from = 14, held = { "Milhouse" } } },
+        { name = "a character not on the list previews nothing",
+          input = { op = "preview", order = ORDER, char = "Nobody", present = ALL },
+          expected = { to = nil, from = nil, held = nil } },
+
+        { name = "the confirmation says the bottom when it is the bottom",
+          input = { op = "suicideText", order = ORDER, char = "Ann", present = ALL },
+          expected = "Move Ann from 1 to 5, the bottom of the list? Announced and logged." },
+        { name = "the confirmation names who holds the rows below",
+          input = { op = "suicideText", order = ORDER, char = "Ann", present = TAIL_ABSENT },
+          expected = "Move Ann from 1 to 3, below every character in the raid? "
+                  .. "Dan and Eve are not here and hold 4-5. Announced and logged." },
+        { name = "the raid-night confirmation would have named Milhouse",
+          input = { op = "suicideText", order = RAID_NIGHT, char = "Mojojojo",
+                    present = RAID_NIGHT_PRESENT },
+          expected = "Move Mojojojo from 14 to 16, below every character in the raid? "
+                  .. "Milhouse is not here and holds 17. Announced and logged." },
+
+        { name = "the chat line carries the destination",
+          input = { op = "suicideAnnounce", by = "Mattehh", order = ORDER, char = "Ann",
+                    present = ALL },
+          expected = "Mattehh moved Ann to the bottom by hand (1 -> 5)" },
+        { name = "the chat line counts the absent characters below",
+          input = { op = "suicideAnnounce", by = "Mattehh", order = RAID_NIGHT,
+                    char = "Mojojojo", present = RAID_NIGHT_PRESENT },
+          expected = "Mattehh moved Mojojojo to the bottom by hand (14 -> 16); "
+                  .. "1 absent character holds 17" },
 
         { name = "the same version with another order differs",
           input = { op = "differs", stored = { version = 3, order = ORDER }, received = { version = 3, order = { "Bob", "Ann", "Cat", "Dan", "Eve" } } },

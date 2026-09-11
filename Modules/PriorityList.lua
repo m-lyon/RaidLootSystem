@@ -89,6 +89,54 @@ function Priority.DeliveryAction(record)
     return nil
 end
 
+--- "17" for one held position, "15-17" for several. The positions below a landing
+-- index are contiguous: everything under the last present index is absent.
+local function heldRange(to, count)
+    if count == 1 then return tostring(to + 1) end
+    return (to + 1) .. "-" .. (to + count)
+end
+
+--- "Milhouse", "Ino and Milhouse", "Ino, Milhouse and 2 more".
+local function nameList(names)
+    local n = #names
+    if n == 0 then return "" end
+    if n == 1 then return names[1] end
+    if n == 2 then return names[1] .. " and " .. names[2] end
+    if n == 3 then return names[1] .. ", " .. names[2] .. " and " .. names[3] end
+    return names[1] .. ", " .. names[2] .. " and " .. (n - 2) .. " more"
+end
+
+--- The confirmation a manual suicide shows (section 10).
+--
+-- It names the destination index, not "the bottom". A host who reads "bottom" and
+-- then watches the character land one row short concludes the button is broken; the
+-- rule that put it there (absent characters hold their index, section 6) is only
+-- visible if the dialog says so before the click.
+-- @param held  the absent characters below `to`, from PriorityList.suicidePreview
+function Priority.SuicideText(char, from, to, held)
+    held = held or {}
+    if #held == 0 then
+        return string.format("Move %s from %d to %d, the bottom of the list? "
+            .. "Announced and logged.", char, from, to)
+    end
+    return string.format("Move %s from %d to %d, below every character in the raid? "
+        .. "%s %s not here and %s %s. Announced and logged.",
+        char, from, to, nameList(held), #held == 1 and "is" or "are",
+        #held == 1 and "holds" or "hold", heldRange(to, #held))
+end
+
+--- The chat line a manual suicide announces (section 10). Same facts as the dialog,
+-- inside a chat line's budget.
+function Priority.SuicideAnnounce(by, char, from, to, held)
+    local line = string.format("%s moved %s to the bottom by hand (%d -> %d)", by, char, from, to)
+    if #(held or {}) > 0 then
+        line = line .. string.format("; %d absent character%s %s %s",
+            #held, #held == 1 and "" or "s", #held == 1 and "holds" or "hold",
+            heldRange(to, #held))
+    end
+    return line
+end
+
 --- Every uncontested claimed character, sorted, for seeding (section 5).
 -- @param claims  Roster.claims: lower name -> { name, owners, contested }
 function Priority.SeedCandidates(claims)
@@ -260,12 +308,24 @@ function Priority.Move(from, to)
 end
 
 function Priority.ManualSuicide(char)
-    local from = PriorityList.indexOf(DB().order, char)
+    local order = DB().order
+    local from = PriorityList.indexOf(order, char)
     if not from then return false, char .. " is not on the list." end
-    local _, _, present = PriorityList.suicide(DB().order, char, presentSet())
-    return hostMutate({ kind = "suicide", char = DB().order[from], from = from, present = present },
-        string.format("%s moved %s to the bottom by hand (from %d)", UnitName("player"),
-            DB().order[from], from))
+    -- One present set for both, so the move that is applied and the move that is
+    -- announced cannot come from two different reads of the raid.
+    local present = presentSet()
+    local _, _, presentIdx = PriorityList.suicide(order, char, present)
+    local to, _, held = PriorityList.suicidePreview(order, char, present)
+    return hostMutate({ kind = "suicide", char = order[from], from = from, present = presentIdx },
+        Priority.SuicideAnnounce(UnitName("player"), order[from], from, to, held))
+end
+
+--- The panel's confirmation for one row, resolved against the raid as it stands.
+function Priority.SuicidePrompt(char)
+    local order = DB().order
+    local to, from, held = PriorityList.suicidePreview(order, char, presentSet())
+    if not to then return char .. " is not on the list." end
+    return Priority.SuicideText(char, from, to, held)
 end
 
 function Priority.ManualRestore(char, index)
@@ -615,12 +675,15 @@ local function panelRow(panel, i)
     row.up:SetPoint("RIGHT", row.down, "LEFT", -2, 0)
     Widgets.Tooltip(row.up, "Move up", "Move this character one place up the list.")
 
-    row.suicide = Widgets.Button(row, "Bottom", 48, 16, function()
-        confirm("suicide", string.format("Move %s to the bottom by hand? Announced and logged.",
-            row.char), row.char)
+    -- "Suicide", not "Bottom": absent characters hold their index (section 6), so the
+    -- landing position is the last one in the raid and need not be the last row.
+    row.suicide = Widgets.Button(row, "Suicide", 56, 16, function()
+        confirm("suicide", Priority.SuicidePrompt(row.char), row.char)
     end)
     row.suicide:SetPoint("RIGHT", row.up, "LEFT", -2, 0)
-    Widgets.Tooltip(row.suicide, "Manual suicide", "As if this character had just won.")
+    Widgets.Tooltip(row.suicide, "Manual suicide", "As if this character had just won. "
+        .. "Characters not in the raid keep their position, so this lands at the bottom "
+        .. "of the raid rather than the bottom of the list.")
 
     row.restore = Widgets.Button(row, "Top", 40, 16, function()
         confirm("restore", string.format("Restore %s to position 1 by hand? Announced and logged.",
