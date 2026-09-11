@@ -412,8 +412,12 @@ host-visible change (010 §10).
 Confirmed with a dialog **naming what is lost** — *"Delete 'Alt Run'? Its priority list of 23
 characters and 140 logged changes cannot be recovered."*
 
+Reached from `/rls campaign delete <n>` only. **The host panel carries no Delete control**, because
+the host panel is the screen that is open in front of a raid.
+
 | Rule | Reason |
 |---|---|
+| Refused while you are in a party or a raid | Deletion is local and silent — no op carries it, so the other members keep the campaign, its list and its log, and find out when the next round opens somewhere they are not members and their roll window comes up read-only. That is a raid night lost to a misclick, for the list the group has been building for weeks. Waiting costs nothing: a campaign nobody wants can be left unused, and a new one is one click away. |
 | Refused while any `pending` record names it | An in-flight item with a live clock whose failure path needs the very list it would restore into (§14). Refused outright, not warned about. |
 | Refused while a round is open in it | The round resolves against this campaign's list and its award restores into it, and every close path reads its host settings. A round already closed or aborted blocks nothing. |
 | The active campaign **may** be deleted | You land in whatever campaign remains, or in none at all (§5). The confirmation already names what is lost, so a second "switch away first" step bought nothing but friction. |
@@ -450,7 +454,7 @@ anyone's `hierarchy`, which is personal and per client.
 
 | Surface | Change |
 |---|---|
-| **Host panel** | A **Campaign** section: active campaign and label, a switcher, `N/M joined` with the names of non-members, and **Invite raid to campaign**, **New**, **Rename**, **Delete**, **Export**, **Import**. Every existing host setting in the panel now reads and writes the active campaign's `host` table. |
+| **Host panel** | A **Campaign** section: active campaign and label, a switcher, `N/M joined` with the names of non-members, and **Invite raid to campaign**, **New**, **Rename**, **Export**, **Import**. No **Delete**: §11. Every existing host setting in the panel now reads and writes the active campaign's `host` table. |
 | **Hierarchy editor** | A campaign picker in the header, listing every campaign plus **Default** (the §7 template, marked as such). The picker is **prominent, not decorative** — editing the wrong campaign's hierarchy is a silent no-op you would discover next Tuesday. Rows gain the §7 inclusion checkbox. |
 | **Roll window** | The campaign label in the title. The read-only non-member banner of §6. |
 | **History browser** | Defaults to filtering by active campaign, with an **All campaigns** toggle and a `deleted` marker on records whose campaign is gone. |
@@ -534,6 +538,8 @@ pure.
   campaign's values, and the hierarchy editor to that campaign's hierarchy.
 - Deleting a campaign with a pending delivery is refused; the same delete succeeds once the
   delivery resolves, and history keeps both records.
+- Deleting any campaign is refused while in a party or a raid, whoever else is in it, and the same
+  delete succeeds once out of the group.
 - A pending delivery that fails terminally after a campaign switch restores the winner's index in
   the campaign the award was made in, not the active one.
 

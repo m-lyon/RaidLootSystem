@@ -306,7 +306,7 @@ end
 
 --- Size the window to end below whichever text panel is open, or below the
 -- export buttons when neither is.
-function layoutPanels()
+local function measurePanels()
     if not frame or not frame.exportRow then return end
 
     local anchor = frame.exportRow
@@ -319,6 +319,16 @@ function layoutPanels()
     if top and bottom then
         frame:SetHeight(top - bottom + BOTTOM_MARGIN)
     end
+end
+
+--- Measuring right after the contents changed can be a frame behind, and the
+-- window then comes out short enough to clip the buttons along its bottom edge
+-- until the next redraw measures again. The second pass runs once the frames
+-- have settled; it is a no-op whenever the first already had the right numbers.
+-- The hierarchy editor sizes itself the same way and for the same reason.
+function layoutPanels()
+    measurePanels()
+    Widgets.NextFrame(measurePanels)
 end
 
 local function showText(panel, title, text)

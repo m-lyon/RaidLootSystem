@@ -94,10 +94,51 @@ end
 function Campaign.Normalise(campaign)
     if type(campaign) ~= "table" then return nil end
     campaign.hierarchy = campaign.hierarchy or {}
+    -- Additive, so a campaign stored before spec 013 gains an empty members table
+    -- here rather than through a schema bump -- which would rebuild the saved
+    -- variables empty (section 3) and take the group's priority list with it.
+    campaign.members = campaign.members or {}
     campaign.host = Util.applyDefaults(campaign.host or {}, C.CAMPAIGN_DEFAULTS.host)
     campaign.priority = Util.applyDefaults(campaign.priority or {},
         C.CAMPAIGN_DEFAULTS.priority)
     return campaign
+end
+
+--------------------------------------------------------------------------------
+-- Pure: submitted hierarchies (spec 013 section 3)
+--
+-- What each member ranked, for the campaign they ranked it in. The stored copy is
+-- a cache of what that member broadcast and nothing else writes it: a hierarchy
+-- belongs to the member who submitted it (section 7), so CFG and CSTATE still
+-- leave these alone and no host screen edits them.
+--------------------------------------------------------------------------------
+
+--- Record one member's ordering on a campaign record. Replaces rather than merges:
+-- a resubmission is the whole of what that member now ranks, and merging would
+-- resurrect a character they had just removed.
+-- @return true, or nil plus a reason
+function Campaign.RecordMember(campaign, player, order, chars, at)
+    if type(campaign) ~= "table" then return nil, "no such campaign" end
+    if type(player) ~= "string" or player == "" then return nil, "a record needs a player" end
+    campaign.members = campaign.members or {}
+    campaign.members[player] = {
+        order = Util.copy(order or {}),
+        chars = Util.deepCopy(chars or {}),
+        at = at,
+    }
+    return true
+end
+
+--- The submitted hierarchies of a campaign, as TierRoster.bands takes them.
+-- Sorted by player so the roster is stable between reads.
+function Campaign.MemberList(campaign)
+    local out = {}
+    for player, record in pairs((campaign or {}).members or {}) do
+        out[#out + 1] = { player = player, order = record.order or {},
+                          chars = record.chars or {}, at = record.at }
+    end
+    table.sort(out, function(a, b) return a.player < b.player end)
+    return out
 end
 
 --------------------------------------------------------------------------------
@@ -221,9 +262,20 @@ end
 -- campaign at all is a state the addon supports (section 5, revised), so
 -- deleting the last one leaves you in the template and nothing else. What is
 -- still refused is deleting a campaign with live state pointing into it.
--- @param ctx { pendingIds = { [campaignId] = true }, openRoundCampaignId }
+-- @param ctx { inGroup, pendingIds = { [campaignId] = true }, openRoundCampaignId }
 function Campaign.DeleteBlocker(campaignId, ctx)
     ctx = ctx or {}
+    if ctx.inGroup then
+        -- Deleting is local and silent: no op carries it, so the other members keep
+        -- the campaign, its priority list and its log, and find out only when the
+        -- next round opens somewhere they are not members and their roll window
+        -- comes up read-only. That is a raid night lost to a misclick, and the list
+        -- it costs is the one the group has been building for weeks. So deletion is
+        -- an out-of-group action. Nothing is given up by waiting: a campaign nobody
+        -- wants can simply be left unused, and a new one is one click away.
+        return "you are in a group. Leave the raid first -- deleting a campaign "
+            .. "other members are in strands them on it."
+    end
     if (ctx.pendingIds or {})[campaignId] then
         -- An in-flight item with a live clock whose failure path needs the very list
         -- it would restore into (section 14). Refused outright, not warned about.
@@ -331,6 +383,7 @@ local function fireChanged()
     if ns.HostPanel then ns.HostPanel.Refresh() end
     if ns.HierarchyEditor then ns.HierarchyEditor.Refresh() end
     if ns.PriorityViewer then ns.PriorityViewer.Refresh() end
+    if ns.TierViewer then ns.TierViewer.Refresh() end
     if ns.RollWindow then ns.RollWindow.Refresh() end
 end
 
@@ -515,8 +568,44 @@ local function openRoundCampaign()
     return round.campaignId
 end
 
+--- Being in a party or a raid at all, by the 3.3.5a pair of counts -- there is no
+-- IsInGroup on this client, and a raid reports zero party members.
+local function inGroup()
+    return GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0
+end
+
+--- Store one member's ordering against the campaign it names (spec 013 section 3).
+-- Called for our own publish and for every ROSTER we accept; the timestamp is what
+-- lets the roster say how old a band is.
+-- @return true, or nil plus a reason
+function Campaign.RecordHierarchy(campaignId, player, order, chars)
+    local campaign = Campaign.Get(campaignId)
+    if not campaign then return nil, "no such campaign" end
+    local ok, why = Campaign.RecordMember(campaign, player, order, chars, time())
+    if not ok then return nil, why end
+    -- Deliberately no fireChanged: this runs on every ROSTER, which the group
+    -- events fire often, and the roster path already tells its own listeners when
+    -- the active campaign's claims are rebuilt. Refreshing four windows per
+    -- received message would cost more than the one screen this feeds.
+    return true
+end
+
+--- Drop one member's stored ordering. For the simulator, whose fake players publish
+-- into the real active campaign and must leave nothing behind in it (spec 009).
+function Campaign.ForgetMember(campaignId, player)
+    local campaign = Campaign.Get(campaignId)
+    if not campaign or not campaign.members then return end
+    campaign.members[player] = nil
+end
+
+--- The submitted hierarchies of one campaign, active by default.
+function Campaign.Members(campaignId)
+    return Campaign.MemberList(Campaign.Get(campaignId or Campaign.ActiveId()))
+end
+
 function Campaign.DeleteRefusal(campaignId)
     return Campaign.DeleteBlocker(campaignId, {
+        inGroup = inGroup(),
         pendingIds = pendingCampaigns(),
         openRoundCampaignId = openRoundCampaign(),
     })

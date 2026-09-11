@@ -352,7 +352,7 @@ end
 -- the list wraps to a second line and pushes everything down.
 --------------------------------------------------------------------------------
 
-function layoutPanels()
+local function measurePanels()
     if not frame or not listPanel or not frame.exportButton then return end
 
     local anchor = listPanel
@@ -367,6 +367,21 @@ function layoutPanels()
     if top and bottom then
         frame:SetHeight(top - bottom + BOTTOM_MARGIN)
     end
+end
+
+--- Size the window, then size it again on the next frame.
+--
+-- The scope line and the roll-open warning are wrapping font strings, and a
+-- wrapping string still measures at its old height until the text has been laid
+-- out for drawing. On the first Refresh after a Show the two lines above the
+-- list therefore measure short, the window comes out a few pixels shy, and the
+-- Export and Import buttons sit under the bottom border -- until any later
+-- Refresh, such as picking a campaign, measures them at their real height. The
+-- second pass measures once they have settled; it is a no-op whenever the first
+-- pass already had the right numbers.
+function layoutPanels()
+    measurePanels()
+    Widgets.NextFrame(measurePanels)
 end
 
 --- Only one panel occupies the slot below the list, so they resize the window

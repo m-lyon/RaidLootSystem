@@ -19,6 +19,7 @@ Core\Tiers.lua
 Core\Eligibility.lua
 Core\Resolve.lua
 Core\PriorityList.lua
+Core\TierRoster.lua
 
 Data\TierTokens.lua
 Data\ClassArmor.lua
@@ -46,6 +47,7 @@ UI\HierarchyEditor.lua
 UI\Campaigns.lua
 UI\HistoryBrowser.lua
 UI\PriorityViewer.lua
+UI\TierViewer.lua
 UI\Minimap.lua
 
 RaidLootSystem.lua

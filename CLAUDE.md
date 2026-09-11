@@ -63,8 +63,19 @@ with the reasoning.
 - **The campaign is the source of truth for how the group plays it.** `CFG` and `CSTATE` write
   `lootMode`, `tierCount` and `timerSeconds` onto `campaign.host` for every member. `hierarchy` is
   campaign-scoped too -- a hierarchy outside a campaign means nothing, and
-  `roster.defaultHierarchy` only seeds -- but it is *per member*, so the host has no copy of yours
-  to send and `CSTATE` leaves it alone. Spec 012 §7 and §9.
+  `roster.defaultHierarchy` only seeds -- but it is *per member*: `CSTATE` leaves it alone and no
+  host screen edits it. Spec 012 §7 and §9.
+- **`campaign.members` is a cache of what each member broadcast, not an authority over it.**
+  Every `ROSTER` for a campaign you are in is stored there so the tier roster survives a reload
+  (spec 013 §3), which means the host *does* hold a copy of your hierarchy now -- but only you
+  write yours, by publishing. Nothing in `CFG` / `CSTATE` / any host control may touch it.
+- **Recording a `ROSTER` and claiming from it are separate steps.** The record goes to whichever
+  campaign the message names, if you are in it; `Roster.claims` is still rebuilt for the *active*
+  campaign only, or two players claiming one character in unrelated groups reads as a conflict.
+  Spec 013 §3, spec 012 §8.
+- **Nothing simulated may outlive a simulation in the saved variables.** The fake players publish
+  a `ROSTER` into the real active campaign, so `Simulate` clears them out of `campaign.members` on
+  finish, next to where it forgets their claims and peers.
 - **The priority list is stored, not derived.** Unlike a tally, it degrades catastrophically —
   one missing round silently corrupts every later position. `verify` replays history to *detect*
   drift; it never repairs. Spec 010 §8.
@@ -149,6 +160,12 @@ Spec 011 adds `UI/PriorityViewer.lua` beyond 000 §3: the read-only priority lis
 can open with `/rls sk`. Its row model is `PriorityList.viewRows` in `Core/`, and
 `PriorityList.aboveMedian` is the single definition of the near-the-top rule --
 `RollWindow.AboveMedian` delegates to it so the two screens cannot disagree.
+
+Spec 013 adds `Core/TierRoster.lua` and `UI/TierViewer.lua`: the campaign tier roster every
+player can open with `/rls tiers`, built from `campaign.members` -- what each member submitted,
+now stored rather than reconstructed from live `ROSTER` traffic each session. The same bands group
+the two priority-list surfaces, through `TierRoster.groupRows` over the rows
+`PriorityList.viewRows` already produces, so the list and the roster cannot disagree.
 
 **Spec 012 (campaigns) is built**, in the two commits it was specified to land in:
 

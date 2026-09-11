@@ -170,32 +170,17 @@ local function campaignOptions()
     return options
 end
 
---- Delete needs its own picker: the switcher above cannot serve double duty, because
--- selecting in it *is* switching, and section 11 refuses to delete the campaign you
--- are in. Undeletable campaigns are listed and greyed with the reason on the tooltip
--- rather than hidden -- "why is mine not in the list" is a worse question than being
--- told why not.
-local function deletableOptions()
-    local options = { { value = "", text = "Delete which?" } }
-    for _, c in ipairs(ns.Campaign.List()) do
-        local blocker = ns.Campaign.DeleteRefusal(c.id)
-        options[#options + 1] = {
-            value = c.id,
-            text = c.label or c.id,
-            disabled = blocker ~= nil,
-            tooltipTitle = blocker and (c.label or c.id) or nil,
-            tooltip = blocker,
-        }
-    end
-    return options
-end
-
--- Where the note starts, measured from the panel's top: title, picker, the button
--- row, then the delete picker. The note wraps to an unpredictable number of lines,
--- so the section's own height is computed from it in refreshCampaign rather than
--- guessed here -- layoutSections stacks panels by GetHeight, so a section that
--- under-reports overlaps the one below it.
-local NOTE_TOP = 122
+-- Where the note starts, measured from the panel's top: title, picker, then the two
+-- button rows. The note wraps to an unpredictable number of lines, so the section's
+-- own height is computed from it in refreshCampaign rather than guessed here --
+-- layoutSections stacks panels by GetHeight, so a section that under-reports
+-- overlaps the one below it.
+--
+-- There is deliberately no Delete control here. Deleting is local and silent, the
+-- host panel is open in front of a raid, and a campaign deleted out from under the
+-- members still in it costs them the list without telling them. It lives on
+-- `/rls campaign delete <n>`, which refuses while you are in a group at all.
+local NOTE_TOP = 116
 
 local function buildCampaign(parent)
     local panel = section(parent, "Campaign", NOTE_TOP + 30)
@@ -244,21 +229,17 @@ local function buildCampaign(parent)
             ns.Campaigns.ShowImport()
         end, panel.export)
 
-    panel.deleteLabel = Widgets.Label(panel, "Delete", "GameFontNormalSmall")
-    panel.deleteLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -88)
-
-    panel.delete = Widgets.Dropdown(panel, "RaidLootSystemHostCampaignDelete", 150,
-        deletableOptions(), function(value)
-            -- SetValue has already run with the chosen id, so put the prompt back
-            -- before the confirmation opens: this control picks a target, it is not
-            -- a selection that persists.
-            panel.delete:SetValue("")
-            if value ~= "" then ns.Campaigns.PromptDelete(value) end
-        end)
-    -- No frame-level tooltip: a UIDropDownMenuTemplate frame has no mouse enabled, so
-    -- Widgets.Tooltip would never fire on it. The per-option tooltips carry the reason
-    -- a given campaign cannot be deleted, which is the part worth reading anyway.
-    panel.delete:SetPoint("TOPLEFT", panel, "TOPLEFT", 50, -84)
+    -- On a row of its own, and not only because the lifecycle row is full at this
+    -- width: this opens a view, where the four beside Invite each change the
+    -- campaign. Grouping a read with four writes invites the wrong click.
+    panel.tiers = Widgets.Button(panel, "Tiers", 90, 20, function()
+        ns.TierViewer.SetTarget(ns.Campaign.ActiveId())
+        ns.TierViewer.Show()
+    end)
+    panel.tiers:SetPoint("TOPLEFT", panel.invite, "BOTTOMLEFT", 0, -4)
+    Widgets.Tooltip(panel.tiers, "Campaign tiers",
+        "Who composes each tier, from the hierarchies this campaign's members submitted. "
+        .. "A tier decides who competes for an item before any roll or list position does.")
 
     panel.note = Widgets.Label(panel, "", "GameFontDisableSmall")
     panel.note:SetPoint("TOPLEFT", panel, "TOPLEFT", 10, -NOTE_TOP)
@@ -274,8 +255,6 @@ local function refreshCampaign()
 
     if not active then
         campaign.joined:SetText("")
-        campaign.delete:SetOptions(deletableOptions())
-        campaign.delete:SetValue("")
         campaign.note:SetText("|cffffcc00No campaign yet -- click New to create one.|r")
         campaign:SetHeight(NOTE_TOP + math.max(campaign.note:GetHeight(), 12) + 10)
         return
@@ -291,9 +270,6 @@ local function refreshCampaign()
         campaign.joined:SetText(string.format("|cffffaa00%d/%d joined|r |cff888888- not in it: %s|r",
             joined.joined, joined.total, table.concat(joined.missing, ", ")))
     end
-
-    campaign.delete:SetOptions(deletableOptions())
-    campaign.delete:SetValue("")
 
     campaign.note:SetText(string.format(
         "Tier count, timer, quality and loot mode below belong to \"%s\". "

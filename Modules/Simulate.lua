@@ -421,10 +421,15 @@ local function finish()
 
     -- Back to the real world: overrides off, fake rosters and peers forgotten.
     restoreAll()
+    local campaignId = ns.Campaign.ActiveId()
     for _, name in ipairs({ "Simdave", "Simanna", "Simerin", "Simkate", "Simoli" }) do
         ns.Roster.published[name] = nil
         ns.Round.peers[name] = nil
         ns.Round.peerCampaign[name] = nil
+        -- The fakes publish a ROSTER into the real campaign, which is now stored
+        -- rather than session-only (spec 013 section 3). Simulated members must not
+        -- outlive the simulation in the tier roster.
+        ns.Campaign.ForgetMember(campaignId, name)
     end
     ns.Roster.RefreshPresence()
     ns.Roster.Publish()

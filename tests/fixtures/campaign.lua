@@ -96,6 +96,33 @@ local function run(input, ns)
         end
         return { rows = out, hierarchy = Campaign.HierarchyOf(rows) }
 
+    elseif input.op == "members" then
+        -- Storage of what each member submitted (spec 013 section 3). Starts from a
+        -- campaign with no `members` at all, as every campaign stored before that
+        -- spec does, so Normalise carries the additive default.
+        local campaign = newCampaign("Steve-1", "Tuesday 25", { "Ann", "Bob" })
+        campaign.priority.version, campaign.priority.log = 7, { "an event" }
+        campaign.members = nil
+        Campaign.Normalise(campaign)
+        local filled = campaign.members ~= nil and next(campaign.members) == nil
+
+        for _, record in ipairs(input.records or {}) do
+            Campaign.RecordMember(campaign, record.player, record.order, record.chars,
+                record.at)
+        end
+
+        local out = {}
+        for i, member in ipairs(Campaign.MemberList(campaign)) do
+            out[i] = string.format("%s=%s@%s", member.player,
+                table.concat(member.order, ","), tostring(member.at))
+        end
+        return { filled = filled, members = out,
+                 -- The list, its log and the host settings are untouched by any of
+                 -- this: a display feature must not disturb the record it reads.
+                 listed = #campaign.priority.order, logged = #campaign.priority.log,
+                 version = campaign.priority.version,
+                 tierCount = campaign.host.tierCount }
+
     elseif input.op == "delete" then
         return Campaign.DeleteBlocker(input.campaignId, input.ctx) or ""
 
@@ -430,6 +457,31 @@ return {
         -- Lifecycle (section 11)
         ------------------------------------------------------------------
         {
+            -- Deletion is out-of-group only: it is local and silent, so a campaign
+            -- deleted while the raid is still in it strands every other member on a
+            -- list their host no longer has.
+            name = "no campaign can be deleted while in a group",
+            input = { op = "delete", campaignId = "Steve-1",
+                      ctx = { inGroup = true, pendingIds = {} } },
+            expected = "you are in a group. Leave the raid first -- deleting a campaign "
+                .. "other members are in strands them on it.",
+        },
+        {
+            -- The group check leads, so an idle campaign in a raid still refuses.
+            name = "being in a group outranks every other delete rule",
+            input = { op = "delete", campaignId = "Steve-1",
+                      ctx = { inGroup = true, pendingIds = { ["Steve-1"] = true },
+                              openRoundCampaignId = "Steve-1" } },
+            expected = "you are in a group. Leave the raid first -- deleting a campaign "
+                .. "other members are in strands them on it.",
+        },
+        {
+            name = "the same campaign deletes once out of the group",
+            input = { op = "delete", campaignId = "Steve-1",
+                      ctx = { inGroup = false, pendingIds = {} } },
+            expected = "",
+        },
+        {
             name = "a campaign holding an undelivered item cannot be deleted",
             input = { op = "delete", campaignId = "Steve-1",
                       ctx = { pendingIds = { ["Steve-1"] = true } } },
@@ -469,6 +521,37 @@ return {
             input = { op = "delete", campaignId = "Steve-1",
                       ctx = { pendingIds = {}, openRoundCampaignId = nil } },
             expected = "",
+        },
+
+        ------------------------------------------------------------------
+        -- Submitted hierarchies (spec 013 section 3)
+        ------------------------------------------------------------------
+        {
+            name = "a campaign stored before spec 013 gains an empty members table",
+            input = { op = "members", records = {} },
+            expected = { filled = true, members = {}, listed = 2, logged = 1,
+                         version = 7, tierCount = 3 },
+        },
+        {
+            name = "recording stores each member's order against the campaign",
+            input = { op = "members", records = {
+                { player = "Stewart", order = { "Stew", "Stewalt" }, at = 300 },
+                { player = "Matt", order = { "Matt" }, at = 200 },
+            } },
+            expected = { filled = true, listed = 2, logged = 1, version = 7,
+                         tierCount = 3,
+                         members = { "Matt=Matt@200", "Stewart=Stew,Stewalt@300" } },
+        },
+        {
+            -- Replaced, not merged: a resubmission is the whole of what that member
+            -- now ranks, and merging would resurrect a character they just removed.
+            name = "recording again replaces that member's order rather than merging",
+            input = { op = "members", records = {
+                { player = "Matt", order = { "Matt", "Mattbot", "Mattpal" }, at = 100 },
+                { player = "Matt", order = { "Mattpal" }, at = 400 },
+            } },
+            expected = { filled = true, listed = 2, logged = 1, version = 7,
+                         tierCount = 3, members = { "Matt=Mattpal@400" } },
         },
 
         ------------------------------------------------------------------

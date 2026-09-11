@@ -135,6 +135,7 @@ you'll get an error message back if you're not.
 | `/rls roll <link>` | Open a round for one specific item — for something `/rls loot` didn't pick up, or a non-corpse award. Example: `/rls roll [Shadowmourne]`. |
 | `/rls close` | Resolve the open round right now, instead of waiting for the entry timer. |
 | `/rls cancel` | Cancel the open round outright — nothing is awarded. |
+| `/rls tiers` | Open the campaign tier roster — who composes T1, T2 and the rest, built from the hierarchies every member of the campaign submitted. Anyone can open this at any time, in or out of a raid. |
 | `/rls tiers <0-5>` | Set how many priority tiers count for the raid; everything below shares an equal-chance "Rest" tier. Takes effect on the next round, not the current one. See [DESIGN §2](docs/DESIGN.md#2-core-concepts). |
 | `/rls quality <3\|4>` | Set the quality bar the corpse scan applies — `3` for rare and up, `4` for epic only. |
 
@@ -198,7 +199,7 @@ Commands:
 | `/rls campaign new <label>` | Create one, then pick which characters you're bringing. |
 | `/rls campaign switch <n>` | Change the active campaign. |
 | `/rls campaign rename <label>` | Rename the active campaign. |
-| `/rls campaign delete <n>` | Delete one, after a confirmation. |
+| `/rls campaign delete <n>` | Delete one, after a confirmation. Refused while you are in a group: other members keep a campaign you delete, so it is an out-of-raid action. |
 | `/rls campaign invite` | Master looter only — invite the raid to join this campaign. |
 | `/rls campaign export` / `import <string>` | Move a whole campaign between clients. |
 

@@ -781,6 +781,22 @@ end
 --------------------------------------------------------------------------------
 
 local ROW_H = 18
+local BAND_H = 20
+
+local bands = {}
+
+--- char -> tier, from what each member submitted for this campaign (spec 013
+-- section 3). Stored, so the bands are right after a reload rather than empty
+-- until somebody republishes.
+local function tierIndex(tierCount)
+    local out = {}
+    for _, member in ipairs(ns.Campaign.Members()) do
+        for position, char in ipairs(member.order) do
+            out[char] = ns.Tiers.forPosition(position, tierCount)
+        end
+    end
+    return out
+end
 
 local function confirm(kind, text, payload)
     StaticPopup_Show("RLS_CONFIRM_PRIORITY", text, nil, { kind = kind, payload = payload })
@@ -845,6 +861,29 @@ local function panelRow(panel, i)
     return row
 end
 
+--- A tier heading (spec 013 section 6). The list is grouped because a tier is the
+-- first gate on every item: the top of the list is not the front of the queue, the
+-- top of T1 is, and a host reading a flat list to decide a manual move was reading
+-- the wrong shape.
+local function panelBand(panel, i)
+    local band = bands[i]
+    if band then return band end
+    band = CreateFrame("Frame", nil, panel.list)
+    band:SetWidth(panel.list:GetWidth())
+    band:SetHeight(BAND_H)
+
+    band.text = Widgets.Label(band, "", "GameFontNormalSmall")
+    band.text:SetPoint("BOTTOMLEFT", band, "BOTTOMLEFT", 0, 4)
+
+    band.line = band:CreateTexture(nil, "ARTWORK")
+    band.line:SetHeight(1)
+    band.line:SetPoint("BOTTOMLEFT", band, "BOTTOMLEFT", 0, 1)
+    band.line:SetPoint("BOTTOMRIGHT", band, "BOTTOMRIGHT", 0, 1)
+
+    bands[i] = band
+    return band
+end
+
 --- Build (once) and refresh the section the host panel reserved (spec 006).
 function Priority.RefreshSection(panel)
     if not panel.built then
@@ -899,6 +938,13 @@ function Priority.RefreshSection(panel)
     if #order == 0 then
         panel.note:SetText("Not seeded. Seed the priority list to enable Suicide Kings.")
         panel.seed:SetText("Seed")
+        -- Empty tier bands over an empty list would be four headings saying nothing.
+        -- The campaign's tiers are still readable, on their own screen (spec 013 §5).
+        for _, row in ipairs(rows) do row:Hide() end
+        for _, band in ipairs(bands) do band:Hide() end
+        panel.list:SetHeight(1)
+        panel:SetHeight(56)
+        return
     else
         panel.note:SetText(string.format("%d characters, version %d, seed %d. "
             .. "Every edit here is confirmed, announced and logged.", #order, db.version or 0, db.seed or 0))
@@ -907,29 +953,59 @@ function Priority.RefreshSection(panel)
 
     local me = UnitName("player")
     local claims = ns.Roster.claims
+    local campaign = ns.Campaign.Active()
+    local tierCount = (campaign and campaign.host.tierCount) or 0
+    local tierOf = tierIndex(tierCount)
+
+    -- Grouped by tier, and inside a band still in list order, which is the order a
+    -- round awards in (spec 003 section 5). The controls are unchanged: they act on
+    -- list position, and a band is a grouping of the same rows.
+    local model = {}
     for i, name in ipairs(order) do
-        local row = panelRow(panel, i)
-        row.index, row.char = i, name
-        row:ClearAllPoints()
-        row:SetPoint("TOPLEFT", panel.list, "TOPLEFT", 0, -(i - 1) * ROW_H)
-        row.position:SetText(tostring(i))
-        local claim = claims[name:lower()]
-        local owner = claim and claim.owners[1] or nil
-        local class = ns.Roster.ClassOfAny(name)
-        local label = Widgets.ColorName(name, class) .. " |cff888888(" .. tostring(owner or "unclaimed") .. ")|r"
-        if owner and me and owner:lower() == me:lower() then label = label .. " |cffaaaaaa*|r" end
-        if claim and claim.contested then label = label .. " |cffff4040contested|r" end
-        row.name:SetText(label)
-        row:SetAlpha(ns.Roster.IsPresent(name) and 1 or 0.5)
-        if i > 1 then row.up:Enable() else row.up:Disable() end
-        if i < #order then row.down:Enable() else row.down:Disable() end
-        if i > 1 then row.restore:Enable() else row.restore:Disable() end
-        if owner then row.remove:Hide() else row.remove:Show() end
-        row:Show()
+        model[i] = { position = i, char = name, tier = tierOf[name] }
     end
-    for i = #order + 1, #rows do rows[i]:Hide() end
-    panel.list:SetHeight(math.max(#order, 0) * ROW_H)
-    panel:SetHeight(50 + #order * ROW_H + 6)
+    local groups = ns.TierRoster.groupRows(model, tierCount)
+
+    local y, rowIndex, bandIndex = 0, 0, 0
+    for _, group in ipairs(groups) do
+        bandIndex = bandIndex + 1
+        local band = panelBand(panel, bandIndex)
+        band.text:SetText(string.format("|cffe6b422%s|r |cff888888(%d)|r",
+            group.label, #group.rows))
+        band.line:SetTexture(0.5, 0.4, 0.15, 0.7)
+        band:ClearAllPoints()
+        band:SetPoint("TOPLEFT", panel.list, "TOPLEFT", 0, -y)
+        band:Show()
+        y = y + BAND_H
+
+        for _, entry in ipairs(group.rows) do
+            local i, name = entry.position, entry.char
+            rowIndex = rowIndex + 1
+            local row = panelRow(panel, rowIndex)
+            row.index, row.char = i, name
+            row:ClearAllPoints()
+            row:SetPoint("TOPLEFT", panel.list, "TOPLEFT", 0, -y)
+            row.position:SetText(tostring(i))
+            local claim = claims[name:lower()]
+            local owner = claim and claim.owners[1] or nil
+            local class = ns.Roster.ClassOfAny(name)
+            local label = Widgets.ColorName(name, class) .. " |cff888888(" .. tostring(owner or "unclaimed") .. ")|r"
+            if owner and me and owner:lower() == me:lower() then label = label .. " |cffaaaaaa*|r" end
+            if claim and claim.contested then label = label .. " |cffff4040contested|r" end
+            row.name:SetText(label)
+            row:SetAlpha(ns.Roster.IsPresent(name) and 1 or 0.5)
+            if i > 1 then row.up:Enable() else row.up:Disable() end
+            if i < #order then row.down:Enable() else row.down:Disable() end
+            if i > 1 then row.restore:Enable() else row.restore:Disable() end
+            if owner then row.remove:Hide() else row.remove:Show() end
+            row:Show()
+            y = y + ROW_H
+        end
+    end
+    for i = rowIndex + 1, #rows do rows[i]:Hide() end
+    for i = bandIndex + 1, #bands do bands[i]:Hide() end
+    panel.list:SetHeight(math.max(y, 1))
+    panel:SetHeight(50 + y + 6)
 end
 
 function Priority.Notice()

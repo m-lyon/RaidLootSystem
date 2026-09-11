@@ -761,6 +761,10 @@ function Roster.Publish()
     if me then
         Roster.published[me] = { order = Util.copy(roster.order),
                                  chars = Util.deepCopy(roster.chars) }
+        -- And our own submission onto the campaign, by the same rule that stores
+        -- everyone else's (spec 013 section 3): the roster must name us whether or
+        -- not anyone was online to hear the broadcast.
+        ns.Campaign.RecordHierarchy(campaign.id, me, roster.order, roster.chars)
         rebuildClaims()
     end
 
@@ -782,14 +786,24 @@ local function onRoster(sender, body)
             tostring(sender), tostring(why)))
         return
     end
-    -- The claim index is rebuilt for the ACTIVE campaign only (spec 012 section 8):
-    -- you never need claims for a campaign you are not raiding in, and letting one
-    -- in would make two players claiming a character in unrelated groups a conflict.
-    if msg.campaignId ~= ns.Campaign.ActiveId() then
-        ns.Debug(string.format("dropped ROSTER from %s: it names campaign %s, not the one "
-            .. "you are in", tostring(sender), tostring(msg.campaignId)))
+    -- Recording and claiming are separate steps (spec 013 section 3).
+    --
+    -- The ordering is stored against whichever campaign it names, provided we are a
+    -- member of it, because the tier assignment is a property of that campaign and
+    -- has to survive a reload, a switch and the raid ending. A ROSTER for a campaign
+    -- we are not in is still dropped and logged (spec 012 section 10).
+    if not ns.Campaign.IsMemberOf(msg.campaignId) then
+        ns.Debug(string.format("dropped ROSTER from %s: it names campaign %s, which you "
+            .. "are not in", tostring(sender), tostring(msg.campaignId)))
         return
     end
+    ns.Campaign.RecordHierarchy(msg.campaignId, sender, msg.order, msg.chars)
+
+    -- The claim index, though, is rebuilt for the ACTIVE campaign only (spec 012
+    -- section 8): you never need claims for a campaign you are not raiding in, and
+    -- letting one in would make two players claiming a character in unrelated
+    -- groups read as a conflict.
+    if msg.campaignId ~= ns.Campaign.ActiveId() then return end
     Roster.published[sender] = { order = msg.order, chars = msg.chars }
     rebuildClaims()
 end

@@ -209,6 +209,7 @@ local function help()
     ns.Print("  /rls deliver <n>  open a trade for pending item n")
     ns.Print("  /rls abandon <n>  give up on pending item n (confirmed)")
     ns.Print("  /rls status       version, roster size, conflicts")
+    ns.Print("  /rls tiers        who composes each tier of your campaign")
     ns.Print("  /rls tiers <0-5>  set the tier count you host with")
     ns.Print("  /rls publish      resend your roster to the raid")
     ns.Print("  /rls request      ask everyone to resend theirs")
@@ -290,7 +291,15 @@ local function dispatch(input)
     elseif command == "status" then
         status()
     elseif command == "tiers" then
-        setTierCount(argument)
+        -- Bare opens the campaign's tier roster (spec 013 section 5); with a number
+        -- it still sets the count a host raids with. Reading who is in a tier and
+        -- choosing how many tiers there are are the same subject, so they share the
+        -- word rather than inventing a second one for the reading half.
+        if argument == "" then
+            ns.TierViewer.Toggle()
+        else
+            setTierCount(argument)
+        end
     elseif command == "publish" then
         ns.Roster.Publish()
         ns.Print("roster published.")

@@ -24,6 +24,7 @@ local CORE_FILES = {
     "Core/Eligibility.lua",
     "Core/Resolve.lua",
     "Core/PriorityList.lua",
+    "Core/TierRoster.lua",
 }
 
 local DATA_FILES = {
@@ -54,7 +55,7 @@ local MODULE_FILES = {
 local SUITES = { "tiers", "serialize", "roster", "round", "eligibility", "resolve",
                  "iteminfo", "lootdetect", "rollwindow", "announce", "hostpanel",
                  "award", "pending", "history", "priority", "sk", "simulate",
-                 "campaign", "minimap" }
+                 "campaign", "minimap", "tierroster" }
 
 --------------------------------------------------------------------------------
 -- Comparison and reporting
