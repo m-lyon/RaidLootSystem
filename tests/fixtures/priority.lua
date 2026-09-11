@@ -111,11 +111,12 @@ local function run(input, ns)
     elseif input.op == "viewRows" then
         local out = {}
         for i, row in ipairs(PL.viewRows(input.order, input.ctx)) do
-            out[i] = string.format("%d %s %s%s%s%s", row.position, row.char,
+            out[i] = string.format("%d %s %s%s%s%s%s", row.position, row.char,
                 row.owner or "unclaimed",
                 row.isSelf and " self" or "",
                 row.contested and " contested" or "",
-                row.present and (row.aboveMedian and " top" or " here") or " absent")
+                row.present and (row.aboveMedian and " top" or " here") or " absent",
+                row.tier and (" T" .. row.tier) or "")
         end
         return out
     end
@@ -446,6 +447,20 @@ return {
                 "4 C4 Dave contested top", "5 C5 unclaimed absent", "6 C6 unclaimed here",
                 "7 C7 unclaimed absent", "8 C8 unclaimed here", "9 C9 unclaimed absent",
                 "10 C10 unclaimed absent",
+            },
+        },
+        {
+            -- Tiers come from each owner's own hierarchy, so they neither follow
+            -- list order nor repeat down it: Bob is its owner's first character
+            -- and outranks Ann, which sits above it on the list. A character
+            -- nobody has published gets no tier rather than an invented one.
+            name = "viewRows carries each character's tier, unrelated to list order",
+            input = { op = "viewRows", order = { "Ann", "Bob", "Cat" }, ctx = {
+                owners = { Ann = "Steve", Bob = "Dave", Cat = "Dave" },
+                tiers = { Ann = 2, Bob = 1 },
+            } },
+            expected = {
+                "1 Ann Steve absent T2", "2 Bob Dave absent T1", "3 Cat Dave absent",
             },
         },
         { name = "an empty order gives no rows rather than erroring",

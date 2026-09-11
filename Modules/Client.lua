@@ -57,6 +57,21 @@ function Client.TierCount()
     return Client.config and Client.config.tierCount or nil
 end
 
+--- The tier count to draw with, plus whether it is real rather than a guess.
+--
+-- Real means an open round's frozen count or a CFG this session actually saw
+-- from the host. Everything else -- a joined campaign's own stored `host`
+-- settings, or the schema default -- is a local guess, because a member's copy
+-- of `host.tierCount` is never synced to the host's value (only the ephemeral
+-- CFG mirror is). Every screen that draws tiers outside a round resolves it
+-- here, so they cannot disagree about what is synced.
+-- @return count, synced
+function Client.TierCountInForce()
+    local count = Client.TierCount()
+    if count then return count, true end
+    return ns.Database.DefaultTierCount(), false
+end
+
 --- The loot mode the round runs under, as far as this client knows. Spec 010's SKLIST
 -- is the definitive signal; until it exists the last CFG stands in.
 function Client.LootMode()

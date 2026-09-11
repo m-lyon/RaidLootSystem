@@ -216,7 +216,12 @@ end
 --------------------------------------------------------------------------------
 
 --- Why this campaign cannot be deleted, or nil.
--- @param ctx { activeId, count, pendingIds = { [campaignId] = true } }
+--
+-- Being the active one, or the only one, no longer blocks: a client with no
+-- campaign at all is a state the addon supports (section 5, revised), so
+-- deleting the last one leaves you in the template and nothing else. What is
+-- still refused is deleting a campaign with live state pointing into it.
+-- @param ctx { pendingIds = { [campaignId] = true }, openRoundCampaignId }
 function Campaign.DeleteBlocker(campaignId, ctx)
     ctx = ctx or {}
     if (ctx.pendingIds or {})[campaignId] then
@@ -224,11 +229,11 @@ function Campaign.DeleteBlocker(campaignId, ctx)
         -- it would restore into (section 14). Refused outright, not warned about.
         return "an undelivered item was won in it. Deliver or abandon it first."
     end
-    if campaignId == ctx.activeId then
-        return "it is the campaign you are in. Switch to another one first."
-    end
-    if (ctx.count or 0) <= 1 then
-        return "it is your only campaign. Make another one first."
+    if campaignId ~= nil and campaignId == ctx.openRoundCampaignId then
+        -- The round resolves against this campaign's list and its award restores
+        -- into it. Deleting it mid-round also takes the host settings every close
+        -- path reads out from under them.
+        return "a round is open in it. Close or cancel it first."
     end
     return nil
 end
@@ -498,11 +503,22 @@ local function pendingCampaigns()
     return out
 end
 
+--- The round whose campaign is off limits: the host's own, while it is still
+-- running. A closed or aborted round is left in `Round.current` for the panel to
+-- show, and blocks nothing.
+local function openRoundCampaign()
+    local round = ns.Round and ns.Round.current
+    if not round then return nil end
+    if round.state ~= C.ROUND_STATE.OPEN and round.state ~= C.ROUND_STATE.RESOLVING then
+        return nil
+    end
+    return round.campaignId
+end
+
 function Campaign.DeleteRefusal(campaignId)
     return Campaign.DeleteBlocker(campaignId, {
-        activeId = Campaign.ActiveId(),
-        count = #Campaign.List(),
         pendingIds = pendingCampaigns(),
+        openRoundCampaignId = openRoundCampaign(),
     })
 end
 
@@ -514,9 +530,29 @@ function Campaign.Delete(campaignId)
     local blocker = Campaign.DeleteRefusal(campaignId)
     if blocker then return false, "that campaign cannot be deleted: " .. blocker end
     labelCache[campaignId] = campaign.label
-    DB().campaigns[campaignId] = nil
+    local db = DB()
+    local wasActive = db.activeCampaign == campaignId
+    db.campaigns[campaignId] = nil
     ns.Print(string.format("campaign \"%s\" deleted. Its history records are kept.",
         campaign.label or campaignId))
+
+    -- Deleting the one you were in lands you in whatever is left, or in none at
+    -- all. Written here rather than left to Campaign.Active's self-heal because
+    -- ActiveId is a raw read: a stale id would name a campaign that is gone.
+    -- Claims are per campaign (section 8), so the index the deleted one built
+    -- says nothing about where you land.
+    if wasActive then
+        local remaining = Campaign.List()[1]
+        db.activeCampaign = remaining and remaining.id or ""
+        ns.Roster.ResetPublished()
+        if remaining then
+            ns.Print(string.format("campaign: %s.", remaining.label or remaining.id))
+            ns.Roster.Publish()
+            ns.Roster.RequestAll()
+        else
+            ns.Print("you are in no campaign now. /rls campaign new <label> makes one.")
+        end
+    end
     fireChanged()
     return true
 end
@@ -644,7 +680,8 @@ function Campaign.PrintList()
     local active = Campaign.ActiveId()
     ns.Print("campaigns:")
     for i, campaign in ipairs(Campaign.List()) do
-        ns.Print(string.format("  %d. %s%s  |cff888888(%d on the list, %d in your hierarchy)|r",
+        ns.Print(string.format(
+            "  %d. %s%s  |cff888888(%d on the list, %d of your characters)|r",
             i, campaign.label or campaign.id,
             campaign.id == active and "  |cff66ff66[active]|r" or "",
             #((campaign.priority or {}).order or {}), #(campaign.hierarchy or {})))

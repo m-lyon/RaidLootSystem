@@ -19,6 +19,7 @@ local LIST_WIDTH = 360
 local SCROLL_WIDTH = LIST_WIDTH - 30
 local ROW_INSET = 4
 local ROW_WIDTH = SCROLL_WIDTH - ROW_INSET - Widgets.SCROLLBAR_GUTTER
+local TIER_W = 30
 local WINDOW_HEIGHT = 440
 local LIST_HEIGHT = 300
 
@@ -43,20 +44,41 @@ local function skInForce()
     return round.lootMode == C.LOOT_MODE.SK
 end
 
+--- The tier count to draw with, and whether it is real. The hierarchy editor
+-- resolves it the same way, through the same call, so the two screens cannot
+-- disagree about which tiers are a synced fact and which are a local guess.
+local function activeTierCount()
+    local client = ns.Client
+    if client and client.TierCountInForce then return client.TierCountInForce() end
+    return ns.Database.DefaultTierCount(), false
+end
+
 --- Resolve every WoW-facing lookup the row model needs, so PriorityList.viewRows
 -- stays arithmetic over plain tables (spec 011 section 4).
-local function context(order)
+--
+-- A character's tier comes from its position in its OWNER's hierarchy, which
+-- every client broadcasts as ROSTER and every client therefore holds -- this is
+-- not a host-only lookup. What it is not is a position on this list: the two
+-- decide different halves of a contest (spec 010 section 3). An owner who has
+-- published nothing this session leaves their characters without a tier.
+local function context(order, tierCount)
     local claims = ns.Roster.claims
-    local owners, present, classes, contested = {}, {}, {}, {}
+    local published = ns.Roster.published
+    local owners, present, classes, contested, tiers = {}, {}, {}, {}, {}
     for _, name in ipairs(order) do
         local claim = claims[name:lower()]
-        owners[name] = claim and claim.owners[1] or nil
+        local owner = claim and claim.owners[1] or nil
+        owners[name] = owner
         present[name] = ns.Roster.IsPresent(name) and true or nil
         classes[name] = ns.Roster.ClassOfAny(name)
         contested[name] = (claim and claim.contested) and true or nil
+
+        local mine = owner and published[owner]
+        local position = mine and PriorityList.indexOf(mine.order or {}, name) or nil
+        tiers[name] = position and ns.Tiers.forPosition(position, tierCount) or nil
     end
     return { owners = owners, present = present, classes = classes,
-             contested = contested, me = UnitName("player") }
+             contested = contested, tiers = tiers, me = UnitName("player") }
 end
 
 --------------------------------------------------------------------------------
@@ -73,9 +95,18 @@ local function createRow(index)
     row.position:SetWidth(26)
     row.position:SetJustifyH("RIGHT")
 
+    -- The tier sits at the right edge with the name stopping short of it, rather
+    -- than after the name: a badge anchored to a variable-width name lands in a
+    -- different place on every row, and a centred one drifts under whatever is
+    -- beside it.
+    row.tier = Widgets.Label(row, "", "GameFontNormalSmall")
+    row.tier:SetPoint("RIGHT", row, "RIGHT", -2, 0)
+    row.tier:SetWidth(TIER_W)
+    row.tier:SetJustifyH("RIGHT")
+
     row.name = Widgets.Label(row, "", "GameFontHighlightSmall")
     row.name:SetPoint("LEFT", row.position, "RIGHT", 6, 0)
-    row.name:SetWidth(ROW_WIDTH - 32)
+    row.name:SetWidth(ROW_WIDTH - 32 - TIER_W - 6)
     row.name:SetJustifyH("LEFT")
 
     rows[index] = row
@@ -118,7 +149,8 @@ function Viewer.Refresh()
             .. "are not deciding it.|r")
     end
 
-    local view = PriorityList.viewRows(order, context(order))
+    local tierCount, tierSynced = activeTierCount()
+    local view = PriorityList.viewRows(order, context(order, tierCount))
     for i, entry in ipairs(view) do
         local row = rows[i] or createRow(i)
         row:ClearAllPoints()
@@ -134,6 +166,15 @@ function Viewer.Refresh()
         if entry.isSelf then label = label .. " |cffaaaaaa*|r" end
         if entry.contested then label = label .. " |cffff4040contested|r" end
         row.name:SetText(label)
+
+        -- Dimmed when the tier count behind it is this client's own default
+        -- rather than one the host announced, the same signal the hierarchy
+        -- editor gives. Blank when nobody has published the owner's ordering,
+        -- because there is no honest number to put there.
+        row.tier:SetText(entry.tier
+            and ((tierSynced and "|cffaaaaaa" or "|cff666666")
+                 .. ns.Tiers.label(entry.tier, tierCount) .. "|r")
+            or "")
 
         row:SetAlpha(entry.present and 1 or 0.5)
         row:Show()

@@ -69,6 +69,17 @@ local function run(input, ns)
         for i = 1, #order do classes[i] = chars[order[i]].class end
         return { ok = true, body = body, order = order, classes = classes }
 
+    elseif input.kind == "rosterMsg" then
+        -- The ROSTER envelope of spec 012 section 10. Encode and decode must agree
+        -- about the campaign id: an encoder that emits what the decoder refuses
+        -- turns one sender's bug into an unreadable-roster line in every raid
+        -- member's chat.
+        local body, err = S.encodeRosterMsg(input.campaignId, input.order, input.chars)
+        if not body then return { ok = false, err = err } end
+        local msg, why = S.decodeRosterMsg(body)
+        if not msg then return { ok = false, err = why } end
+        return { ok = true, body = body, campaignId = msg.campaignId, order = msg.order }
+
     elseif input.kind == "rosterDecode" then
         -- On success the second return is the chars map, not a reason.
         local order, second = S.decodeRoster(input.body)
@@ -256,6 +267,36 @@ return {
                 order = { "Steve", "Sneaky", "Smash" },
                 classes = { "MAGE", "ROGUE", "WARRIOR" },
             },
+        },
+        {
+            name = "a ROSTER message round-trips its campaign id",
+            input = {
+                kind = "rosterMsg", campaignId = "Steve-1757155200",
+                order = { "Steve", "Sneaky" },
+                chars = { Steve = { class = "MAGE" }, Sneaky = { class = "ROGUE" } },
+            },
+            expected = {
+                ok = true, body = "Steve-1757155200^Steve=MAGE~Sneaky=ROGUE",
+                campaignId = "Steve-1757155200", order = { "Steve", "Sneaky" },
+            },
+        },
+        {
+            -- A client with no active campaign publishing anyway: refused here, by
+            -- the sender, rather than broadcast for every receiver to reject aloud.
+            name = "a ROSTER message with no campaign id is refused at encode",
+            input = {
+                kind = "rosterMsg", campaignId = "", order = { "Steve" },
+                chars = { Steve = { class = "MAGE" } },
+            },
+            expected = { ok = false, err = "ROSTER has no campaign id" },
+        },
+        {
+            name = "a ROSTER message with a missing campaign id is refused at encode",
+            input = {
+                kind = "rosterMsg", order = { "Steve" },
+                chars = { Steve = { class = "MAGE" } },
+            },
+            expected = { ok = false, err = "ROSTER has no campaign id" },
         },
         {
             name = "an empty ROSTER decodes to an empty roster",

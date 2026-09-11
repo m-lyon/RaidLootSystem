@@ -432,27 +432,42 @@ return {
         {
             name = "a campaign holding an undelivered item cannot be deleted",
             input = { op = "delete", campaignId = "Steve-1",
-                      ctx = { activeId = "Steve-2", count = 3,
-                              pendingIds = { ["Steve-1"] = true } } },
+                      ctx = { pendingIds = { ["Steve-1"] = true } } },
             expected = "an undelivered item was won in it. Deliver or abandon it first.",
         },
         {
-            name = "the active campaign cannot be deleted",
+            name = "a campaign with a round open in it cannot be deleted",
             input = { op = "delete", campaignId = "Steve-1",
-                      ctx = { activeId = "Steve-1", count = 3, pendingIds = {} } },
-            expected = "it is the campaign you are in. Switch to another one first.",
+                      ctx = { pendingIds = {}, openRoundCampaignId = "Steve-1" } },
+            expected = "a round is open in it. Close or cancel it first.",
         },
         {
-            name = "your last campaign cannot be deleted",
+            -- The round belongs to another campaign, so this one is idle.
+            name = "a round open elsewhere does not block a delete",
             input = { op = "delete", campaignId = "Steve-1",
-                      ctx = { activeId = "Steve-2", count = 1, pendingIds = {} } },
-            expected = "it is your only campaign. Make another one first.",
+                      ctx = { pendingIds = {}, openRoundCampaignId = "Steve-2" } },
+            expected = "",
         },
         {
-            -- The same delete succeeds once the delivery resolves.
-            name = "an idle non-active campaign deletes",
+            -- No campaign at all is a supported state (section 5, revised), so
+            -- neither of these is a blocker any more.
+            name = "the active campaign deletes",
             input = { op = "delete", campaignId = "Steve-1",
-                      ctx = { activeId = "Steve-2", count = 2, pendingIds = {} } },
+                      ctx = { pendingIds = {} } },
+            expected = "",
+        },
+        {
+            name = "your last campaign deletes",
+            input = { op = "delete", campaignId = "Steve-1",
+                      ctx = { pendingIds = {} } },
+            expected = "",
+        },
+        {
+            -- A round that has already closed is left in Round.current for the
+            -- panel to show; the caller passes no id for it.
+            name = "an idle campaign deletes",
+            input = { op = "delete", campaignId = "Steve-1",
+                      ctx = { pendingIds = {}, openRoundCampaignId = nil } },
             expected = "",
         },
 

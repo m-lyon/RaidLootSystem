@@ -183,7 +183,14 @@ end
 --- The ROSTER message body (spec 012 section 10): campaignId^name=class~...
 -- The plain list above stays the export format of spec 001 section 8, which
 -- carries no campaign.
+-- Refused rather than encoded, because decodeRosterMsg refuses it on the far
+-- side: an encoder that accepts what the decoder rejects turns one caller's bug
+-- into an unreadable-roster message in every raid member's chat, instead of one
+-- failure the sender can see.
 function Serialize.encodeRosterMsg(campaignId, order, chars)
+    if type(campaignId) ~= "string" or campaignId == "" then
+        return nil, "ROSTER has no campaign id"
+    end
     local body, err = Serialize.encodeRoster(order, chars)
     if not body then return nil, err end
     return Serialize.encodeFields({ campaignId, body })

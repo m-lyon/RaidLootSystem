@@ -740,9 +740,17 @@ end
 --- Broadcast this player's ordered roster for the active campaign. ROSTER carries
 -- the campaign id (spec 012 section 10), which is what makes the claim index of
 -- spec 001 section 5 per campaign as a consequence.
+--
+-- With no active campaign there is nothing to publish: the message would name no
+-- campaign, every receiver would reject it as unreadable in chat, and the roster
+-- events this hangs off fire often enough to do that repeatedly. Nothing is sent
+-- until the player is in a campaign.
 function Roster.Publish()
+    local campaign = ns.Campaign.Active()
+    if not campaign then return end
+
     local roster = DB()
-    local body, err = Serialize.encodeRosterMsg(ns.Campaign.ActiveId(), roster.order, roster.chars)
+    local body, err = Serialize.encodeRosterMsg(campaign.id, roster.order, roster.chars)
     if not body then
         ns.Print("could not publish your roster: " .. tostring(err))
         return

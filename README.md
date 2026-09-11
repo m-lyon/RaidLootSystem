@@ -166,8 +166,8 @@ touch.
 ## Campaigns
 
 > [Spec 012](docs/specs/012-campaigns.md) is the full design; [DESIGN §2](docs/DESIGN.md#2-core-concepts)
-> is the player-facing version. A fresh install gets one campaign called "Main", so a group that
-> only ever needs one never has to think about this.
+> is the player-facing version. A fresh install has no campaign — make one with
+> `/rls campaign new <label>`, or wait for your raid leader to invite you into theirs.
 
 A **campaign** is a named group you raid with. It owns the priority list, the raid leader's
 settings, and each person's ordering — and none of that is visible to any other campaign.

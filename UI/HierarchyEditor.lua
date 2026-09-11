@@ -85,11 +85,18 @@ end
 
 local function activeTierCount()
     local client = ns.Client
-    if client and client.TierCount then
-        local count = client.TierCount()
-        if count then return count, true end
-    end
+    if client and client.TierCountInForce then return client.TierCountInForce() end
     return ns.Database.DefaultTierCount(), false
+end
+
+--- The row badge's label. Unlike Tiers.label this numbers the Rest bucket -- "T4"
+-- under a count of 3 -- rather than naming it, so the column reads as one scale
+-- from top to bottom. The cut-off is still called out, by the band across the
+-- rows. Tiers.label itself is untouched: raid chat, the roll window and history
+-- all say "Rest", which is the word people use out loud.
+local function badgeLabel(tier, tierCount)
+    if tierCount == nil or tierCount <= 0 then return "Flat" end
+    return "T" .. tostring(tier)
 end
 
 local function roundIsOpen()
@@ -275,7 +282,7 @@ function Editor.Refresh()
 
         local tier = entryRow.position and Tiers.forPosition(entryRow.position, tierCount) or nil
         row.badge:SetText(tier
-            and ((tierSynced and "|cffaaaaaa" or "|cff666666") .. Tiers.label(tier, tierCount) .. "|r")
+            and ((tierSynced and "|cffaaaaaa" or "|cff666666") .. badgeLabel(tier, tierCount) .. "|r")
             or "|cff666666out|r")
 
         local present = Roster().IsPresent(name)

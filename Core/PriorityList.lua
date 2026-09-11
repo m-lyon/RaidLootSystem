@@ -300,14 +300,19 @@ end
 -- @param order array of character names, in list order
 -- @param ctx   { owners = { [char] = owner }, present = { [char] = true },
 --                classes = { [char] = "WARRIOR" }, contested = { [char] = true },
---                me = "Playername" }
+--                tiers = { [char] = 2 }, me = "Playername" }
+--
+-- `tiers` is a character's tier in its OWNER's hierarchy, never anything derived
+-- from this list: the two are orthogonal (spec 010 section 3). A character whose
+-- owner has published nothing carries a nil tier rather than a made-up one.
 -- @return array of { position, char, owner, class, isSelf, contested, present,
---         aboveMedian }
+--         tier, aboveMedian }
 function PriorityList.viewRows(order, ctx)
     order = order or {}
     ctx = ctx or {}
     local owners, present = ctx.owners or {}, ctx.present or {}
     local classes, contested = ctx.classes or {}, ctx.contested or {}
+    local tiers = ctx.tiers or {}
     local me = keyOf(ctx.me)
 
     -- The median is over who is here, so it needs a pass of its own first.
@@ -328,6 +333,7 @@ function PriorityList.viewRows(order, ctx)
             isSelf = me ~= nil and owner ~= nil and keyOf(owner) == me,
             contested = contested[char] == true,
             present = present[char] == true,
+            tier = tiers[char],
             aboveMedian = PriorityList.aboveMedian(i, presentPositions),
         }
     end
