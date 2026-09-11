@@ -111,6 +111,24 @@ Persistent while any corpse-path round has unresolved or unawarded items (DESIGN
 Lists the items and where they are. It exists because a 3-minute window is long enough to walk
 away and forget, and a despawned corpse takes the loot with it.
 
+### Opening it
+
+`/rls host`, and the **minimap button's left-click while you are master looter**.
+
+The panel had only the slash command for a long time, which is no way in at all for anyone who
+has not read `/rls help`. The button gives you the window your role wants rather than one fixed
+window: master looter opens the host panel, everyone else opens the roll window during a round
+and their hierarchy outside one.
+
+A bare **`/rls`** makes the same decision from the same function. The button and a bare `/rls`
+have always opened the same window, and two copies of the rule would drift the first time one of
+them changed.
+
+A host does not lose the roll window. It opens itself on `OPEN` and again on the results (005 §2),
+and **ctrl-click** reaches it whenever it has something to show. Shift-click is still the
+hierarchy and right-click is still a republish. The tooltip names the action the next click will
+actually perform, because the primary one now depends on who you are.
+
 ## 4. Announcements — `Modules/Announce.lua`
 
 Only the host announces. Clients never write to raid chat; five copies of every line is how

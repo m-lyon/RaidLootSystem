@@ -48,12 +48,13 @@ local MODULE_FILES = {
     "Modules/Simulate.lua",
     "UI/RollWindow.lua",
     "UI/HostPanel.lua",
+    "UI/Minimap.lua",
 }
 
 local SUITES = { "tiers", "serialize", "roster", "round", "eligibility", "resolve",
                  "iteminfo", "lootdetect", "rollwindow", "announce", "hostpanel",
                  "award", "pending", "history", "priority", "sk", "simulate",
-                 "campaign" }
+                 "campaign", "minimap" }
 
 --------------------------------------------------------------------------------
 -- Comparison and reporting

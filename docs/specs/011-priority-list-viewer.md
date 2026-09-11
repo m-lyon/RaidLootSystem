@@ -94,7 +94,10 @@ and should not drag the midpoint of a list of who is actually here.
   005 §3*. This is the discoverability path. The moment a player wants the whole list is the
   moment they are looking at their own position in the grid and wondering who is above them.
 - **No minimap change.** Left-click, shift-click and right-click are all taken (005 §6), and a
-  fourth chord on one button is worse than a button in the window already open.
+  fourth chord on one button is worse than a button in the window already open. This still holds:
+  ctrl-click was later spent on the host panel's displaced roll window (006 §3), which had no
+  other way in at all, and the viewer still reaches its audience from the window they are already
+  looking at.
 
 ## 6. Behaviour
 

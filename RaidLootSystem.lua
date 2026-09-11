@@ -191,10 +191,12 @@ end
 
 local function help()
     ns.Print("commands:")
-    ns.Print("  /rls              open the roll window, or your hierarchy when no round is live")
+    ns.Print("  /rls              open the window for your role: the host panel as master "
+        .. "looter, else the roll window, else your hierarchy")
     ns.Print("  /rls window       open the roll window")
     ns.Print("  /rls hierarchy    open your hierarchy")
-    ns.Print("  /rls host         open the host panel (master looter)")
+    ns.Print("  /rls host         open the host panel, or left-click the minimap button "
+        .. "while you are master looter")
     ns.Print("  /rls history      open the history browser")
     ns.Print("  /rls campaign     list your campaigns, marking the active one")
     ns.Print("  /rls campaign new <label> | switch <n> | rename <label> | delete <n>")
@@ -226,7 +228,13 @@ local function dispatch(input)
     command = (command or ""):lower()
 
     if command == "" then
-        if ns.RollWindow.HasContent() then
+        -- The same decision the minimap button makes, from the same function: the
+        -- button and a bare /rls have always opened the same window, and two copies of
+        -- the rule would drift the first time one of them changed (spec 006 section 3).
+        local target = ns.Minimap.PrimaryTarget(ns.Round.IsHost(), ns.RollWindow.HasContent())
+        if target == "HOST" then
+            ns.HostPanel.Toggle()
+        elseif target == "ROLL" then
             ns.RollWindow.Toggle()
         else
             ns.HierarchyEditor.Toggle()
