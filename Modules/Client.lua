@@ -52,9 +52,18 @@ end
 
 --- The tier count in force: the open round's frozen count, else the last CFG the host
 -- sent, else nil so callers fall back to their own default.
-function Client.TierCount()
-    if Client.IsOpen() then return Client.round.tierCount end
-    return Client.config and Client.config.tierCount or nil
+-- A CFG names the campaign it configures, so it stands in only for that one: a CFG
+-- for a second campaign you belong to must not reband a list it says nothing about.
+-- @param campaignId the campaign being drawn, active by default
+function Client.TierCount(campaignId)
+    campaignId = campaignId or ns.Campaign.ActiveId()
+    if Client.IsOpen() and Client.round.campaignId == campaignId then
+        return Client.round.tierCount
+    end
+    if Client.config and Client.config.campaignId == campaignId then
+        return Client.config.tierCount
+    end
+    return nil
 end
 
 --- The tier count to draw with, plus whether it is real rather than a guess.
@@ -66,8 +75,8 @@ end
 -- CFG mirror is). Every screen that draws tiers outside a round resolves it
 -- here, so they cannot disagree about what is synced.
 -- @return count, synced
-function Client.TierCountInForce()
-    local count = Client.TierCount()
+function Client.TierCountInForce(campaignId)
+    local count = Client.TierCount(campaignId)
     if count then return count, true end
     return ns.Database.DefaultTierCount(), false
 end
@@ -393,14 +402,15 @@ function Client.LastSent()
 end
 
 --- Ask the host to resend the round. At most once every C.SYNC_INTERVAL seconds.
-function Client.RequestSync()
+-- @param campaignId the campaign to ask about, active by default
+function Client.RequestSync(campaignId)
     local now = GetTime()
     if now - lastSync < C.SYNC_INTERVAL then return false end
     lastSync = now
     local id = Client.round and Client.round.id or ""
     -- The campaign and the list version ride along so the host can answer a history
     -- that has fallen behind without being asked twice (spec 010 section 8).
-    local campaignId = ns.Campaign.ActiveId()
+    campaignId = campaignId or ns.Campaign.ActiveId()
     return ns.Comms.Send(C.OPS.SYNC, Serialize.encodeSync(id, campaignId,
         ns.Priority and ns.Priority.HistoryVersion(campaignId) or 0))
 end

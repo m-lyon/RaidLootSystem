@@ -624,7 +624,10 @@ local function requestState(msg, stored, round)
     stored.logIncomplete = true       -- until a CSTATE arrives; verify says so
     ns.Print(noticeText)
     if round then round.priorityNotice = noticeText end
-    if ns.Client and ns.Client.RequestSync then ns.Client.RequestSync() end
+    -- Ask about the campaign that needs the repair, not whichever one is active:
+    -- the host would otherwise compare the wrong list's version, find it in step
+    -- and send nothing, leaving this one flagged incomplete for good.
+    if ns.Client and ns.Client.RequestSync then ns.Client.RequestSync(msg.campaignId) end
 end
 
 --- SKLIST from the host: chain the events when in step, replace and resync when not.
@@ -661,7 +664,13 @@ local function onSklist(sender, body)
                 -- In step: append what the host logged, so this client's history is
                 -- the host's history and can be replayed or handed on (section 8).
                 local next_, why = Priority.Chain(stored, msg.events)
-                if next_ then
+                if next_ and #PriorityList.diff(next_.order or {}, msg.order or {}) > 0 then
+                    -- The host is authoritative and clients never merge: a chain that
+                    -- lands somewhere other than the order in the same message means
+                    -- this log is not the host's, so take the copy and resync.
+                    ns.Debug("chained SKLIST events disagree with the host's order; resyncing")
+                    requestState(msg, stored, round)
+                elseif next_ then
                     store(next_, msg.campaignId)
                     noticeText = nil
                 else
@@ -733,7 +742,11 @@ end
 -- running it yourself is something a non-host can do (section 5).
 function Priority.RunVerify()
     local priority = DB()
-    if priority and priority.logIncomplete then
+    if not priority then
+        ns.Print("verify: there is no campaign to verify. Create or join one first.")
+        return nil
+    end
+    if priority.logIncomplete then
         ns.Print("verify: this client took a list it could not chain and is still waiting for "
             .. "its history from the master looter. Try again in a moment.")
         return nil

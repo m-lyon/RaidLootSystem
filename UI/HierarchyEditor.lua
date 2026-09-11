@@ -85,7 +85,8 @@ end
 
 local function activeTierCount()
     local client = ns.Client
-    if client and client.TierCountInForce then return client.TierCountInForce() end
+    local campaignId = not editingDefault() and target or nil
+    if client and client.TierCountInForce then return client.TierCountInForce(campaignId) end
     return ns.Database.DefaultTierCount(), false
 end
 
@@ -312,6 +313,9 @@ function Editor.Refresh()
         else row.up:Disable() end
         if not locked and entryRow.position and entryRow.position < #order then row.down:Enable()
         else row.down:Disable() end
+        -- A removal promotes everything below it, so it is a re-rank too and the
+        -- lock refuses it (spec 014).
+        if locked then row.remove:Disable() else row.remove:Enable() end
         row:SetAlpha(entryRow.included and 1 or 0.6)
         row:Show()
 

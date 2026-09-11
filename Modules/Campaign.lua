@@ -656,10 +656,23 @@ function Campaign.ForgetMember(campaignId, player)
 end
 
 --- The ordering one member last submitted to a campaign, or nil.
-function Campaign.StoredOrder(campaignId, player)
+--
+-- Records are keyed per player, not per character, so an incoming ordering matches
+-- its stored record under the same mutual-naming rule RecordMember collapses alts
+-- with: a member who published as one of their characters last week and from
+-- another this week still has one record, and the lock check has to find it.
+-- @param order the incoming ordering, when there is one
+function Campaign.StoredOrder(campaignId, player, order)
     local campaign = Campaign.Get(campaignId)
-    local record = campaign and campaign.members and campaign.members[player]
-    return record and record.order or nil
+    local members = campaign and campaign.members
+    if not members then return nil end
+    local record = members[player]
+    if record then return record.order end
+    if not order then return nil end
+    for stored, other in pairs(members) do
+        if Campaign.SameMember(stored, other.order, player, order) then return other.order end
+    end
+    return nil
 end
 
 --- The submitted hierarchies of one campaign, active by default.

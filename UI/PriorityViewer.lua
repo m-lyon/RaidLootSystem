@@ -51,7 +51,9 @@ end
 -- disagree about which tiers are a synced fact and which are a local guess.
 local function activeTierCount()
     local client = ns.Client
-    if client and client.TierCountInForce then return client.TierCountInForce() end
+    if client and client.TierCountInForce then
+        return client.TierCountInForce(ns.Campaign.ActiveId())
+    end
     return ns.Database.DefaultTierCount(), false
 end
 

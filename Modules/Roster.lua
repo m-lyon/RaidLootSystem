@@ -302,6 +302,7 @@ Roster.published = {}        -- player -> { order, chars }
 Roster.claims = {}           -- from BuildClaims
 local presence = {}          -- lowercased character name -> true
 local listeners = {}
+local warnedLocked = {}      -- sender -> true, once per login session
 local frame
 
 --- The active campaign's hierarchy plus the global character table, in the shape
@@ -446,6 +447,19 @@ function Roster.Remove(name)
     local stored = Roster.Resolve(name) or name
     local chars = Util.deepCopy(DB().chars)
     if chars[stored] == nil then return nil, "not in your roster" end
+
+    -- A removal is a re-rank: everything below it moves up a place. So it is
+    -- refused exactly like the untick beside it while any campaign that ranks this
+    -- character is locked (spec 014).
+    for campaignId, campaign in pairs(ns.Database.Campaigns()) do
+        if Util.indexOf(campaign.hierarchy or {}, stored)
+            and ns.Campaign.HierarchyLocked(campaignId) then
+            return nil, string.format("\"%s\" has started and its hierarchies are locked, and "
+                .. "%s is ranked in it. The master looter can unlock them in the host panel.",
+                ns.Campaign.LabelFor(campaignId), stored)
+        end
+    end
+
     chars[stored] = nil
 
     pruneHierarchies(chars)
@@ -866,13 +880,20 @@ local function onRoster(sender, body)
     -- the copy the host stamps entry tiers from, so this is where it has to hold.
     -- The stored ordering stands, the change is refused, and it is said out loud
     -- rather than dropped quietly.
-    local stored = ns.Campaign.StoredOrder(msg.campaignId, sender)
+    local stored = ns.Campaign.StoredOrder(msg.campaignId, sender, msg.order)
     if stored and ns.Campaign.HierarchyLocked(msg.campaignId) then
         local ok, why = Roster.LockedChangeAllowed(stored, msg.order)
         if not ok then
-            ns.Print(string.format("%s changed their hierarchy but \"%s\" is locked (%s); "
+            -- Once per sender per login session: a diverged client republishes on
+            -- every roster event, and an unbounded repeat buries the raid's chat
+            -- (the same rule spec 002 section 11 uses).
+            local line = string.format("%s changed their hierarchy but \"%s\" is locked (%s); "
                 .. "their ranking is unchanged.", tostring(sender),
-                ns.Campaign.LabelFor(msg.campaignId), tostring(why)))
+                ns.Campaign.LabelFor(msg.campaignId), tostring(why))
+            if warnedLocked[sender] then ns.Debug(line) else
+                warnedLocked[sender] = true
+                ns.Print(line)
+            end
             msg.order = Util.copy(stored)
         end
     end
