@@ -420,7 +420,7 @@ function Round.Open(items)
     for i, item in ipairs(round.items) do
         labels[i] = labelOf(item) .. (item.count > 1 and (" x" .. item.count) or "")
     end
-    say("OPEN", { labels = labels, seconds = seconds })
+    say("OPEN", { labels = labels, seconds = seconds, lootMode = round.lootMode })
     fireChanged()
     return true
 end

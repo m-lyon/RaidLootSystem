@@ -217,6 +217,25 @@ end
 -- Seeding (section 5) and manual edits (section 10). All confirmed by the panel.
 --------------------------------------------------------------------------------
 
+--- Seeding turns the loot mode on as well as unlocking it (section 5).
+--
+-- A seeded list with the mode left on ROLL is the one half-configured state this
+-- feature can reach, and it is silent: rounds resolve by roll, nobody suicides, and
+-- the host finds out a raid later. Seeding is an explicit, confirmed, announced act
+-- with exactly one purpose, so it finishes the job.
+--
+-- ROLL is still one dropdown click away for guests or a list in a bad state.
+local function enableSK()
+    local ok, why = ns.Round.ChangeSetting("lootMode", C.LOOT_MODE.SK)
+    if not ok then
+        -- Never swallowed: the host would otherwise open the next round by roll
+        -- believing it was Suicide Kings.
+        ns.Print("the list is seeded, but the loot mode is still Roll: " .. tostring(why)
+            .. " Set it from the host panel once you can.")
+    end
+    return ok
+end
+
 --- @param reseed  true to replace an existing list; refused otherwise
 function Priority.Seed(reseed)
     if Priority.Seeded() and not reseed then
@@ -228,6 +247,8 @@ function Priority.Seed(reseed)
     local ok = hostMutate({ kind = "seed", seed = seed, chars = chars },
         string.format("%s with %d characters (seed %d, version %d)",
             reseed and "reseeded" or "seeded", #chars, seed, Priority.Version() + 1))
+    -- After the mutation, never before: ChangeSetting refuses SK without a list.
+    if ok then enableSK() end
     return ok
 end
 
@@ -622,10 +643,11 @@ function Priority.RefreshSection(panel)
             local chars = Priority.SeedCandidates(ns.Roster.claims)
             if Priority.Seeded() then
                 confirm("reseed", string.format("Reseed the list from scratch over %d characters? "
-                    .. "Every position is lost. Announced and logged.", #chars))
+                    .. "Every position is lost. The loot mode is set to Suicide Kings. "
+                    .. "Announced and logged.", #chars))
             else
-                confirm("seed", string.format("Seed the priority list over %d claimed characters? "
-                    .. "This enables Suicide Kings. Announced and logged.", #chars))
+                confirm("seed", string.format("Seed the priority list over %d claimed characters "
+                    .. "and switch the loot mode to Suicide Kings? Announced and logged.", #chars))
             end
         end)
         panel.seed:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -10, -6)

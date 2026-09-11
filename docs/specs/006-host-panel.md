@@ -128,11 +128,22 @@ Formats:
 
 ```
 [RLS] Rolling: [Item A] [Item B] [Item C] — 3:00
+[RLS] SK: [Item A] [Item B] [Item C] — 3:00
 [RLS] Botty [T2, 83] wins [Item A]
 [RLS] [Item B] — no entries, master looter's choice
 [RLS] Botty and Sneaky tied on 83 — rerolling
 [RLS] Tier count is now 2 (T1, T2, Rest)
 ```
+
+**The open line leads with the loot mode**, not the word "Rolling" under both. The mode is the
+rule the raid is about to play by, the host reads their own announcement, and a mode that is only
+visible in a dropdown on one screen is a mode nobody checks. One helper names it, shared with the
+`Loot mode is now ...` line, so the two cannot disagree (spec 010 §2).
+
+Chat abbreviates it to `SK`, which is what the group calls it, and what fits beside a row of item
+links inside 255 bytes. The host panel, the create dialog and the seed confirmation still spell
+out "Suicide Kings": those have room, and they are where someone meets the term for the first
+time.
 
 All output goes through one formatter so the prefix and item-link handling are consistent. Chat
 messages are subject to the same throttle discipline as addon messages — a verbose round of six

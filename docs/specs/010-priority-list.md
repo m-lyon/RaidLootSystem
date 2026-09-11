@@ -32,10 +32,11 @@ host.lootMode = "ROLL"   -- specs 003-009 exactly as written. Default.
                  "SK"    -- this spec.
 ```
 
-`ROLL` is the default and `SK` becomes selectable only once a list exists (§5). That is
-deliberate: there is no "SK mode with no list" state to define, test or explain, because it is
-unreachable. `ROLL` also stays as the escape hatch when the list is in a bad state or the group
-brings guests.
+`ROLL` is the default, and `SK` becomes both selectable and *selected* the moment a list is
+seeded (§5). There is no "SK mode with no list" state to define, test or explain, because it is
+unreachable; and there is no seeded-list-still-on-ROLL state to fall into, because seeding leaves
+the mode on. `ROLL` stays as the escape hatch, one dropdown click away, when the list is in a bad
+state or the group brings guests.
 
 ## 3. The list
 
@@ -94,9 +95,23 @@ would also double-count the hierarchy, which the tier gate already enforces.
 a claim; *"here is the seed, run it yourself"* is a fact, and this is the single moment where the
 system's legitimacy is established.
 
-Seeding is what makes `lootMode = "SK"` selectable. The host panel surfaces it as one prompt:
-*"Seed the priority list to enable Suicide Kings."* Re-seeding later is possible, confirmed,
-announced and versioned (§10).
+**Seeding sets `lootMode = "SK"`, it does not merely unlock it.** Until a list exists the host
+panel greys the option and prompts *"Seed the priority list to enable Suicide Kings."* Once the
+seed lands, `Priority.Seed` puts the mode on through the ordinary `Round.ChangeSetting` path, so
+the switch is broadcast as `CFG` and announced like any other.
+
+This is a correction, and the raid night that forced it is why the rule is written this way.
+Seeding and then enabling were two steps, the prompt said seeding "enables Suicide Kings", and a
+seeded list under `ROLL` looks *exactly* like a seeded list under `SK` on the host panel. Three
+rounds resolved by roll before anyone noticed that no winner had moved. A half-configured state
+that cannot be seen is not a state worth having: seeding is explicit, confirmed and announced, and
+it has one purpose, so it finishes the job. A host who wants a list without the mode sets `ROLL`
+back afterwards, which is one click and is itself announced.
+
+Re-seeding later is possible, confirmed, announced and versioned (§10), and it sets the mode the
+same way. When a round is open the mode change is frozen (spec 006 §3) and therefore refused; the
+refusal is printed rather than swallowed, because a host who believes they are on `SK` and is not
+is the whole failure above.
 
 ## 6. Suicide
 

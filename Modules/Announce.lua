@@ -76,10 +76,28 @@ local function tierList(tierCount)
     return table.concat(parts, ", ")
 end
 
+--- "SK" or "Roll", from a round's or a setting's loot mode. One definition, so the
+-- open line and the mode-change line cannot name the same mode two different ways.
+--
+-- Abbreviated because it is chat: the group says SK, and every line here competes
+-- with combat spam for a raider's attention inside a 255-byte cap. The panel and the
+-- dialogs still spell it out, where there is room to teach the term.
+local function modeName(lootMode)
+    return lootMode == C.LOOT_MODE.SK and "SK" or "Roll"
+end
+
 local FORMATS = {
-    -- Rolling: [Item A] [Item B] [Item C] - 3:00
+    -- Rolling: [Item A] [Item B] [Item C] - 3:00       (ROLL)
+    -- SK: [Item A] [Item B] [Item C] - 3:00             (SK)
+    --
+    -- The mode leads the line rather than trailing it. A host who has seeded a list
+    -- and left the mode on ROLL reads the first word of their own announcement and
+    -- sees it, which is the raid-night failure this carries (spec 006 section 4).
+    -- ROLL reads as "Rolling" here and "Roll" as a setting: one is the thing about to
+    -- happen, the other is the name of a mode.
     OPEN = function(a)
-        return "Rolling: " .. table.concat(a.labels or {}, " ") .. " - " .. clock(a.seconds)
+        local lead = a.lootMode == C.LOOT_MODE.SK and modeName(a.lootMode) or "Rolling"
+        return lead .. ": " .. table.concat(a.labels or {}, " ") .. " - " .. clock(a.seconds)
     end,
 
     -- Botty [T2, 83] wins [Item A]          (ROLL)
@@ -147,8 +165,7 @@ local FORMATS = {
     end,
 
     LOOT_MODE = function(a)
-        local name = a.lootMode == C.LOOT_MODE.SK and "Suicide Kings" or "Roll"
-        return "Loot mode is now " .. name
+        return "Loot mode is now " .. modeName(a.lootMode)
     end,
 
     PRIORITY = function(a)

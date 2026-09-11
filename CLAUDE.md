@@ -58,6 +58,13 @@ with the reasoning.
 - **The priority list is stored, not derived.** Unlike a tally, it degrades catastrophically —
   one missing round silently corrupts every later position. `verify` replays history to *detect*
   drift; it never repairs. Spec 010 §8.
+- **Seeding the priority list turns `SK` on, it does not merely unlock it.** `Priority.Seed`
+  finishes with `Round.ChangeSetting("lootMode", "SK")`. A seeded list left on `ROLL` is
+  indistinguishable on screen from a seeded list on `SK`, and the only symptom is that no winner
+  ever moves. Spec 010 §5.
+- **The open announcement leads with the loot mode**, "Rolling:" or "SK:". It is the host's own
+  read-back that the mode is what they think it is. Chat abbreviates; panels and dialogs spell
+  "Suicide Kings" out. Spec 006 §4.
 - **Under `SK` the resolution engine calls `rng` zero times.** There are no ties to break; the
   003 §6 re-roll path is unreachable and should assert rather than sit there as dead code.
 - **A failed delivery restores the winner's list position** from the recorded `priorIndex`.
