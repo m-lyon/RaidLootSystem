@@ -113,6 +113,25 @@ end
 -- leave these alone and no host screen edits them.
 --------------------------------------------------------------------------------
 
+--- Are a stored record and an incoming one the same player, logged in on two of
+-- their own characters?
+--
+-- The whole premise of the addon is that one player runs several characters, and
+-- the saved variables are per account, so all of them share one hierarchy. Keying a
+-- record by the character you happen to be logged in on therefore accumulates one
+-- record per alt, each holding the same ordering, and the roster draws every
+-- character once per alt that has ever logged in.
+--
+-- The test is mutual: each names the other. Two alts always do, because they share
+-- the one hierarchy that lists them both. A stranger who has wrongly put your main
+-- in *their* hierarchy does not, because yours does not list them back -- so a
+-- mistaken claim stays a contested character, which is loud, instead of silently
+-- deleting someone's record.
+function Campaign.SameMember(storedPlayer, storedOrder, player, order)
+    return Util.indexOf(order or {}, storedPlayer) ~= nil
+        and Util.indexOf(storedOrder or {}, player) ~= nil
+end
+
 --- Record one member's ordering on a campaign record. Replaces rather than merges:
 -- a resubmission is the whole of what that member now ranks, and merging would
 -- resurrect a character they had just removed.
@@ -121,6 +140,17 @@ function Campaign.RecordMember(campaign, player, order, chars, at)
     if type(campaign) ~= "table" then return nil, "no such campaign" end
     if type(player) ~= "string" or player == "" then return nil, "a record needs a player" end
     campaign.members = campaign.members or {}
+
+    -- One record per player, not one per character they log in on. Clearing on
+    -- write also repairs a campaign that already accumulated duplicates: the next
+    -- publish from any of the alts collapses them.
+    for stored, record in pairs(campaign.members) do
+        if stored ~= player
+            and Campaign.SameMember(stored, record.order, player, order) then
+            campaign.members[stored] = nil
+        end
+    end
+
     campaign.members[player] = {
         order = Util.copy(order or {}),
         chars = Util.deepCopy(chars or {}),
@@ -590,12 +620,46 @@ function Campaign.RecordHierarchy(campaignId, player, order, chars)
     return true
 end
 
+--- Has this campaign run a round yet (spec 014)?
+--
+-- "Mid-campaign" has to mean something a client can answer on its own, and every
+-- member records a history entry for every round it saw, tagged with the campaign.
+-- So: a campaign with history has started. Before that it is being set up, and
+-- everyone arranges their characters freely -- a lock that engaged the moment a
+-- campaign was created would make an on-by-default setting unusable.
+--
+-- A member who joined late has no history for it and is free until their first
+-- raid in it, which is the same rule read from their side and the right answer.
+function Campaign.HasStarted(campaignId)
+    if not campaignId or campaignId == "" then return false end
+    for _, record in ipairs(ns.History and ns.History.Records() or {}) do
+        if record.campaignId == campaignId then return true end
+    end
+    return false
+end
+
+--- Is this campaign's hierarchy locked for its members right now? The host setting
+-- says whether the campaign locks at all; the history says whether it has begun.
+function Campaign.HierarchyLocked(campaignId)
+    campaignId = campaignId or Campaign.ActiveId()
+    local campaign = Campaign.Get(campaignId)
+    if not campaign or campaign.host.lockHierarchy == false then return false end
+    return Campaign.HasStarted(campaignId)
+end
+
 --- Drop one member's stored ordering. For the simulator, whose fake players publish
 -- into the real active campaign and must leave nothing behind in it (spec 009).
 function Campaign.ForgetMember(campaignId, player)
     local campaign = Campaign.Get(campaignId)
     if not campaign or not campaign.members then return end
     campaign.members[player] = nil
+end
+
+--- The ordering one member last submitted to a campaign, or nil.
+function Campaign.StoredOrder(campaignId, player)
+    local campaign = Campaign.Get(campaignId)
+    local record = campaign and campaign.members and campaign.members[player]
+    return record and record.order or nil
 end
 
 --- The submitted hierarchies of one campaign, active by default.

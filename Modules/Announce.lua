@@ -38,6 +38,7 @@ Announce.KIND_LEVEL = {
     TIER_COUNT = 1,
     TIMER      = 1,
     LOOT_MODE  = 1,
+    HIERARCHY_LOCK = 1,    -- it changes what members may do; never silent
     PRIORITY   = 1,        -- priority-list edits (spec 010 section 10) are never silent
     ROLL       = 2,
     TIE        = 2,
@@ -166,6 +167,14 @@ local FORMATS = {
 
     LOOT_MODE = function(a)
         return "Loot mode is now " .. modeName(a.lootMode)
+    end,
+
+    -- Hierarchies are locked - tier rankings are fixed for this campaign
+    HIERARCHY_LOCK = function(a)
+        if a.locked then
+            return "Hierarchies are locked - tier rankings are fixed for this campaign"
+        end
+        return "Hierarchies are unlocked - you may re-rank your characters"
     end,
 
     PRIORITY = function(a)

@@ -762,7 +762,7 @@ function Round.BroadcastConfig()
     local host = ns.Database.Host()
     ns.Comms.Send(C.OPS.CFG,
         Serialize.encodeConfig(ns.Campaign.ActiveId(), host.tierCount, host.timerSeconds,
-            host.lootMode))
+            host.lootMode, host.lockHierarchy))
     return true
 end
 
@@ -778,9 +778,11 @@ function Round.ChangeSetting(key, value)
     if not host and key ~= "verbosity" then
         return false, "you have no campaign yet. Create or join one first (/rls campaign new)."
     end
-    local shared = (key == "tierCount" or key == "timerSeconds" or key == "lootMode")
+    local shared = (key == "tierCount" or key == "timerSeconds" or key == "lootMode"
+        or key == "lockHierarchy")
 
-    if shared and Round.current and Round.current.state == C.ROUND_STATE.OPEN then
+    if shared and key ~= "lockHierarchy"
+        and Round.current and Round.current.state == C.ROUND_STATE.OPEN then
         return false, "frozen while a round is open; the change applies to the next one."
     end
 
@@ -803,6 +805,13 @@ function Round.ChangeSetting(key, value)
         if value ~= 3 and value ~= 4 then
             return false, "the quality threshold is 3 (rare) or 4 (epic)."
         end
+    elseif key == "lockHierarchy" then
+        -- Shared, so it broadcasts and is announced: it changes what members are
+        -- allowed to do, and a rule nobody was told about is not a rule. Unlike the
+        -- other shared settings it is *not* frozen mid-round -- unlocking is the
+        -- escape hatch, and a host who needs it needs it now.
+        value = value and true or false
+        kind = "HIERARCHY_LOCK"
     elseif key == "autoClose" then
         value = value and true or false
     elseif key == "verbosity" then
@@ -822,7 +831,7 @@ function Round.ChangeSetting(key, value)
     if key == "qualityThreshold" and ns.LootDetect.Rescan then ns.LootDetect.Rescan() end
     if shared and Round.IsHost() then
         Round.BroadcastConfig()
-        say(kind, { tierCount = value, seconds = value, lootMode = value })
+        say(kind, { tierCount = value, seconds = value, lootMode = value, locked = value })
     end
     if ns.HierarchyEditor then ns.HierarchyEditor.Refresh() end
     fireChanged()

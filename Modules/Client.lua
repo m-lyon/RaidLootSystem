@@ -340,6 +340,9 @@ local function onConfig(sender, body)
         host.tierCount = msg.tierCount or host.tierCount
         host.timerSeconds = msg.timerSeconds or host.timerSeconds
         host.lootMode = msg.lootMode or host.lootMode
+        -- Always assigned, never `or`-defaulted: false is a real value here and the
+        -- idiom cannot carry one, so an unlock would never reach anybody.
+        if msg.lockHierarchy ~= nil then host.lockHierarchy = msg.lockHierarchy end
     end
     fireChanged()
 end

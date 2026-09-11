@@ -67,7 +67,21 @@ campaign.members = {
 | **Additive, no schema bump** | `Campaign.Normalise` already fills in what a stored campaign is missing, so `members = {}` appears on every existing campaign for free. A bump would rebuild the saved variables empty (012 §3) and take every group's priority list with it — an unacceptable price for a display feature. |
 | **Keyed by player, written only from that player's own `ROSTER`** | Authority is unchanged from 012 §7: a hierarchy belongs to the member who submitted it. The host's stored copy is a **cache of what was broadcast**, never a source the host can edit, and `CFG` / `CSTATE` still leave hierarchies alone. |
 | **`at` is stored** | A tier built from an ordering submitted three weeks ago is still a fact worth showing, but a reader must be able to tell it from one submitted tonight. |
+| **One record per player, not per character they log in on** | The saved variables are per account and the whole premise of the addon is that one player runs several characters, all sharing the one campaign hierarchy. Keying by the logged-in character accumulates a record per alt, each holding the same ordering, and the roster then draws every character once per alt that has ever logged in. A write supersedes any stored record that **mutually names** the incoming one — two alts always name each other, a stranger who has wrongly put your main in their hierarchy does not, so a mistaken claim stays a contested character rather than silently deleting a record. Clearing on write also repairs a campaign that already accumulated duplicates, at the next publish. |
 | **`chars` is stored with the order** | It carries class, which the roster needs for colouring and which would otherwise be unavailable for a member who is offline. |
+
+### Changing your own hierarchy
+
+An edit in your own hierarchy editor (001 §7) writes the campaign's `hierarchy`, and is recorded
+into `members` for **that** campaign in the same step, whether or not it is the one you are
+currently in. Publishing still covers the active campaign only. Without the record the two would
+disagree for any campaign you are not raiding in: `hierarchy` would hold the edit and `members`
+would hold the last thing you broadcast, and the roster draws the second.
+
+Nothing blocks an edit while a round is open. The warning the editor already shows is the whole
+policy, and it is accurate: the host stamps an entry's tier from the roster it held when that
+entry **arrived** (002 §5), so an entry already submitted keeps its tier and a revised one takes
+the new tier. Resolution reads the published roster, never `members`.
 
 ### The one behavioural change
 

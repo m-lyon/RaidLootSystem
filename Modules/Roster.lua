@@ -146,6 +146,37 @@ function Roster.BuildClaims(published)
     return claims
 end
 
+--------------------------------------------------------------------------------
+-- Pure: the hierarchy lock (spec 014)
+--------------------------------------------------------------------------------
+
+--- Is this change to an already-submitted hierarchy allowed while locked?
+--
+-- A tier is the first gate on every item, so re-ranking between raid nights is the
+-- cheapest way to take one: move your main to T1 the evening before the boss that
+-- drops what you want. The lock exists to stop that, not to freeze a roster.
+--
+-- What survives the lock is appending. A character added at the end of your own
+-- ordering lands in Rest, below everyone you had already ranked, so it can jump
+-- nobody -- and without this a bot rolled mid-campaign could never be brought in at
+-- all. Everything else is refused: a reorder is the whole point of the lock, and a
+-- removal is a reorder wearing a disguise, because taking out your T1 promotes
+-- every character below it by one.
+-- @return true, or nil plus a reason
+function Roster.LockedChangeAllowed(storedOrder, incomingOrder)
+    storedOrder, incomingOrder = storedOrder or {}, incomingOrder or {}
+    for i = 1, #storedOrder do
+        local was, now = storedOrder[i], incomingOrder[i]
+        if now == nil then
+            return nil, "characters cannot be removed from a locked hierarchy"
+        end
+        if tostring(was):lower() ~= tostring(now):lower() then
+            return nil, "characters cannot be re-ranked in a locked hierarchy"
+        end
+    end
+    return true
+end
+
 --- "contested - Steve and Dave both claim Sneaky" (section 5).
 function Roster.ContestReason(claim)
     local owners = claim.owners
@@ -449,22 +480,49 @@ function Roster.HierarchyList(target)
     return ns.Database.Hierarchy(target)
 end
 
+--- After any edit to one campaign's hierarchy.
+--
+-- The edit is recorded against that campaign whether or not it is the active one.
+-- Publishing only covers the active campaign, so without this an edit to a campaign
+-- you are not currently in would leave your own row in its tier roster showing the
+-- ordering you last broadcast rather than the one you just made -- two answers to
+-- "what did Matt rank", with the wrong one on screen (spec 013 section 3).
+--
+-- The template resolves nothing and is broadcast to nobody, so it records nothing.
 local function afterEdit(target)
     if target == Roster.DEFAULT_TARGET then
         fireChanged()
         return true
     end
-    if target == nil or target == ns.Campaign.ActiveId() then
+    local campaignId = target or ns.Campaign.ActiveId()
+    local me = UnitName("player")
+    if me and campaignId then
+        ns.Campaign.RecordHierarchy(campaignId, me, Roster.HierarchyList(campaignId),
+            ns.Database.Roster().chars)
+    end
+    if campaignId == ns.Campaign.ActiveId() then
         Roster.Publish()
     end
     fireChanged()
     return true
 end
 
+--- Why this campaign's hierarchy cannot be edited right now, or nil. The template
+-- is never locked: it resolves nothing and seeds campaigns that have not begun.
+local function lockedReason(target)
+    if target == Roster.DEFAULT_TARGET then return nil end
+    local campaignId = target or ns.Campaign.ActiveId()
+    if not ns.Campaign.HierarchyLocked(campaignId) then return nil end
+    return string.format("\"%s\" has started and its hierarchies are locked. The master "
+        .. "looter can unlock them in the host panel.", ns.Campaign.LabelFor(campaignId))
+end
+
 --- Reorder inside one hierarchy.
 function Roster.MoveIn(target, from, to)
     local list = Roster.HierarchyList(target)
     if not list then return nil, "no such campaign" end
+    local locked = lockedReason(target)
+    if locked then return nil, locked end
     if not Util.move(list, from, to) then return nil, "position out of range" end
     return afterEdit(target)
 end
@@ -484,8 +542,13 @@ function Roster.SetIncludedIn(target, name, included)
 
     local at = Util.indexOf(list, stored)
     if included and not at then
+        -- Allowed even while locked: it appends, so it lands in Rest and jumps
+        -- nobody (spec 014). Without it a character rolled mid-campaign could
+        -- never be brought in at all.
         list[#list + 1] = stored
     elseif not included and at then
+        local locked = lockedReason(target)
+        if locked then return nil, locked end
         table.remove(list, at)
     else
         return true
@@ -797,6 +860,23 @@ local function onRoster(sender, body)
             .. "are not in", tostring(sender), tostring(msg.campaignId)))
         return
     end
+    -- The lock is enforced here as well as in the sender's own editor (spec 014).
+    -- A member running a build that predates the lock, or one who has edited the
+    -- saved variables directly, would otherwise walk straight past it -- and this is
+    -- the copy the host stamps entry tiers from, so this is where it has to hold.
+    -- The stored ordering stands, the change is refused, and it is said out loud
+    -- rather than dropped quietly.
+    local stored = ns.Campaign.StoredOrder(msg.campaignId, sender)
+    if stored and ns.Campaign.HierarchyLocked(msg.campaignId) then
+        local ok, why = Roster.LockedChangeAllowed(stored, msg.order)
+        if not ok then
+            ns.Print(string.format("%s changed their hierarchy but \"%s\" is locked (%s); "
+                .. "their ranking is unchanged.", tostring(sender),
+                ns.Campaign.LabelFor(msg.campaignId), tostring(why)))
+            msg.order = Util.copy(stored)
+        end
+    end
+
     ns.Campaign.RecordHierarchy(msg.campaignId, sender, msg.order, msg.chars)
 
     -- The claim index, though, is rebuilt for the ACTIVE campaign only (spec 012

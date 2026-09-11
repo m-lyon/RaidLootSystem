@@ -311,7 +311,7 @@ return {
                 createdAt = 1757155200, createdBy = "Steve",
                 hierarchy = { "Steve", "Sneaky" },
                 host = { tierCount = 3, timerSeconds = 180, qualityThreshold = 4,
-                         lootMode = "ROLL", autoClose = true },
+                         lootMode = "ROLL", autoClose = true, lockHierarchy = true },
                 listed = 0, logged = 0, version = 0,
             },
         },
@@ -323,7 +323,7 @@ return {
                 ok = true, id = "Steve-100", label = "Alt Run",
                 createdAt = 100, createdBy = "Steve", hierarchy = {},
                 host = { tierCount = 5, timerSeconds = 15, qualityThreshold = 3,
-                         lootMode = "ROLL", autoClose = true },
+                         lootMode = "ROLL", autoClose = true, lockHierarchy = true },
                 listed = 0, logged = 0, version = 0,
             },
         },
@@ -337,7 +337,7 @@ return {
                 ok = true, id = "Steve-100", label = "Manual",
                 createdAt = 100, createdBy = "Steve", hierarchy = {},
                 host = { tierCount = 3, timerSeconds = 180, qualityThreshold = 4,
-                         lootMode = "ROLL", autoClose = false },
+                         lootMode = "ROLL", autoClose = false, lockHierarchy = true },
                 listed = 0, logged = 0, version = 0,
             },
         },
@@ -351,7 +351,7 @@ return {
                 ok = true, id = "Steve-100", label = "SK please",
                 createdAt = 100, createdBy = "Steve", hierarchy = {},
                 host = { tierCount = 3, timerSeconds = 180, qualityThreshold = 4,
-                         lootMode = "ROLL", autoClose = true },
+                         lootMode = "ROLL", autoClose = true, lockHierarchy = true },
                 listed = 0, logged = 0, version = 0,
             },
         },
@@ -543,6 +543,45 @@ return {
                          members = { "Matt=Matt@200", "Stewart=Stew,Stewalt@300" } },
         },
         {
+            -- The saved variables are per account and one player runs several
+            -- characters, so logging in on each alt in turn used to leave one record
+            -- per alt, all holding the same ordering -- and the roster drew every
+            -- character once per alt.
+            name = "logging in on three alts leaves one record, not three",
+            input = { op = "members", records = {
+                { player = "Mattehh",  order = { "Mattehh", "Maattehh", "Matteehh" }, at = 1 },
+                { player = "Matteehh", order = { "Mattehh", "Maattehh", "Matteehh" }, at = 2 },
+                { player = "Maattehh", order = { "Mattehh", "Maattehh", "Matteehh" }, at = 3 },
+            } },
+            expected = { filled = true, listed = 2, logged = 1, version = 7,
+                         tierCount = 3,
+                         members = { "Maattehh=Mattehh,Maattehh,Matteehh@3" } },
+        },
+        {
+            -- Mutual naming is the test. Steve has wrongly put Dave's main in his
+            -- own hierarchy, but Dave's does not list Steve back, so Steve keeps his
+            -- record and the character stays contested -- which is loud -- rather
+            -- than Dave's record silently disappearing.
+            name = "a one-way claim on someone else's character keeps both records",
+            input = { op = "members", records = {
+                { player = "Steve", order = { "Steve", "Sneaky", "Dave" }, at = 1 },
+                { player = "Dave", order = { "Dave", "Davebot" }, at = 2 },
+            } },
+            expected = { filled = true, listed = 2, logged = 1, version = 7,
+                         tierCount = 3,
+                         members = { "Dave=Dave,Davebot@2", "Steve=Steve,Sneaky,Dave@1" } },
+        },
+        {
+            name = "two unrelated players keep a record each",
+            input = { op = "members", records = {
+                { player = "Matt", order = { "Matt", "Mattbot" }, at = 1 },
+                { player = "Craig", order = { "Craigmain" }, at = 2 },
+            } },
+            expected = { filled = true, listed = 2, logged = 1, version = 7,
+                         tierCount = 3,
+                         members = { "Craig=Craigmain@2", "Matt=Matt,Mattbot@1" } },
+        },
+        {
             -- Replaced, not merged: a resubmission is the whole of what that member
             -- now ranks, and merging would resurrect a character they just removed.
             name = "recording again replaces that member's order rather than merging",
@@ -583,7 +622,7 @@ return {
                 ok = true, prefixed = true,
                 id = "Steve-1757155200", label = "Tuesday 25", createdBy = "Steve",
                 host = { tierCount = 2, timerSeconds = 180, qualityThreshold = 4,
-                         lootMode = "SK", autoClose = true },
+                         lootMode = "SK", autoClose = true, lockHierarchy = true },
                 version = 200, seed = 1757155200, order = true,
                 seedChars = "Ann,Bob,Cat,Dan,Eve",
                 events = 200, sameLog = true,

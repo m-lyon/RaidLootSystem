@@ -708,6 +708,9 @@ local function onCstate(sender, body)
     campaign.host.timerSeconds = incoming.host.timerSeconds
     campaign.host.qualityThreshold = incoming.host.qualityThreshold
     campaign.host.lootMode = incoming.host.lootMode
+    if incoming.host.lockHierarchy ~= nil then
+        campaign.host.lockHierarchy = incoming.host.lockHierarchy
+    end
 
     local priority = campaign.priority
     priority.version = incoming.priority.version

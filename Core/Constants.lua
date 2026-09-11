@@ -270,6 +270,10 @@ C.CAMPAIGN_DEFAULTS = {
         qualityThreshold = 4,
         lootMode         = "ROLL",
         autoClose        = true,    -- close as soon as everyone expected has submitted
+        -- Members may not re-rank their characters once the campaign has run a
+        -- round (spec 014). On by default: the tier is the first gate on every
+        -- item, so a reshuffle between raid nights is the cheapest way to take one.
+        lockHierarchy    = true,
     },
     priority = {
         version   = 0,

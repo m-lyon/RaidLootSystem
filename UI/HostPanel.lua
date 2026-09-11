@@ -292,7 +292,7 @@ local function change(key, value)
 end
 
 local function buildSettings(parent)
-    local panel = section(parent, "Raid settings", 214)
+    local panel = section(parent, "Raid settings", 240)
 
     panel.tier = Widgets.Slider(panel, "RaidLootSystemHostTierSlider", "Tier count",
         C.MIN_TIER_COUNT, C.MAX_TIER_COUNT, 1,
@@ -337,6 +337,19 @@ local function buildSettings(parent)
         "Auto-close when everyone is in", function(checked) change("autoClose", checked) end)
     panel.autoClose:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -170)
 
+    -- Not frozen mid-round like the other shared settings: unlocking is the escape
+    -- hatch for a member who ranked their characters wrong, and a host who needs it
+    -- needs it now rather than after the boss.
+    panel.lockHierarchy = Widgets.CheckBox(panel, "RaidLootSystemHostLockHierarchy",
+        "Lock tier hierarchies once the campaign starts",
+        function(checked) change("lockHierarchy", checked) end)
+    panel.lockHierarchy:SetPoint("TOPLEFT", panel.autoClose, "BOTTOMLEFT", 0, -2)
+
+    panel.lockNote = Widgets.Label(panel, "", "GameFontDisableSmall")
+    panel.lockNote:SetPoint("TOPLEFT", panel.lockHierarchy, "BOTTOMLEFT", 4, 0)
+    panel.lockNote:SetWidth(INNER - 30)
+    panel.lockNote:SetJustifyH("LEFT")
+
     panel.frozen = Widgets.Label(panel, "", "GameFontHighlightSmall")
     panel.frozen:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 12, 6)
     panel.frozen:SetWidth(INNER - 24)
@@ -368,6 +381,21 @@ local function refreshSettings()
         HostPanel.LootModeOptions(#((DB().Priority() or {}).order or {}) > 0))
     settings.lootMode:SetValue(host.lootMode or C.LOOT_MODE.ROLL)
     settings.autoClose:SetChecked(host.autoClose and true or false)
+    settings.lockHierarchy:SetChecked(host.lockHierarchy ~= false)
+
+    -- The setting says whether the campaign locks at all; the note says whether it
+    -- is locked right now, because "on" before the first round changes nothing and
+    -- a host reading only the tick box would think it did.
+    if host.lockHierarchy == false then
+        settings.lockNote:SetText("|cff888888Members can re-rank their characters at any "
+            .. "time.|r")
+    elseif active and ns.Campaign.HasStarted(active.id) then
+        settings.lockNote:SetText("|cffffcc00In force: this campaign has run a round. "
+            .. "Members can still add a new character, which joins at the bottom.|r")
+    else
+        settings.lockNote:SetText("|cff888888Takes effect when this campaign runs its first "
+            .. "round. Until then everyone arranges their characters freely.|r")
+    end
 
     -- 3.3.5a: sliders and dropdowns are enabled or disabled by their own calls.
     if frozen then

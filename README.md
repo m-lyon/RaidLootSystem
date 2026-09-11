@@ -135,6 +135,7 @@ you'll get an error message back if you're not.
 | `/rls roll <link>` | Open a round for one specific item — for something `/rls loot` didn't pick up, or a non-corpse award. Example: `/rls roll [Shadowmourne]`. |
 | `/rls close` | Resolve the open round right now, instead of waiting for the entry timer. |
 | `/rls cancel` | Cancel the open round outright — nothing is awarded. |
+| Lock tier hierarchies | A host-panel setting, on by default. Once a campaign has run a round, members can no longer re-rank or remove characters — only add a new one, which joins at the bottom. The master looter unticks it to let people fix a ranking. Announced to the raid either way. |
 | `/rls tiers` | Open the campaign tier roster — who composes T1, T2 and the rest, built from the hierarchies every member of the campaign submitted. Anyone can open this at any time, in or out of a raid. |
 | `/rls tiers <0-5>` | Set how many priority tiers count for the raid; everything below shares an equal-chance "Rest" tier. Takes effect on the next round, not the current one. See [DESIGN §2](docs/DESIGN.md#2-core-concepts). |
 | `/rls quality <3\|4>` | Set the quality bar the corpse scan applies — `3` for rare and up, `4` for epic only. |

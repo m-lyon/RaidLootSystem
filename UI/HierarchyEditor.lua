@@ -246,9 +246,20 @@ function Editor.Refresh()
         or string.format("|cff888888Ranking for \"%s\".|r",
             ns.Campaign.LabelFor(target)))
 
-    frame.warning:SetText((not editingDefault() and roundIsOpen())
-        and "|cffffcc00A roll is open. Entries you already submitted keep the tiers they had at submit time.|r"
-        or "")
+    -- The lock outranks the roll-open note: one says a change you make now lands
+    -- late, the other says you cannot make it at all, and a reader who tries and is
+    -- refused learned the second one the hard way (spec 014 section 6).
+    local locked = not editingDefault() and ns.Campaign.HierarchyLocked(target)
+    if locked then
+        frame.warning:SetText("|cffffcc00This campaign has started and its hierarchies are "
+            .. "locked. You can still add a character; it joins at the bottom. The master "
+            .. "looter can unlock them.|r")
+    elseif not editingDefault() and roundIsOpen() then
+        frame.warning:SetText("|cffffcc00A roll is open. Entries you already submitted keep "
+            .. "the tiers they had at submit time.|r")
+    else
+        frame.warning:SetText("")
+    end
 
     for _, band in ipairs(bands) do band:Hide() end
     for _, row in ipairs(rows) do row:Hide() end
@@ -295,9 +306,11 @@ function Editor.Refresh()
             and "Not in this campaign. Tick the box to bring it in."
             or (enterable and (present and "In the raid and enterable." or "Enterable.") or reason))
 
-        -- 3.3.5a has no Button:SetEnabled. Only ticked rows have a rank to move.
-        if entryRow.position and entryRow.position > 1 then row.up:Enable() else row.up:Disable() end
-        if entryRow.position and entryRow.position < #order then row.down:Enable()
+        -- 3.3.5a has no Button:SetEnabled. Only ticked rows have a rank to move,
+        -- and a locked campaign has none that can be moved at all.
+        if not locked and entryRow.position and entryRow.position > 1 then row.up:Enable()
+        else row.up:Disable() end
+        if not locked and entryRow.position and entryRow.position < #order then row.down:Enable()
         else row.down:Disable() end
         row:SetAlpha(entryRow.included and 1 or 0.6)
         row:Show()

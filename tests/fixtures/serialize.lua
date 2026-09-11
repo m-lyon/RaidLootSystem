@@ -173,11 +173,12 @@ local function run(input, ns)
 
     elseif input.kind == "config" then
         local body = S.encodeConfig(input.campaignId, input.tierCount, input.timerSeconds,
-            input.lootMode)
+            input.lootMode, input.lockHierarchy)
         local msg, why = S.decodeConfig(body)
         if not msg then return { ok = false, body = body, why = why } end
         return { ok = true, body = body, campaignId = msg.campaignId, tierCount = msg.tierCount,
-                 timerSeconds = msg.timerSeconds, lootMode = msg.lootMode }
+                 timerSeconds = msg.timerSeconds, lootMode = msg.lootMode,
+                 lockHierarchy = msg.lockHierarchy }
 
     elseif input.kind == "decodeOnly" then
         local msg, why = S[input.decoder](input.body)
@@ -575,11 +576,28 @@ return {
             expected = { ok = false, why = "ABORT has no reason code" },
         },
         {
-            name = "CFG round-trips the tier count, the timer and the loot mode",
+            name = "CFG round-trips the tier count, the timer, the loot mode and the lock",
             input = { kind = "config", campaignId = "Steve-1757155200", tierCount = 3, timerSeconds = 180,
-                      lootMode = "ROLL" },
-            expected = { ok = true, body = "Steve-1757155200^3^180^ROLL", campaignId = "Steve-1757155200", tierCount = 3,
-                         timerSeconds = 180, lootMode = "ROLL" },
+                      lootMode = "ROLL", lockHierarchy = true },
+            expected = { ok = true, body = "Steve-1757155200^3^180^ROLL^1", campaignId = "Steve-1757155200", tierCount = 3,
+                         timerSeconds = 180, lootMode = "ROLL", lockHierarchy = true },
+        },
+        {
+            -- False is a real value, so it has to survive the trip; a lock that
+            -- could only ever be turned on would trap every campaign.
+            name = "an unlocked campaign encodes and decodes as unlocked",
+            input = { kind = "config", campaignId = "Steve-1757155200", tierCount = 3, timerSeconds = 180,
+                      lootMode = "ROLL", lockHierarchy = false },
+            expected = { ok = true, body = "Steve-1757155200^3^180^ROLL^0", campaignId = "Steve-1757155200", tierCount = 3,
+                         timerSeconds = 180, lootMode = "ROLL", lockHierarchy = false },
+        },
+        {
+            -- A host running a build from before spec 014 sends four fields. The
+            -- default is on, so their raid is not silently unlocked.
+            name = "a CFG with no lock field reads as locked",
+            input = { kind = "decodeOnly", decoder = "decodeConfig",
+                      body = "Steve-1757155200^3^180^ROLL" },
+            expected = { ok = true },
         },
         {
             name = "a CFG with a non-numeric timer is rejected",

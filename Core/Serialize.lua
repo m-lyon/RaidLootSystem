@@ -665,9 +665,12 @@ function Serialize.encodeCampaign(campaign)
     local host = campaign.host or {}
     local priority = campaign.priority or {}
 
+    -- Appended rather than inserted, so a build that predates spec 014 reads the
+    -- first four exactly as before and ignores the fifth.
     local hostElement, err = Serialize.encodeElement({ host.tierCount or 3,
         host.timerSeconds or 180, host.qualityThreshold or 4,
-        host.lootMode or C.LOOT_MODE.ROLL })
+        host.lootMode or C.LOOT_MODE.ROLL,
+        host.lockHierarchy == false and 0 or 1 })
     if not hostElement then return nil, err end
 
     local seedChars, err2 = encodeNames(priority.seedChars or {})
@@ -720,6 +723,8 @@ function Serialize.decodeCampaign(body)
             tierCount        = number(host[1], 3),
             timerSeconds     = number(host[2], 180),
             qualityThreshold = number(host[3], 4),
+            -- Absent means a sender from before spec 014, and the default is on.
+            lockHierarchy    = number(host[5], 1) ~= 0,
             lootMode         = lootMode,
         },
         priority = {
@@ -733,7 +738,7 @@ function Serialize.decodeCampaign(body)
 end
 
 --------------------------------------------------------------------------------
--- ABORT: roundId^reasonCode        CFG: tierCount^timerSeconds^lootMode
+-- ABORT: roundId^reasonCode   CFG: tierCount^timerSeconds^lootMode^lockHierarchy
 --------------------------------------------------------------------------------
 
 function Serialize.encodeAbort(roundId, reason)
@@ -747,8 +752,9 @@ function Serialize.decodeAbort(body)
     return { roundId = fields[1], reason = fields[2] }
 end
 
-function Serialize.encodeConfig(campaignId, tierCount, timerSeconds, lootMode)
-    return Serialize.encodeFields({ campaignId, tierCount, timerSeconds, lootMode })
+function Serialize.encodeConfig(campaignId, tierCount, timerSeconds, lootMode, lockHierarchy)
+    return Serialize.encodeFields({ campaignId, tierCount, timerSeconds, lootMode,
+        lockHierarchy == false and 0 or 1 })
 end
 
 function Serialize.decodeConfig(body)
@@ -761,6 +767,8 @@ function Serialize.decodeConfig(body)
     end
     local lootMode = fields[4]
     if not lootMode or lootMode == "" then return nil, "CFG has no loot mode" end
+    -- A missing fifth field is a host from before spec 014; the default is on.
     return { campaignId = campaignId, tierCount = tierCount,
-             timerSeconds = timerSeconds, lootMode = lootMode }
+             timerSeconds = timerSeconds, lootMode = lootMode,
+             lockHierarchy = tonumber(fields[5] or 1) ~= 0 }
 end

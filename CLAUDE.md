@@ -69,6 +69,21 @@ with the reasoning.
   Every `ROSTER` for a campaign you are in is stored there so the tier roster survives a reload
   (spec 013 §3), which means the host *does* hold a copy of your hierarchy now -- but only you
   write yours, by publishing. Nothing in `CFG` / `CSTATE` / any host control may touch it.
+- **A logged-in character name is not a player identity, and `campaign.members` is keyed by
+  player.** The saved variables are per account and one player runs several characters sharing one
+  hierarchy, so recording under whichever alt is logged in gives one record per alt and the tier
+  roster draws everyone once per alt. `Campaign.RecordMember` supersedes any stored record that
+  *mutually* names the incoming one. Mutual, not one-way: a stranger wrongly holding your main in
+  their hierarchy must stay a contested character, which is loud, not a silent record deletion.
+- **The hierarchy lock is enforced on receipt, not only in the editor.** `lockHierarchy` is on by
+  default and bites once a campaign has run a round (any history record names it). A locked
+  ordering may only be *appended* to -- a swap, an insert, a removal and a truncation are all
+  re-ranks, and an append lands in Rest where it jumps nobody. Refusing only in the sender's own
+  editor would be a suggestion: an older build or an edited saved-variables file walks past it,
+  and `onRoster`'s copy is what the host stamps entry tiers from. Spec 014.
+- **`lockHierarchy` is assigned, never `or`-defaulted, wherever `CFG` / `CSTATE` are applied.**
+  `false` is a real value and the `and`/`or` idiom cannot carry one, so an unlock would never
+  reach anybody -- the failure that traps a campaign. Same trap as `autoClose` in `Campaign.New`.
 - **Recording a `ROSTER` and claiming from it are separate steps.** The record goes to whichever
   campaign the message names, if you are in it; `Roster.claims` is still rebuilt for the *active*
   campaign only, or two players claiming one character in unrelated groups reads as a conflict.
@@ -166,6 +181,11 @@ player can open with `/rls tiers`, built from `campaign.members` -- what each me
 now stored rather than reconstructed from live `ROSTER` traffic each session. The same bands group
 the two priority-list surfaces, through `TierRoster.groupRows` over the rows
 `PriorityList.viewRows` already produces, so the list and the roster cannot disagree.
+
+Spec 014 adds the hierarchy lock: a campaign setting, on by default, that fixes each member's
+tier ranking once the campaign has run a round. The rule is `Roster.LockedChangeAllowed` (pure),
+the two gates are the editor's mutators and `onRoster`, and unlocking is the host's escape hatch --
+so it is the one shared setting that is *not* frozen mid-round.
 
 **Spec 012 (campaigns) is built**, in the two commits it was specified to land in:
 
