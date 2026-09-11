@@ -8,7 +8,12 @@ ns.Constants = {}
 local C = ns.Constants
 
 -- Addon version. Keep in step with the .toc "## Version:" field.
-C.VERSION = "0.2.0"
+-- Moves with `## Version` in the .toc, always. This one is the protocol-visible
+-- half: it rides in HI and the host panel colours a member as drifted when theirs
+-- differs, so a stale constant silently reports a raid full of matching builds. The
+-- .toc's is the half an addon manager lists. They drifted apart once already, at
+-- 0.2.0 against 0.5.0, which made the drift column say nothing for four specs.
+C.VERSION = "0.3.0"
 
 --------------------------------------------------------------------------------
 -- Comms (spec 000 section 5)
@@ -296,7 +301,16 @@ C.DEFAULTS = {
     campaigns = {},
     settings = {
         eligibilityFilter = true,
+        -- Whispers the winning bot an `equip <link>` after a confirmed delivery
+        -- (spec 007 section 7). The syntax is still unconfirmed against the server
+        -- build, but it was never what made bots trade items back -- that was the
+        -- links in raid chat -- so it has no panel control of its own.
         autoEquipWinners  = true,
+        -- Announce items by name rather than by link. Default on: bots read their
+        -- master's party and raid chat, and a link there is answered by opening a
+        -- trade -- confirmed on this server, not a precaution. Whispers keep their
+        -- links, which is where `equip <link>` needs one (spec 015).
+        plainItemNames    = true,
         verbosity         = "SUMMARY",
         minimap           = { hide = false, minimapPos = 220 },
         windows           = {},

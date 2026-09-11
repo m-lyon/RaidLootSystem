@@ -988,7 +988,10 @@ function Priority.RefreshSection(panel)
             row.index, row.char = i, name
             row:ClearAllPoints()
             row:SetPoint("TOPLEFT", panel.list, "TOPLEFT", 0, -y)
-            row.position:SetText(tostring(i))
+            -- Rank inside the tier, not the global index: the controls still act on
+            -- `row.index`, which is the list position every move and suicide is
+            -- announced in terms of (spec 013 section 6).
+            row.position:SetText(tostring(entry.tierPosition or i))
             local claim = claims[name:lower()]
             local owner = claim and claim.owners[1] or nil
             local class = ns.Roster.ClassOfAny(name)

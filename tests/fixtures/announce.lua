@@ -9,6 +9,8 @@ local function run(input, ns)
     local A = ns.Announce
     if input.op == "emits" then
         return A.Emits(input.level, input.verbosity)
+    elseif input.op == "plain" then
+        return A.PlainNames(input.text)
     elseif input.op == "format" then
         return A.Format(input.kind, input.args)
     elseif input.op == "round" then
@@ -165,5 +167,32 @@ return {
             expected = { "Ann [T1, 50] wins [Item A]",
                          "[Item A] - tie re-rolls exhausted, the order was decided without one" },
         },
+        ------------------------------------------------------------------
+        -- Plain item names (spec 015)
+        ------------------------------------------------------------------
+        { name = "a coloured item link becomes the name it displays",
+          input = { op = "plain",
+                    text = "Rolling: |cffa335ee|Hitem:34334:0:0:0:0:0:0:0:0|h[Thunderfury]|h|r - 3:00" },
+          expected = "Rolling: [Thunderfury] - 3:00" },
+        { name = "an uncoloured link becomes its name too",
+          input = { op = "plain", text = "|Hitem:1234:0:0:0:0:0:0:0:0|h[Bracers]|h wins" },
+          expected = "[Bracers] wins" },
+        { name = "several links in one line are all reduced",
+          input = { op = "plain",
+                    text = "|cffa335ee|Hitem:1|h[A]|h|r |cffa335ee|Hitem:2|h[B]|h|r" },
+          expected = "[A] [B]" },
+        { name = "a line with no link is returned unchanged",
+          input = { op = "plain", text = "Round cancelled: the master looter changed" },
+          expected = "Round cancelled: the master looter changed" },
+        -- Class colours on a player name are not item links and must survive:
+        -- stripping them would uncolour every name in every line.
+        { name = "a coloured player name is not an item link",
+          input = { op = "plain", text = "|cffc41f3bBotty|r wins" },
+          expected = "|cffc41f3bBotty|r wins" },
+        -- The whisper exemption lives in enqueue rather than here, but the command
+        -- it protects has to survive this function if it is ever routed through it.
+        { name = "an equip command keeps its link when the strip is not applied",
+          input = { op = "plain", text = "equip" },
+          expected = "equip" },
     },
 }

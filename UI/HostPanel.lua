@@ -292,7 +292,7 @@ local function change(key, value)
 end
 
 local function buildSettings(parent)
-    local panel = section(parent, "Raid settings", 240)
+    local panel = section(parent, "Raid settings", 250)
 
     panel.tier = Widgets.Slider(panel, "RaidLootSystemHostTierSlider", "Tier count",
         C.MIN_TIER_COUNT, C.MAX_TIER_COUNT, 1,
@@ -344,11 +344,22 @@ local function buildSettings(parent)
         "Lock tier hierarchies once the campaign starts",
         function(checked) change("lockHierarchy", checked) end)
     panel.lockHierarchy:SetPoint("TOPLEFT", panel.autoClose, "BOTTOMLEFT", 0, -2)
+    Widgets.Tooltip(panel.lockHierarchy, "Lock tier hierarchies",
+        "Takes effect when this campaign runs its first round; until then everyone "
+        .. "arranges their characters freely. Once it is in force members can still add "
+        .. "a new character, which joins at the bottom of their own ranking.")
 
-    panel.lockNote = Widgets.Label(panel, "", "GameFontDisableSmall")
-    panel.lockNote:SetPoint("TOPLEFT", panel.lockHierarchy, "BOTTOMLEFT", 4, 0)
-    panel.lockNote:SetWidth(INNER - 30)
-    panel.lockNote:SetJustifyH("LEFT")
+    -- A client setting, not a campaign rule: it changes what this client says, not
+    -- how the group plays. On by default, because a link in raid chat is answered by
+    -- every bot in the group opening a trade (spec 015).
+    panel.plainNames = Widgets.CheckBox(panel, "RaidLootSystemHostPlainNames",
+        "Announce items by name, not by link",
+        function(checked) change("plainItemNames", checked) end)
+    panel.plainNames:SetPoint("TOPLEFT", panel.lockHierarchy, "BOTTOMLEFT", 0, -2)
+    Widgets.Tooltip(panel.plainNames, "Plain item names",
+        "Raid announcements name items instead of linking them. Raiders lose the "
+        .. "hoverable link, and your bots stop reading one in party chat and opening a "
+        .. "trade with you. Whispers to your own bots keep their links.")
 
     panel.frozen = Widgets.Label(panel, "", "GameFontHighlightSmall")
     panel.frozen:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 12, 6)
@@ -382,20 +393,7 @@ local function refreshSettings()
     settings.lootMode:SetValue(host.lootMode or C.LOOT_MODE.ROLL)
     settings.autoClose:SetChecked(host.autoClose and true or false)
     settings.lockHierarchy:SetChecked(host.lockHierarchy ~= false)
-
-    -- The setting says whether the campaign locks at all; the note says whether it
-    -- is locked right now, because "on" before the first round changes nothing and
-    -- a host reading only the tick box would think it did.
-    if host.lockHierarchy == false then
-        settings.lockNote:SetText("|cff888888Members can re-rank their characters at any "
-            .. "time.|r")
-    elseif active and ns.Campaign.HasStarted(active.id) then
-        settings.lockNote:SetText("|cffffcc00In force: this campaign has run a round. "
-            .. "Members can still add a new character, which joins at the bottom.|r")
-    else
-        settings.lockNote:SetText("|cff888888Takes effect when this campaign runs its first "
-            .. "round. Until then everyone arranges their characters freely.|r")
-    end
+    settings.plainNames:SetChecked(DB().Settings().plainItemNames and true or false)
 
     -- 3.3.5a: sliders and dropdowns are enabled or disabled by their own calls.
     if frozen then

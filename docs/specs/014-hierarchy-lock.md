@@ -101,9 +101,11 @@ rule. The line says what it stops, not that a flag flipped:
 | **Assigned, never `or`-defaulted, on receipt** | `false` is a real value and the `and`/`or` idiom cannot carry one. An unlock would otherwise never reach anybody, which is the failure that matters most. |
 | **Not frozen while a round is open**, unlike the other shared settings | Unlocking is the escape hatch for a member who ranked their characters wrong, and a host who needs it needs it now rather than after the boss. |
 
-The host panel carries the tick box in **Raid settings**, with a line below it saying whether the
-lock is in force *right now* — on before the first round changes nothing, and a host reading only
-the tick box would believe otherwise.
+The host panel carries the tick box in **Raid settings**. Its label says when it applies — *once
+the campaign starts* — and its tooltip carries the rest: that it takes effect at the first round,
+and that an append is still allowed once it is in force. No line of body text under it. The
+warning that has to be read belongs in the hierarchy editor, where a member is about to act on
+it; at the host it was a caption on a tick box that already said the same thing.
 
 ## 7. Acceptance criteria
 

@@ -209,6 +209,7 @@ local function help()
     ns.Print("  /rls deliver <n>  open a trade for pending item n")
     ns.Print("  /rls abandon <n>  give up on pending item n (confirmed)")
     ns.Print("  /rls status       version, roster size, conflicts")
+    ns.Print("  /rls links off    announce items by name, so bots do not read a link")
     ns.Print("  /rls tiers        who composes each tier of your campaign")
     ns.Print("  /rls tiers <0-5>  set the tier count you host with")
     ns.Print("  /rls publish      resend your roster to the raid")
@@ -310,6 +311,23 @@ local function dispatch(input)
         lootList()
     elseif command == "start" then
         startRound()
+    elseif command == "links" then
+        -- Whether announcements carry item links (spec 015). On the host panel too;
+        -- here because a host whose bots are trading items back wants it off now,
+        -- not after finding the tick box.
+        local sub = argument:lower()
+        if sub == "off" then
+            ns.Round.ChangeSetting("plainItemNames", true)
+            ns.Print("items are announced by name. Bots no longer read a link in raid chat.")
+        elseif sub == "on" then
+            ns.Round.ChangeSetting("plainItemNames", false)
+            ns.Print("items are announced as links. Your bots may answer one by opening "
+                .. "a trade with you.")
+        else
+            ns.Print(string.format("item links in raid announcements: %s. "
+                .. "/rls links off announces names instead.",
+                ns.Database.Settings().plainItemNames and "off (names only)" or "on"))
+        end
     elseif command == "quality" then
         setQuality(argument)
     elseif command == "roll" then

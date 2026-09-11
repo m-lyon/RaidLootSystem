@@ -48,7 +48,7 @@ One row per character, in list order:
 
 | Element | Source | Notes |
 |---|---|---|
-| Position | list index | The number people came to read. |
+| Position | rank within the tier | **Superseded by 013 §6.** This specified the list index, from a time when the list was drawn flat; once it is grouped into tier bands the rank inside the band is the character's real place in the queue, and the list index answers a question nothing asks. The index is still what a suicide is announced in and what the log is written in. |
 | Name | `order` | Class-coloured, as the host panel's is. |
 | Owner | `Roster.claims` | `unclaimed` where nobody claims it. |
 | Own marker | viewer's name vs owner | `*`, matching 010 §10's host-panel marker. |

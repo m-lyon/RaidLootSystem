@@ -773,9 +773,11 @@ end
 function Round.ChangeSetting(key, value)
     local host = ns.Database.Host()
     local settings = ns.Database.Settings()
-    -- Verbosity is a client setting, not a campaign one (it never reaches `host`
-    -- below), so it is the one key that still works with no active campaign.
-    if not host and key ~= "verbosity" then
+    -- The client settings below never reach `host`, so they are the keys that still
+    -- work with no active campaign.
+    local clientOnly = (key == "verbosity" or key == "autoEquipWinners"
+        or key == "plainItemNames")
+    if not host and not clientOnly then
         return false, "you have no campaign yet. Create or join one first (/rls campaign new)."
     end
     local shared = (key == "tierCount" or key == "timerSeconds" or key == "lootMode"
@@ -818,6 +820,17 @@ function Round.ChangeSetting(key, value)
         if not C.VERBOSITY[value] then return false, "unknown verbosity: " .. tostring(value) end
         if settings.verbosity ~= value then
             settings.verbosity = value
+            fireChanged()
+        end
+        return true
+    elseif key == "autoEquipWinners" or key == "plainItemNames" then
+        -- Client settings, like verbosity: they change what this client says, not how
+        -- the group plays (spec 015). They are not broadcast and work with no
+        -- campaign. `autoEquipWinners` has no panel control -- it was never what made
+        -- bots trade items back -- but it stays settable.
+        value = value and true or false
+        if settings[key] ~= value then
+            settings[key] = value
             fireChanged()
         end
         return true

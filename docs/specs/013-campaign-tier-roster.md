@@ -142,7 +142,8 @@ a band header before each tier's run of rows.
 | Decision | Reason |
 |---|---|
 | **Rows sort by list index inside a band** | That is precisely the order 003 §5 awards in: buckets ascending by tier, list index ascending inside a bucket. The banded list is therefore a readable statement of who wins next, not a decoration. |
-| **The position number stays on every row** | It is the number people came to read (011 §3), and a suicide is announced in terms of it (010 §10). |
+| **The number on a row is its rank inside its band**, not its list index | A tier is walked to exhaustion before the next one is consulted (003 §5), so "third in T1" is where a character actually stands in the queue for a T1 item. Its global index answers a question nothing asks: the list is never read top to bottom once tiers are in play. This supersedes 011 §3, which specified the list index, from a time when the list was drawn flat. |
+| **The global index is still carried on the row** | A suicide is announced and confirmed in terms of it (010 §10), the host panel's controls act on it, and the event log is written in it. It stops being the number *displayed*; it does not stop being the number the list is keyed by. |
 | **An `unknown` band collects characters whose owner has submitted nothing** | Rendering them as `Rest` would be a lie with the same shape as the truth. A named band says the data is missing. |
 | **The host panel's move controls act on list position, unchanged** | Bands are a grouping of the same rows. Moving a character within a band or across one is the same single-step move on the list it always was. |
 
@@ -161,6 +162,8 @@ a band header before each tier's run of rows.
 - With `ctx.listIndex` supplied, rows carry it, and band order by list index matches what 003 §5
   would award.
 - A character claimed by nobody in `ctx` still lands in its owner's band.
+- `groupRows` numbers each row within its own band, restarting at 1 in every band including the
+  one for rows with no tier, and a character low on the list can be first in its tier.
 
 **Fixture (`campaign` suite)**
 

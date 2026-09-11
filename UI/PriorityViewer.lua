@@ -208,10 +208,14 @@ function Viewer.Refresh()
             row:ClearAllPoints()
             row:SetPoint("TOPLEFT", content, "TOPLEFT", ROW_INSET, -y)
 
-            -- Above the median of who is actually here is the thing people want at
-            -- a glance, so it colours the number itself (spec 010 section 11).
+            -- The rank inside this tier, not the global list index: a tier is
+            -- walked to exhaustion before the next is consulted, so "third in T1" is
+            -- where this character actually stands in the queue for a T1 item.
+            --
+            -- The colour is still the global near-the-top signal (spec 010 section
+            -- 11), which is a fact about the whole list rather than about the band.
             row.position:SetText((entry.aboveMedian and "|cff66ff66#" or "|cffaaaaaa#")
-                .. entry.position .. "|r")
+                .. (entry.tierPosition or entry.position) .. "|r")
 
             local label = Widgets.ColorName(entry.char, entry.class)
                 .. " |cff888888(" .. (entry.owner or "unclaimed") .. ")|r"

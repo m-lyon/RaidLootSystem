@@ -47,12 +47,15 @@ local function run(input, ns)
         return render(TierRoster.byListIndex(bands))
 
     elseif input.op == "groupRows" then
+        -- "Bob#2/1" is Bob at global list index 2, first in his tier. The number the
+        -- two list surfaces draw is the second one.
         local bands = TierRoster.groupRows(input.rows, input.tierCount)
         local out = {}
         for i, band in ipairs(bands) do
             local parts = {}
             for _, row in ipairs(band.rows) do
-                parts[#parts + 1] = row.char .. "#" .. tostring(row.position)
+                parts[#parts + 1] = string.format("%s#%s/%s", row.char,
+                    tostring(row.position), tostring(row.tierPosition))
             end
             out[i] = band.label .. ": " .. (#parts > 0 and table.concat(parts, " ") or "-")
         end
@@ -191,14 +194,14 @@ return {
         -- Grouping the priority list's own rows (section 6)
         ------------------------------------------------------------------
         {
-            name = "list rows group into bands and keep list order inside one",
+            name = "each row is numbered within its own tier, not by list index",
             input = { op = "groupRows", tierCount = 2, rows = {
                 { char = "Ann", position = 1, tier = 2 },
                 { char = "Bob", position = 2, tier = 1 },
                 { char = "Cat", position = 3, tier = 3 },
                 { char = "Dan", position = 4, tier = 1 },
             } },
-            expected = { "T1: Bob#2 Dan#4", "T2: Ann#1", "Rest: Cat#3" },
+            expected = { "T1: Bob#2/1 Dan#4/2", "T2: Ann#1/1", "Rest: Cat#3/1" },
         },
         {
             -- Rest is a real answer: ranked, below the cut-off. "We do not know"
@@ -209,14 +212,40 @@ return {
                 { char = "Bob", position = 2, tier = nil },
                 { char = "Cat", position = 3, tier = 1 },
             } },
-            expected = { "T1: Cat#3", "T2: -", "Rest: Ann#1", "No hierarchy: Bob#2" },
+            expected = { "T1: Cat#3/1", "T2: -", "Rest: Ann#1/1", "No hierarchy: Bob#2/1" },
         },
         {
             name = "the unknown band is absent when every row has a tier",
             input = { op = "groupRows", tierCount = 1, rows = {
                 { char = "Ann", position = 1, tier = 1 },
             } },
-            expected = { "T1: Ann#1", "Rest: -" },
+            expected = { "T1: Ann#1/1", "Rest: -" },
+        },
+        {
+            -- The number restarts at 1 in each band, including the one for rows
+            -- whose owner has submitted nothing.
+            name = "the tier number restarts at one in every band",
+            input = { op = "groupRows", tierCount = 1, rows = {
+                { char = "Ann", position = 1, tier = 2 },
+                { char = "Bob", position = 2, tier = 1 },
+                { char = "Cat", position = 3, tier = 2 },
+                { char = "Dan", position = 4, tier = 1 },
+                { char = "Eve", position = 5, tier = nil },
+                { char = "Fay", position = 6, tier = nil },
+            } },
+            expected = { "T1: Bob#2/1 Dan#4/2", "Rest: Ann#1/1 Cat#3/2",
+                         "No hierarchy: Eve#5/1 Fay#6/2" },
+        },
+        {
+            -- A character can be third on the list and first in the queue for a T1
+            -- item, which is the whole reason the displayed number changed.
+            name = "a low list index can still be first in its tier",
+            input = { op = "groupRows", tierCount = 2, rows = {
+                { char = "Ann", position = 1, tier = 3 },
+                { char = "Bob", position = 2, tier = 3 },
+                { char = "Cat", position = 3, tier = 1 },
+            } },
+            expected = { "T1: Cat#3/1", "T2: -", "Rest: Ann#1/1 Bob#2/2" },
         },
         {
             name = "an empty list groups into empty bands without erroring",

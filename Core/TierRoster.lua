@@ -110,6 +110,16 @@ end
 -- their own at the end rather than in Rest. Rest is a real answer -- ranked, below
 -- the cut-off -- and drawing "we do not know" with the same shape would be a lie
 -- that reads as a fact.
+--
+-- Each row gains `tierPosition`, its rank inside its own band. That is the number
+-- the two list surfaces show: a tier is walked to exhaustion before the next one is
+-- consulted, so "third in T1" is the character's real place in the queue for a T1
+-- item, while its global index says only where it sits in a list nothing reads
+-- top-to-bottom. The global `position` is left on the row for anything that needs
+-- it -- a suicide is still announced in terms of it.
+--
+-- The rows are the caller's own, rebuilt on every refresh, and are stamped in place
+-- rather than copied: these lists redraw on every roster event.
 -- @return array of { tier, label, rows }, Rest then unknown last; `tier` is nil on
 --         the unknown band. Empty bands are kept, as in TierRoster.bands.
 function TierRoster.groupRows(rows, tierCount)
@@ -128,6 +138,10 @@ function TierRoster.groupRows(rows, tierCount)
     -- Carried only when it has something in it: an empty tier is a fact about the
     -- campaign worth showing, but an empty "No hierarchy" is just noise.
     if #unknown.rows > 0 then bands[#bands + 1] = unknown end
+
+    for _, band in ipairs(bands) do
+        for i, row in ipairs(band.rows) do row.tierPosition = i end
+    end
     return bands
 end
 

@@ -57,6 +57,22 @@ end
 -- Pure: formats (section 4)
 --------------------------------------------------------------------------------
 
+--- An item link reduced to the name inside it: "[Warglaive]" out of the full
+-- |cff...|Hitem:...|h[Warglaive]|h|r. Anything that is not a link is returned
+-- unchanged, so a line that was already plain text survives untouched.
+--
+-- This exists because chat is not inert on this server. Bots read their master's
+-- party and raid chat, and an item link in it is something they act on rather than
+-- something they ignore (spec 015).
+function Announce.PlainNames(text)
+    if type(text) ~= "string" then return text end
+    -- The colour codes wrap the link, so they go with it; a stray |r left behind
+    -- would recolour the rest of the line.
+    local out = text:gsub("|c%x%x%x%x%x%x%x%x|Hitem:.-|h(%[.-%])|h|r", "%1")
+    out = out:gsub("|Hitem:.-|h(%[.-%])|h", "%1")
+    return out
+end
+
 local function clock(seconds)
     seconds = math.max(0, math.floor((seconds or 0) + 0.5))
     return string.format("%d:%02d", math.floor(seconds / 60), seconds % 60)
@@ -284,6 +300,17 @@ function Announce.transport(text, channel, target)
 end
 
 local function enqueue(text, channel, target)
+    -- The one chokepoint every group line leaves through, so the setting cannot be
+    -- defeated by a format added later.
+    --
+    -- Whispers are exempt, and that is the whole distinction: a link in party or
+    -- raid chat is read by every bot in the group as something to act on, which is
+    -- what this setting exists to stop. A whisper is a command addressed to one bot,
+    -- and `equip <link>` is the form the command wants (spec 007 section 7) --
+    -- stripping it there would quietly break auto-equip rather than fix anything.
+    if channel ~= "WHISPER" and ns.Database.Settings().plainItemNames then
+        text = Announce.PlainNames(text)
+    end
     queue[#queue + 1] = { text = text, channel = channel, target = target }
     if frame then frame:Show() end
 end
