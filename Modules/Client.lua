@@ -259,7 +259,9 @@ local function onResult(sender, body)
     round.results = msg.results
     round.state = C.ROUND_STATE.CLOSED
     round.closedAt = time()
-    if ns.Priority then ns.Priority.OnClientResult(round) end
+    -- The suicides are not replayed here. They arrive as logged events on the SKLIST
+    -- the host sends next, so a client's list and its history move together rather
+    -- than the list moving now and the history never (spec 010 section 8).
     if round.rolls and ns.History then ns.History.RecordClient(round) end
     fireChanged()
 end
@@ -326,6 +328,19 @@ local function onConfig(sender, body)
     -- Settings from a campaign you are not in are not your settings (section 10).
     if not ns.Campaign.AcceptsMessage(C.OPS.CFG, msg.campaignId, sender) then return end
     Client.config = msg
+
+    -- The campaign owns how the group plays it, so these land on the campaign record
+    -- and not only in a display field (spec 012 section 9). Without this the loot mode
+    -- stops at whoever happens to be master looter: the next one to hold it opens a
+    -- round under their own stale default, and a seeded Suicide Kings campaign
+    -- silently resolves by roll.
+    local campaign = ns.Campaign.Get(msg.campaignId)
+    if campaign then
+        local host = ns.Campaign.Normalise(campaign).host
+        host.tierCount = msg.tierCount or host.tierCount
+        host.timerSeconds = msg.timerSeconds or host.timerSeconds
+        host.lootMode = msg.lootMode or host.lootMode
+    end
     fireChanged()
 end
 
@@ -380,7 +395,11 @@ function Client.RequestSync()
     if now - lastSync < C.SYNC_INTERVAL then return false end
     lastSync = now
     local id = Client.round and Client.round.id or ""
-    return ns.Comms.Send(C.OPS.SYNC, Serialize.encodeFields({ id }))
+    -- The campaign and the list version ride along so the host can answer a history
+    -- that has fallen behind without being asked twice (spec 010 section 8).
+    local campaignId = ns.Campaign.ActiveId()
+    return ns.Comms.Send(C.OPS.SYNC, Serialize.encodeSync(id, campaignId,
+        ns.Priority and ns.Priority.HistoryVersion(campaignId) or 0))
 end
 
 --------------------------------------------------------------------------------

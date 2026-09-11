@@ -55,6 +55,14 @@ with the reasoning.
   costs someone an item.
 - **The priority list is per character; the hierarchy is per player.** They are orthogonal on
   purpose: the hierarchy picks your bucket, the list decides who wins inside it. Spec 010 §3.
+- **The priority list's event log is replicated to every member, not held only by the host.**
+  `SKLIST` carries the events that produced its version and clients append them; a client that
+  cannot chain them takes the order, flags its log incomplete and asks for a `CSTATE`. Clients no
+  longer recompute a round's suicides for themselves -- that was what made the log host-only.
+  Master looter moves constantly, and an audit trail that dies on handover is not one. Spec 010 §8.
+- **The campaign is the source of truth for how the group plays it.** `CFG` and `CSTATE` write
+  `lootMode`, `tierCount` and `timerSeconds` onto `campaign.host` for every member. `hierarchy` is
+  the exception: it is this client's ordering of its own characters and is never sent. Spec 012 §9.
 - **The priority list is stored, not derived.** Unlike a tally, it degrades catastrophically —
   one missing round silently corrupts every later position. `verify` replays history to *detect*
   drift; it never repairs. Spec 010 §8.

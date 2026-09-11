@@ -305,6 +305,19 @@ RaidLootSystemDB = {
 `Campaign.Active()`, and `Database.lua` keeps owning that accessor so a future scoping change stays
 a single-file problem, exactly as 000 §4 requires.
 
+**The campaign is the source of truth for how the group plays it.** `host` is not one player's
+preferences that happen to be filed under a campaign; a loot mode with no campaign means nothing.
+So `CFG` and `CSTATE` both *write* to `campaign.host` on every member, and whoever holds master
+loot next opens their first round under the settings the group was already playing by.
+
+Without that the mode stopped at whoever happened to hold the Blizzard loot setting. A campaign
+joined by invitation is created with no `host` block at all, so the defaults filled it in and the
+default is `ROLL`: hand master loot to a new person in a seeded Suicide Kings campaign and their
+first round resolved by roll, with the list sitting right there and nothing saying a word.
+
+`hierarchy` is the exception and stays local. It is this client's ordering of *its own*
+characters, it is never broadcast, and it is meaningless on anyone else's machine (§7).
+
 ### Migration
 
 **There is none.** `schema ~= 3` rebuilds defaults from scratch: `roster`, an empty `campaigns`

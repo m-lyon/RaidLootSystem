@@ -252,25 +252,58 @@ guard against this spec quietly altering the base algorithm.
 The list is order-sensitive shared state that must survive raids, relogs and host changes.
 
 **Stored by everyone, with derivation as a repair tool.** Every client keeps `priority` in saved
-variables and applies the same deterministic mutation on `RESULT`. The host broadcasts the
-authoritative copy when a round opens.
+variables, **log included**. The host broadcasts the authoritative copy when a round opens, and
+every mutation it makes travels with it as a logged event that clients append to their own log.
+
+Clients do not recompute a round's suicides for themselves. They did once, and that is precisely
+what made the log host-only: the recomputation moved the order and bumped the version with nothing
+written down, so no client could ever replay its own list. The events on `SKLIST` replace it. The
+order and the history now move together or not at all.
 
 Pure derivation from history was considered and rejected. It is the right answer for an
 append-only tally, but Suicide Kings degrades **catastrophically** rather than gracefully: one
 missing round permanently corrupts the order of everything after it, and does so silently.
 
-New op, added to the 000 §5 table:
+New ops, added to the 000 §5 table:
 
 | Op | Direction | Body | Purpose |
 |---|---|---|---|
-| `SKLIST` | host → all | `version^seed^name~name~…` | The authoritative order, sent immediately after `OPEN` and on request |
+| `SKLIST` | host → all | `campaignId^version^seed^name~…^event~…` | The authoritative order, plus the events that produced it since the previous version |
+| `CSTATE` | host → all | the campaign codec (012 §12) | The whole campaign: host settings, seed, seed characters, order and the complete log |
 
-- Sent **after** `OPEN`, never folded into it; `Comms.lua` chunks it like anything else.
-- A client whose stored `version` differs from the host's replaces its copy wholesale and says so
-  in the roll window. The host is authoritative; clients never merge.
+- Sent **after** `OPEN`, never folded into it; `Comms.lua` chunks both like anything else.
+- **Chaining.** A client exactly one or more contiguous versions behind applies the events on
+  `SKLIST` and appends them to its own log. It ends on the host's order *and* the host's history.
+- **Gaps are admitted, not papered over.** When the events do not chain — a missed message, a
+  reseed, a version that went backwards, or the same version with a different order — the client
+  takes the order as authoritative so the current round resolves correctly, marks its log
+  incomplete, and asks for a `CSTATE`. A half-written log is worse than an absent one: it replays
+  to the wrong answer and gives no reason.
+- `CSTATE` is sent on a seed or reseed, which nothing can chain onto, and in reply to a `SYNC`
+  whose history version differs from the host's.
+- **`SYNC` carries the version a client can replay to**, which is zero when its log is incomplete
+  — not the version it has stored. A client that took an order it could not chain holds the right
+  list at the right version with no history behind it, so comparing stored versions would answer
+  "in step" and the history would never arrive.
 - A client that has not received `SKLIST` shows positions as unknown rather than falling back to
   its own copy, which could show a player a position the host will not honour.
-- `SYNC` (002 §10) resends `OPEN`, `SKLIST` and `STATE`.
+- `SYNC` (002 §10) resends `OPEN`, `SKLIST` and `STATE`, and answers with `CSTATE` when the
+  asking client's history has fallen behind.
+
+### Why the log is replicated
+
+A master looter is not a fixed role. It moves when someone disconnects, when the raid splits, or
+because the previous holder went to make tea. Before this, the log stopped dead at every handover:
+the new host held a correct order with no history, `verify` reported drift at every position on a
+list that was perfectly fine, and the first list the new host broadcast wiped the old host's log
+too. One rotation destroyed the audit trail for the entire group, and only a reseed brought it
+back — which throws away everyone's position.
+
+An audit trail that survives only while one particular person holds a Blizzard UI setting is not
+an audit trail. So the log goes to every member, and any member can become host without losing it.
+
+The same reasoning opens **`verify` to everyone**. §5 rests on *"here is the seed, run it
+yourself"*, and that is only a fact if running it yourself is something a non-host can do.
 
 Existing ops change:
 
@@ -278,7 +311,8 @@ Existing ops change:
 |---|---|
 | `SUBMIT` | entry becomes `itemIdx=charName=overrideFlag=star` |
 | `ROLLS` | roll becomes `itemIdx=charName=tier=roll=listIdx=status=rerolls`; `roll` is 0 under SK, `listIdx` is 0 under ROLL; `status` is `WD` for an entry withdrawn by rule (1) or the star, so the results table can mark it (§11) |
-| `CFG` | `tierCount^timerSeconds^lootMode` |
+| `CFG` | `tierCount^timerSeconds^lootMode`, and it is **applied to the campaign record**, not only to a display field. The campaign owns how the group plays it (012 §9) |
+| `SYNC` | `roundId^campaignId^priorityVersion` |
 
 **`/rls sk verify`** recomputes the list from `priority.seed` plus the list's own **event log**
 (§9) — every suicide, restore, manual edit and roster change since the seed, each stamped with the

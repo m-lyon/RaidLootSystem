@@ -589,6 +589,19 @@ end
 
 local function onSync(sender, body)
     if not Round.IsHost() then return end
+
+    -- A priority list that has fallen behind is answered whether or not a round is
+    -- open: the history is standing state, and the client asking for it is usually one
+    -- that just joined or just took a list it could not chain (spec 010 section 8).
+    local ask = Serialize.decodeSync(body)
+    if ask.campaignId and ns.Priority and ns.Campaign.IsMemberOf(ask.campaignId) then
+        -- The version asked about is the one the client can replay to, so a client
+        -- holding the right order with no history behind it still gets answered.
+        if ask.priorityVersion ~= ns.Priority.HistoryVersion(ask.campaignId) then
+            ns.Priority.BroadcastState(ask.campaignId)
+        end
+    end
+
     local round = Round.current
     if not round or round.state ~= C.ROUND_STATE.OPEN then return end
 

@@ -498,11 +498,20 @@ function Serialize.decodeRolls(body)
 end
 
 --------------------------------------------------------------------------------
--- SKLIST: version^seed^name~name~...   (spec 010 section 8)
+-- SKLIST: campaignId^version^seed^name~name~...^event~event~...  (spec 010 s8)
 --
--- The authoritative priority list. Sent after OPEN under SK, after RESULT once the
--- suicides are applied, and on SYNC. A client whose copy differs replaces it whole.
+-- The authoritative priority list, plus the events that produced it since the
+-- previous version. A client one step behind applies those events and appends them
+-- to its own log, so every member holds a replayable history and a master-looter
+-- handover loses nothing. A client further behind cannot chain them; it takes the
+-- order as given and asks for a CSTATE to rebuild its log.
+--
+-- The events ride here rather than on an op of their own because they are only ever
+-- meaningful against the order in the same message.
 --------------------------------------------------------------------------------
+
+-- Defined with the campaign codec below; SKLIST needs them first.
+local encodeEvent, decodeEvent
 
 local function encodeNames(order)
     local names = {}
@@ -514,10 +523,19 @@ local function encodeNames(order)
     return Serialize.encodeList(names)
 end
 
-function Serialize.encodeSklist(campaignId, version, seed, order)
+--- @param events  the log entries from the receiver's version + 1 up to `version`,
+--                or nil for a plain restatement (OPEN, SYNC), which chains nothing
+function Serialize.encodeSklist(campaignId, version, seed, order, events)
     local names, err = encodeNames(order)
     if not names then return nil, err end
-    return Serialize.encodeFields({ campaignId, version, seed, names })
+    local encoded = {}
+    for i, e in ipairs(events or {}) do
+        local element, err2 = encodeEvent(e)
+        if not element then return nil, err2 end
+        encoded[i] = element
+    end
+    return Serialize.encodeFields({ campaignId, version, seed, names,
+        Serialize.encodeList(encoded) })
 end
 
 function Serialize.decodeSklist(body)
@@ -535,7 +553,35 @@ function Serialize.decodeSklist(body)
             order[#order + 1] = name
         end
     end
-    return { campaignId = campaignId, version = version, seed = seed, order = order }
+    local events = {}
+    for _, element in ipairs(Serialize.decodeList(fields[5])) do
+        local event = decodeEvent(element)
+        if not event then return nil, "SKLIST has an unreadable log event" end
+        events[#events + 1] = event
+    end
+    return { campaignId = campaignId, version = version, seed = seed, order = order,
+             events = events }
+end
+
+--------------------------------------------------------------------------------
+-- SYNC: roundId^campaignId^priorityVersion   (spec 010 section 8)
+--
+-- "Tell me what I missed." The round id resends an open round; the campaign id and
+-- the version let the host answer a priority list that has fallen behind with a
+-- CSTATE instead of guessing whether one is needed.
+--------------------------------------------------------------------------------
+
+function Serialize.encodeSync(roundId, campaignId, priorityVersion)
+    return Serialize.encodeFields({ roundId or "", campaignId or "", priorityVersion or 0 })
+end
+
+function Serialize.decodeSync(body)
+    local fields = Serialize.decodeFields(body)
+    return {
+        roundId = (fields[1] ~= "" and fields[1] or nil),
+        campaignId = (fields[2] ~= "" and fields[2] or nil),
+        priorityVersion = tonumber(fields[3]) or 0,
+    }
 end
 
 --------------------------------------------------------------------------------
@@ -581,7 +627,7 @@ end
 
 local EVENT_JOIN = "+"
 
-local function encodeEvent(e)
+function encodeEvent(e)
     local present, chars = {}, {}
     for i, v in ipairs(e.present or {}) do present[i] = tostring(v) end
     for i, v in ipairs(e.chars or {}) do chars[i] = tostring(v) end
@@ -590,7 +636,7 @@ local function encodeEvent(e)
         table.concat(present, EVENT_JOIN), table.concat(chars, EVENT_JOIN) })
 end
 
-local function decodeEvent(element)
+function decodeEvent(element)
     local sub = Serialize.decodeElement(element)
     local kind = sub[1]
     if not kind or kind == "" then return nil end

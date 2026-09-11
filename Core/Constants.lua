@@ -15,7 +15,7 @@ C.VERSION = "0.2.0"
 --------------------------------------------------------------------------------
 
 C.PREFIX = "RLS"
-C.PROTO = 1
+C.PROTO = 2
 
 -- Wire delimiters. Item links contain "|" and item strings contain ":", so
 -- neither character may be used here.
@@ -42,6 +42,7 @@ C.OPS = {
     ABORT   = "ABORT",
     CFG     = "CFG",
     SKLIST  = "SKLIST",
+    CSTATE  = "CSTATE",
     SYNC    = "SYNC",
     CINV    = "CINV",
 }
@@ -54,6 +55,7 @@ C.CAMPAIGN_OPS = {
     ROSTER = true,
     OPEN   = true,
     SKLIST = true,
+    CSTATE = true,
     CFG    = true,
     CINV   = true,
 }

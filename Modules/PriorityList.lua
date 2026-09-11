@@ -148,12 +148,14 @@ function Priority.SeedCandidates(claims)
     return names
 end
 
---- The wire form and back (section 8): SKLIST is campaignId^version^seed^name~...
--- The campaign id is what stops a foreign master looter's list replacing yours
--- (spec 012 section 10).
-function Priority.Encode(campaignId, priority)
+--- The wire form and back (section 8): SKLIST is
+-- campaignId^version^seed^name~...^event~... The campaign id is what stops a foreign
+-- master looter's list replacing yours (spec 012 section 10); the events are what
+-- let every member keep the host's log rather than a bare order.
+-- @param events  the entries since the previous broadcast, or nil to restate
+function Priority.Encode(campaignId, priority, events)
     return ns.Serialize.encodeSklist(campaignId, priority.version or 0, priority.seed or 0,
-        priority.order or {})
+        priority.order or {}, events)
 end
 
 --- Does a received list differ from the stored one? Same version and same order is
@@ -161,6 +163,45 @@ end
 function Priority.Differs(stored, received)
     if (stored.version or 0) ~= (received.version or 0) then return true end
     return #PriorityList.diff(stored.order or {}, received.order or {}) > 0
+end
+
+--- Can the events on a SKLIST be appended to this client's log, or has it fallen too
+-- far behind to chain them (section 8)?
+--
+-- A log is only worth holding if it is complete. Applying events over a gap would
+-- produce a log that replays to the wrong order and says nothing about why, which is
+-- worse than admitting the gap and asking for the whole thing.
+-- @return "apply" when the events chain from the stored version to the received one,
+--         "current" when there is nothing to do, "resync" otherwise
+function Priority.ChainAction(stored, received)
+    local from = stored.version or 0
+    local to = received.version or 0
+    if to < from then return "resync" end            -- a reseed, or a different list
+    if to == from then
+        return #PriorityList.diff(stored.order or {}, received.order or {}) > 0
+            and "resync" or "current"
+    end
+    local events = received.events or {}
+    if #events ~= to - from then return "resync" end
+    for i, event in ipairs(events) do
+        if (event.version or 0) ~= from + i then return "resync" end
+        -- A seed restarts the log rather than extending it, so it never chains.
+        if event.kind == "seed" then return "resync" end
+    end
+    return "apply"
+end
+
+--- Apply chained events to a stored list, returning the new priority table.
+-- Every event is logged, so a client's log is the host's log (section 8).
+-- @return priority', or nil plus the event that would not apply
+function Priority.Chain(stored, events)
+    local out = stored
+    for _, event in ipairs(events or {}) do
+        local next_, why = Priority.Mutate(out, event)
+        if not next_ then return nil, why end
+        out = next_
+    end
+    return out
 end
 
 --------------------------------------------------------------------------------
@@ -177,6 +218,13 @@ local Widgets
 local listeners = {}
 local rows = {}
 local noticeText                    -- shown in the roll window after a replace
+
+-- campaignId -> the logged events since that campaign's last successful broadcast.
+-- A run of quiet mutations (a round's suicides) accumulates here and rides out on the
+-- single SKLIST that follows, so clients append exactly what the host logged.
+-- Cleared only on a send that succeeded: dropping them on a failed send would leave
+-- every client with a gap and no way to know it (section 8).
+local pendingEvents = {}
 
 --- The stored list of one campaign, defaulting to the active one. Every mutation
 -- below takes a campaign id so that a restore-on-failure lands in the campaign the
@@ -213,6 +261,19 @@ function Priority.Version(campaignId)
     return priority and priority.version or 0
 end
 
+--- The version this client can actually *replay* to, which is what SYNC asks about.
+--
+-- Not the same as the stored version. A client that took an order it could not chain
+-- holds the right list at the right version with no history behind it, so comparing
+-- versions would say "in step" and no CSTATE would ever be sent. Zero means "send me
+-- everything" (section 8).
+function Priority.HistoryVersion(campaignId)
+    local priority = DB(campaignId)
+    if not priority or priority.logIncomplete then return 0 end
+    if #(priority.log or {}) == 0 then return 0 end
+    return priority.version or 0
+end
+
 --- The present set the list operations take: lowercase character names in the raid.
 local function presentSet()
     local set = {}
@@ -234,7 +295,25 @@ function Priority.Broadcast(campaignId)
     campaignId = campaignId or ns.Campaign.ActiveId()
     local priority = DB(campaignId)
     if not priority or #(priority.order or {}) == 0 then return false end
-    return ns.Comms.Send(C.OPS.SKLIST, Priority.Encode(campaignId, priority))
+    local events = pendingEvents[campaignId]
+    local ok = ns.Comms.Send(C.OPS.SKLIST, Priority.Encode(campaignId, priority, events))
+    if ok then pendingEvents[campaignId] = nil end
+    return ok
+end
+
+--- The whole campaign, log and all: what a client needs to rebuild a history it
+-- cannot chain, and what makes a master-looter handover lossless (section 8).
+function Priority.BroadcastState(campaignId)
+    if not ns.Round.IsHost() then return false end
+    campaignId = campaignId or ns.Campaign.ActiveId()
+    local campaign = ns.Campaign.Get(campaignId)
+    if not campaign then return false end
+    local body, err = ns.Serialize.encodeCampaign(ns.Campaign.Normalise(campaign))
+    if not body then
+        ns.Print("the campaign could not be sent: " .. tostring(err))
+        return false
+    end
+    return ns.Comms.Send(C.OPS.CSTATE, body)
 end
 
 --- Apply one mutation on the host: store, log, announce, broadcast.
@@ -255,8 +334,24 @@ local function hostMutate(event, text, quiet, campaignId)
         return false, why
     end
     store(next_, campaignId)
+
+    -- The event as logged, version stamp and all, queued for the next broadcast.
+    local logged = next_.log[#next_.log]
+    if event.kind == "seed" then
+        -- A seed restarts the log, so no client can chain onto it; the full state
+        -- goes out instead and the queue starts over with it.
+        pendingEvents[campaignId] = nil
+    elseif logged then
+        local queued = pendingEvents[campaignId] or {}
+        queued[#queued + 1] = logged
+        pendingEvents[campaignId] = queued
+    end
+
     if text then announce(text) end
-    if not quiet then Priority.Broadcast(campaignId) end
+    -- A seed sends nothing here. Nothing can chain onto it, so clients need the whole
+    -- campaign -- and Priority.Seed sets the loot mode immediately after, so sending
+    -- now would ship a state that is already stale. Seed broadcasts it once, after.
+    if event.kind ~= "seed" and not quiet then Priority.Broadcast(campaignId) end
     fireChanged()
     return true
 end
@@ -296,7 +391,12 @@ function Priority.Seed(reseed)
         string.format("%s with %d characters (seed %d, version %d)",
             reseed and "reseeded" or "seeded", #chars, seed, Priority.Version() + 1))
     -- After the mutation, never before: ChangeSetting refuses SK without a list.
-    if ok then enableSK() end
+    -- Then one CSTATE, carrying the new seed, the new log and the mode it just set,
+    -- so no client is left holding a list it cannot replay (section 8).
+    if ok then
+        enableSK()
+        Priority.BroadcastState()
+    end
     return ok
 end
 
@@ -510,7 +610,24 @@ end
 -- The client side (section 8)
 --------------------------------------------------------------------------------
 
---- SKLIST from the host: replace wholesale when it differs, and say so.
+--- Too far behind to chain: take the order as authoritative so the current round
+-- resolves against the right list, mark the log as not ours, and ask the host for the
+-- whole campaign. A half-written log is worse than an absent one -- it replays to the
+-- wrong answer and gives no reason (section 8).
+local function requestState(msg, stored, round)
+    noticeText = string.format("Priority list for \"%s\" replaced by the host's copy "
+        .. "(version %d -> %d). Fetching its history.",
+        ns.Campaign.LabelFor(msg.campaignId), stored.version or 0, msg.version)
+    stored.version, stored.seed, stored.order = msg.version, msg.seed, msg.order
+    stored.log = {}
+    stored.seedChars = {}
+    stored.logIncomplete = true       -- until a CSTATE arrives; verify says so
+    ns.Print(noticeText)
+    if round then round.priorityNotice = noticeText end
+    if ns.Client and ns.Client.RequestSync then ns.Client.RequestSync() end
+end
+
+--- SKLIST from the host: chain the events when in step, replace and resync when not.
 --
 -- The campaign gate here is the bug this whole feature exists to fix. Before it, a
 -- master looter you were guesting with replaced your own group's list and cleared
@@ -536,54 +653,85 @@ local function onSklist(sender, body)
 
     if not ns.Comms.IsSelf(sender) then
         local stored = DB(msg.campaignId)
-        if stored and Priority.Differs(stored, msg) then
-            noticeText = string.format("Priority list for \"%s\" replaced by the host's copy "
-                .. "(version %d -> %d).", ns.Campaign.LabelFor(msg.campaignId),
-                stored.version or 0, msg.version)
-            stored.version, stored.seed, stored.order = msg.version, msg.seed, msg.order
-            stored.log = {}                   -- the log is the host's; a client has none
-            ns.Print(noticeText)
-            if round then round.priorityNotice = noticeText end
-        else
-            noticeText = nil
-        end
-    end
-    fireChanged()
-end
-
---- RESULT on a client: apply the same suicides the host did (section 8), so every
--- copy agrees before the SKLIST that follows confirms it.
-function Priority.OnClientResult(round)
-    if round.lootMode ~= C.LOOT_MODE.SK then return end
-    local me = UnitName("player")
-    if round.host and me and round.host:lower() == me:lower() then return end
-    -- A round in a campaign this client is not in decides nothing here; its read-only
-    -- window (spec 012 section 6) shows the result and touches no stored list.
-    local campaignId = round.campaignId
-    if not ns.Campaign.IsMemberOf(campaignId) then return end
-    if not Priority.Seeded(campaignId) then return end
-
-    local awards = {}
-    for _, item in ipairs(round.items) do
-        for _, r in ipairs(round.results or {}) do
-            if r.itemIdx == item.idx and r.winner and r.winner ~= "" then
-                awards[#awards + 1] = { char = r.winner }
+        if stored then
+            local action = Priority.ChainAction(stored, msg)
+            if action == "current" then
+                noticeText = nil
+            elseif action == "apply" then
+                -- In step: append what the host logged, so this client's history is
+                -- the host's history and can be replayed or handed on (section 8).
+                local next_, why = Priority.Chain(stored, msg.events)
+                if next_ then
+                    store(next_, msg.campaignId)
+                    noticeText = nil
+                else
+                    ns.Debug("SKLIST events did not apply (" .. tostring(why) .. "); resyncing")
+                    requestState(msg, stored, round)
+                end
+            else
+                requestState(msg, stored, round)
             end
         end
     end
-    local db = DB(campaignId)
-    local order, events = PriorityList.suicideAll(db.order, awards, presentSet())
-    db.order = order
-    db.version = (db.version or 0) + #events
     fireChanged()
 end
 
---- `/rls sk verify`: replay and report (section 8). Host only: the log that replay
--- needs is the host's, and a client holds the host's copy without it.
+--- CSTATE from the host: the whole campaign, log and all (section 8).
+--
+-- This is what makes a master-looter handover lossless. A client that holds the seed,
+-- the seed characters, the order and every event since can become host and still
+-- replay its own list; before this existed, the log stopped at the handover and
+-- `verify` reported drift on a list that was perfectly correct.
+local function onCstate(sender, body)
+    if not ns.Round.IsAuthoritative(sender) then
+        ns.Debug("dropped CSTATE from " .. tostring(sender) .. ", who is not the master looter")
+        return
+    end
+    if ns.Comms.IsSelf(sender) then return end
+    local incoming, why = ns.Serialize.decodeCampaign(body)
+    if not incoming then
+        ns.Print("the campaign state could not be read (" .. tostring(why)
+            .. "). Your priority list history may be incomplete.")
+        return
+    end
+    if not ns.Campaign.AcceptsMessage(C.OPS.CSTATE, incoming.id, sender) then return end
+
+    local campaign = ns.Campaign.Get(incoming.id)
+    if not campaign then return end
+    ns.Campaign.Normalise(campaign)
+
+    -- The campaign is the source of truth for how the group plays it, so the shared
+    -- host settings come with it (spec 012 section 9). The hierarchy does not: it is
+    -- this client's own ordering of its own characters and is never sent.
+    campaign.host.tierCount = incoming.host.tierCount
+    campaign.host.timerSeconds = incoming.host.timerSeconds
+    campaign.host.qualityThreshold = incoming.host.qualityThreshold
+    campaign.host.lootMode = incoming.host.lootMode
+
+    local priority = campaign.priority
+    priority.version = incoming.priority.version
+    priority.seed = incoming.priority.seed
+    priority.seedChars = incoming.priority.seedChars
+    priority.order = incoming.priority.order
+    priority.log = incoming.priority.log
+    priority.logIncomplete = nil
+
+    ns.Print(string.format("received the history for \"%s\": version %d, %d characters, "
+        .. "%d logged events.", campaign.label or incoming.id, priority.version,
+        #priority.order, #priority.log))
+    noticeText = nil
+    fireChanged()
+    if ns.Campaign.FireChanged then ns.Campaign.FireChanged() end
+end
+
+--- `/rls sk verify`: replay and report (section 8). Anyone may run it. Every member
+-- holds the host's log now, and "here is the seed, run it yourself" is only a fact if
+-- running it yourself is something a non-host can do (section 5).
 function Priority.RunVerify()
-    if not ns.Round.IsHost() then
-        ns.Print("verify runs on the master looter's client: the event log it replays is theirs. "
-            .. "Your copy is version " .. (DB().version or 0) .. ".")
+    local priority = DB()
+    if priority and priority.logIncomplete then
+        ns.Print("verify: this client took a list it could not chain and is still waiting for "
+            .. "its history from the master looter. Try again in a moment.")
         return nil
     end
     local result = Priority.Verify(DB())
@@ -790,5 +938,6 @@ end
 function Priority.Init()
     Widgets = ns.Widgets
     ns.Comms.RegisterHandler(C.OPS.SKLIST, onSklist)
+    ns.Comms.RegisterHandler(C.OPS.CSTATE, onCstate)
     ns.Roster.RegisterListener(function() Priority.SyncRoster() end)
 end

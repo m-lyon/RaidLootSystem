@@ -91,6 +91,33 @@ local function run(input, ns)
         return { ok = r.ok, drift = drift, why = r.why or "" }
     elseif input.op == "action" then
         return P.DeliveryAction(input.record) or ""
+    elseif input.op == "chainAction" then
+        return P.ChainAction(input.stored, input.received)
+    elseif input.op == "chain" then
+        local next_, why = P.Chain(input.stored, input.events)
+        if not next_ then return { failed = why } end
+        local kinds = {}
+        for i, e in ipairs(next_.log) do kinds[i] = e.version .. ":" .. e.kind end
+        return { version = next_.version, order = next_.order, log = kinds }
+    elseif input.op == "replicate" then
+        -- A host mutates, a client chains the logged events, and both sides must end
+        -- on the same order AND the same replayable log (spec 010 section 8).
+        local host = { version = input.stored.version, seed = input.stored.seed,
+                       seedChars = input.stored.seedChars, order = input.stored.order,
+                       log = input.stored.log }
+        local sent = {}
+        for _, e in ipairs(input.events) do
+            local next_ = P.Mutate(host, e)
+            if not next_ then return { failed = "host could not apply " .. e.kind } end
+            host = next_
+            sent[#sent + 1] = host.log[#host.log]
+        end
+        local client = P.Chain(input.stored, sent)
+        if not client then return { failed = "client could not chain" } end
+        local hv = P.Verify(client)
+        return { sameOrder = #PL.diff(host.order, client.order) == 0,
+                 sameVersion = host.version == client.version,
+                 clientVerifies = hv.ok }
     elseif input.op == "preview" then
         local to, from, held = PL.suicidePreview(input.order, input.char, input.present)
         return { to = to, from = from, held = held }
@@ -150,6 +177,13 @@ local RAID_NIGHT_PRESENT = {}
 for _, i in ipairs({ 2, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15, 16 }) do
     RAID_NIGHT_PRESENT[RAID_NIGHT[i]:lower()] = true
 end
+
+-- A genuinely seeded list: "Ann, Cat, Bob" is what seed 7 shuffles those three into,
+-- so replay starts where the stored order starts and `verify` means something.
+local CHAIN_STORED = { version = 1, seed = 7, seedChars = { "Ann", "Bob", "Cat" },
+                       order = { "Ann", "Cat", "Bob" },
+                       log = { { kind = "seed", seed = 7, version = 1,
+                                 chars = { "Ann", "Bob", "Cat" } } } }
 
 return {
     name = "priority",
@@ -550,6 +584,69 @@ return {
                     char = "Mojojojo", present = RAID_NIGHT_PRESENT },
           expected = "Mattehh moved Mojojojo to the bottom by hand (14 -> 16); "
                   .. "1 absent character holds 17" },
+
+        ----------------------------------------------------------------------
+        -- Replicating the log to every member (section 8)
+        ----------------------------------------------------------------------
+        { name = "the same version and order needs nothing",
+          input = { op = "chainAction", stored = { version = 4, order = ORDER },
+                    received = { version = 4, order = ORDER, events = {} } },
+          expected = "current" },
+        { name = "one event ahead chains",
+          input = { op = "chainAction", stored = { version = 4, order = ORDER },
+                    received = { version = 5, order = ORDER,
+                                 events = { { kind = "suicide", version = 5 } } } },
+          expected = "apply" },
+        { name = "two contiguous events chain",
+          input = { op = "chainAction", stored = { version = 4, order = ORDER },
+                    received = { version = 6, order = ORDER,
+                                 events = { { kind = "suicide", version = 5 },
+                                            { kind = "suicide", version = 6 } } } },
+          expected = "apply" },
+        { name = "a gap in the versions cannot chain",
+          input = { op = "chainAction", stored = { version = 4, order = ORDER },
+                    received = { version = 7, order = ORDER,
+                                 events = { { kind = "suicide", version = 6 },
+                                            { kind = "suicide", version = 7 } } } },
+          expected = "resync" },
+        { name = "a version jump with no events cannot chain",
+          input = { op = "chainAction", stored = { version = 4, order = ORDER },
+                    received = { version = 9, order = ORDER, events = {} } },
+          expected = "resync" },
+        { name = "a reseed never chains, it restarts the log",
+          input = { op = "chainAction", stored = { version = 4, order = ORDER },
+                    received = { version = 5, order = ORDER,
+                                 events = { { kind = "seed", version = 5 } } } },
+          expected = "resync" },
+        { name = "a version that went backwards is a different list",
+          input = { op = "chainAction", stored = { version = 9, order = ORDER },
+                    received = { version = 2, order = ORDER, events = {} } },
+          expected = "resync" },
+        { name = "the same version with a different order is a disagreement, not a no-op",
+          input = { op = "chainAction", stored = { version = 4, order = ORDER },
+                    received = { version = 4, order = { "Bob", "Ann", "Cat", "Dan", "Eve" },
+                                 events = {} } },
+          expected = "resync" },
+
+        { name = "chaining appends every event to the client's own log",
+          input = { op = "chain", stored = CHAIN_STORED,
+                    events = { { kind = "suicide", char = "Ann", from = 1, version = 2,
+                                 present = { 1, 2, 3 } } } },
+          expected = { version = 2, order = { "Cat", "Bob", "Ann" },
+                       log = { "1:seed", "2:suicide" } } },
+        { name = "an event that does not apply is refused rather than half-applied",
+          input = { op = "chain", stored = CHAIN_STORED,
+                    events = { { kind = "suicide", char = "Ann", from = 3, version = 2,
+                                 present = { 1, 2, 3 } } } },
+          expected = { failed = "expected Ann at 3, found 1" } },
+
+
+        { name = "host and client end on the same order, version and replayable log",
+          input = { op = "replicate", stored = CHAIN_STORED, events = {
+                      { kind = "suicide", char = "Ann", from = 1, present = { 1, 2, 3 } },
+                      { kind = "suicide", char = "Cat", from = 1, present = { 1, 2, 3 } },
+                      { kind = "move", char = "Bob", from = 1, to = 2 } } },
+          expected = { sameOrder = true, sameVersion = true, clientVerifies = true } },
 
         { name = "the same version with another order differs",
           input = { op = "differs", stored = { version = 3, order = ORDER }, received = { version = 3, order = { "Bob", "Ann", "Cat", "Dan", "Eve" } } },

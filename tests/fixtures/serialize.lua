@@ -94,11 +94,37 @@ local function run(input, ns)
     -- Round payloads, spec 002. Each case encodes, asserts the exact body, then
     -- decodes it back: a change to either side alone fails the case.
     elseif input.kind == "sklist" then
-        local body = S.encodeSklist(input.campaignId, input.version, input.seed, input.order)
+        local body = S.encodeSklist(input.campaignId, input.version, input.seed, input.order,
+            input.events)
         local msg, why = S.decodeSklist(body)
         if not msg then return { ok = false, body = body, why = why } end
+        local events = {}
+        for i, e in ipairs(msg.events or {}) do
+            events[i] = string.format("%d:%s:%s:%s", e.version or 0, e.kind, tostring(e.char),
+                table.concat(e.present or {}, "+"))
+        end
         return { ok = true, body = body, campaignId = msg.campaignId, version = msg.version,
-                 seed = msg.seed, order = msg.order }
+                 seed = msg.seed, order = msg.order, events = events }
+
+    elseif input.kind == "sync" then
+        local msg = S.decodeSync(S.encodeSync(input.roundId, input.campaignId, input.version))
+        return { roundId = msg.roundId or "", campaignId = msg.campaignId or "",
+                 version = msg.priorityVersion }
+
+    elseif input.kind == "cstate" then
+        -- CSTATE is the campaign codec on the wire: the handover carries the log, so
+        -- the log has to survive the round trip intact (spec 010 section 8).
+        local body, err = S.encodeCampaign(input.campaign)
+        if not body then return { ok = false, why = err } end
+        local back, why = S.decodeCampaign(body)
+        if not back then return { ok = false, why = why } end
+        local kinds = {}
+        for i, e in ipairs(back.priority.log) do
+            kinds[i] = (e.version or 0) .. ":" .. e.kind .. ":" .. table.concat(e.present or {}, "+")
+        end
+        return { ok = true, lootMode = back.host.lootMode, tierCount = back.host.tierCount,
+                 version = back.priority.version, seed = back.priority.seed,
+                 seedChars = back.priority.seedChars, order = back.priority.order, log = kinds }
 
     elseif input.kind == "openMode" then
         local body = S.encodeOpen(input.campaignId, input.roundId, input.tierCount,
@@ -172,20 +198,20 @@ return {
         {
             name = "HI round-trips through the envelope",
             input = { kind = "envelope", op = "HI", body = "0.1.0", msgId = "1" },
-            expected = { wire = "1^HI^1^1^1^0.1.0", chunks = 1, op = "HI", seq = 1,
-                         total = 1, body = "0.1.0", proto = 1 },
+            expected = { wire = "2^HI^1^1^1^0.1.0", chunks = 1, op = "HI", seq = 1,
+                         total = 1, body = "0.1.0", proto = 2 },
         },
         {
             name = "RREQ carries an empty body",
             input = { kind = "envelope", op = "RREQ", body = "", msgId = "2" },
-            expected = { wire = "1^RREQ^2^1^1^", chunks = 1, op = "RREQ", seq = 1,
-                         total = 1, body = "", proto = 1 },
+            expected = { wire = "2^RREQ^2^1^1^", chunks = 1, op = "RREQ", seq = 1,
+                         total = 1, body = "", proto = 2 },
         },
         {
             name = "a body containing field delimiters survives unpacking",
             input = { kind = "envelope", op = "OPEN", body = "s1^3^99^1=item:49623=1", msgId = "3" },
-            expected = { wire = "1^OPEN^3^1^1^s1^3^99^1=item:49623=1", chunks = 1, op = "OPEN",
-                         seq = 1, total = 1, body = "s1^3^99^1=item:49623=1", proto = 1 },
+            expected = { wire = "2^OPEN^3^1^1^s1^3^99^1=item:49623=1", chunks = 1, op = "OPEN",
+                         seq = 1, total = 1, body = "s1^3^99^1=item:49623=1", proto = 2 },
         },
 
         -- Malformed input is rejected, never half-parsed.
@@ -480,15 +506,57 @@ return {
             name = "SKLIST round-trips version, seed and order",
             input = { kind = "sklist", campaignId = "Steve-1757155200", version = 47, seed = 1757155200,
                       order = { "Chop", "Sneaky", "Steve" } },
-            expected = { ok = true, body = "Steve-1757155200^47^1757155200^Chop~Sneaky~Steve",
+            expected = { ok = true, body = "Steve-1757155200^47^1757155200^Chop~Sneaky~Steve^",
                          campaignId = "Steve-1757155200", version = 47,
-                         seed = 1757155200, order = { "Chop", "Sneaky", "Steve" } },
+                         seed = 1757155200, order = { "Chop", "Sneaky", "Steve" }, events = {} },
+        },
+        {
+            name = "SKLIST carries the events that produced the version",
+            input = { kind = "sklist", campaignId = "Steve-1757155200", version = 48,
+                      seed = 1757155200, order = { "Sneaky", "Steve", "Chop" },
+                      events = { { kind = "suicide", char = "Chop", from = 1, version = 48,
+                                   at = 1757155300, by = "Steve", present = { 1, 2, 3 } } } },
+            expected = { ok = true,
+                         body = "Steve-1757155200^48^1757155200^Sneaky~Steve~Chop^"
+                             .. "suicide=Chop=1===48=1757155300=Steve=1+2+3=",
+                         campaignId = "Steve-1757155200", version = 48, seed = 1757155200,
+                         order = { "Sneaky", "Steve", "Chop" },
+                         events = { "48:suicide:Chop:1+2+3" } },
+        },
+        {
+            name = "a SYNC asks about a round and a campaign history at once",
+            input = { kind = "sync", roundId = "Steve-100", campaignId = "Steve-1757155200",
+                      version = 47 },
+            expected = { roundId = "Steve-100", campaignId = "Steve-1757155200", version = 47 },
+        },
+        {
+            name = "a CSTATE round-trips the host settings and the whole log",
+            input = { kind = "cstate", campaign = {
+                id = "Steve-1757155200", label = "Raid", createdAt = 1757155200,
+                createdBy = "Steve",
+                host = { tierCount = 2, timerSeconds = 120, qualityThreshold = 3, lootMode = "SK" },
+                priority = {
+                    version = 2, seed = 1757155200,
+                    seedChars = { "Chop", "Sneaky", "Steve" },
+                    order = { "Sneaky", "Steve", "Chop" },
+                    log = {
+                        { kind = "seed", seed = 1757155200, version = 1, at = 1757155200,
+                          by = "Steve", chars = { "Chop", "Sneaky", "Steve" } },
+                        { kind = "suicide", char = "Chop", from = 1, version = 2,
+                          at = 1757155300, by = "Steve", present = { 1, 2, 3 } },
+                    },
+                },
+            } },
+            expected = { ok = true, lootMode = "SK", tierCount = 2, version = 2,
+                         seed = 1757155200, seedChars = { "Chop", "Sneaky", "Steve" },
+                         order = { "Sneaky", "Steve", "Chop" },
+                         log = { "1:seed:", "2:suicide:1+2+3" } },
         },
         {
             name = "an empty SKLIST is a valid unseeded list",
             input = { kind = "sklist", campaignId = "Steve-1757155200", version = 0, seed = 0, order = {} },
-            expected = { ok = true, body = "Steve-1757155200^0^0^", campaignId = "Steve-1757155200", version = 0, seed = 0,
-                         order = {} },
+            expected = { ok = true, body = "Steve-1757155200^0^0^^", campaignId = "Steve-1757155200", version = 0, seed = 0,
+                         order = {}, events = {} },
         },
         {
             name = "an SKLIST naming a character twice is rejected",
