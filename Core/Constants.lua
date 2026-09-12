@@ -279,6 +279,10 @@ C.CAMPAIGN_DEFAULTS = {
         -- round (spec 014). On by default: the tier is the first gate on every
         -- item, so a reshuffle between raid nights is the cheapest way to take one.
         lockHierarchy    = true,
+        -- Set once the campaign has run its first round, and carried on CFG and
+        -- CSTATE so every member -- including one who joined after it began --
+        -- agrees the lock is in force (spec 014).
+        started          = false,
     },
     priority = {
         version   = 0,

@@ -149,12 +149,17 @@ function Serialize.assemble(assembler, sender, msg, now)
 end
 
 --- Drop message sets older than the timeout.
+--
+-- The allowance scales with the set's own size: chunks leave the sender at
+-- C.SEND_RATE per second, so a long CSTATE legitimately takes longer to arrive than
+-- the flat timeout and dropping it would leave a client asking for it forever.
 -- @return array of dropped keys, so the caller can surface the loss
 function Serialize.pruneAssembler(assembler, now, timeout)
     timeout = timeout or C.REASSEMBLY_TIMEOUT
     local dropped = {}
     for key, set in pairs(assembler.pending) do
-        if now - set.started > timeout then
+        local allowed = math.max(timeout, (set.total or 1) / C.SEND_RATE * 2)
+        if now - set.started > allowed then
             dropped[#dropped + 1] = key
             assembler.pending[key] = nil
         end
@@ -670,7 +675,8 @@ function Serialize.encodeCampaign(campaign)
     local hostElement, err = Serialize.encodeElement({ host.tierCount or 3,
         host.timerSeconds or 180, host.qualityThreshold or 4,
         host.lootMode or C.LOOT_MODE.ROLL,
-        host.lockHierarchy == false and 0 or 1 })
+        host.lockHierarchy == false and 0 or 1,
+        host.started and 1 or 0 })
     if not hostElement then return nil, err end
 
     local seedChars, err2 = encodeNames(priority.seedChars or {})
@@ -725,6 +731,9 @@ function Serialize.decodeCampaign(body)
             qualityThreshold = number(host[3], 4),
             -- Absent means a sender from before spec 014, and the default is on.
             lockHierarchy    = number(host[5], 1) ~= 0,
+            -- Whether the campaign has run a round, shared so every member agrees
+            -- the lock is in force (spec 014). Absent means a sender that predates it.
+            started          = number(host[6], 0) ~= 0,
             lootMode         = lootMode,
         },
         priority = {
@@ -738,7 +747,7 @@ function Serialize.decodeCampaign(body)
 end
 
 --------------------------------------------------------------------------------
--- ABORT: roundId^reasonCode   CFG: tierCount^timerSeconds^lootMode^lockHierarchy
+-- ABORT: roundId^reasonCode   CFG: tierCount^timerSeconds^lootMode^lockHierarchy^started
 --------------------------------------------------------------------------------
 
 function Serialize.encodeAbort(roundId, reason)
@@ -752,9 +761,10 @@ function Serialize.decodeAbort(body)
     return { roundId = fields[1], reason = fields[2] }
 end
 
-function Serialize.encodeConfig(campaignId, tierCount, timerSeconds, lootMode, lockHierarchy)
+function Serialize.encodeConfig(campaignId, tierCount, timerSeconds, lootMode, lockHierarchy,
+        started)
     return Serialize.encodeFields({ campaignId, tierCount, timerSeconds, lootMode,
-        lockHierarchy == false and 0 or 1 })
+        lockHierarchy == false and 0 or 1, started and 1 or 0 })
 end
 
 function Serialize.decodeConfig(body)
@@ -770,5 +780,7 @@ function Serialize.decodeConfig(body)
     -- A missing fifth field is a host from before spec 014; the default is on.
     return { campaignId = campaignId, tierCount = tierCount,
              timerSeconds = timerSeconds, lootMode = lootMode,
-             lockHierarchy = tonumber(fields[5] or 1) ~= 0 }
+             lockHierarchy = tonumber(fields[5] or 1) ~= 0,
+             -- A missing sixth field is a host from before the shared started flag.
+             started = (tonumber(fields[6]) or 0) ~= 0 }
 end

@@ -40,11 +40,18 @@ Two conditions, both required:
 | Condition | Why |
 |---|---|
 | `campaign.host.lockHierarchy` is on | The host setting, shared like the tier count and the loot mode. Default **on**. |
-| The campaign **has started** — any history record names it | "Mid-campaign" has to mean something a client can answer alone. Every member records a history entry for every round it saw, tagged with the campaign, so a campaign with history has begun. Before the first round it is being set up and everyone arranges their characters freely: a lock that engaged at creation would make an on-by-default setting unusable. |
+| The campaign **has started** — `campaign.host.started`, or any history record names it | "Mid-campaign" is shared state, not a private reading: the host stamps `started` when the first round opens and it rides on `CFG` and `CSTATE`, so every member answers the same way. Own history still counts, for a group whose host predates the flag. Before the first round the campaign is being set up and everyone arranges their characters freely: a lock that engaged at creation would make an on-by-default setting unusable. |
 
-A member who joined late has no history for the campaign and is free until their first raid in it.
-That is the same rule read from their side, and it is the right answer — they have not raided
-under the ranking yet, so there is nothing to hold them to.
+`started` is one-way. A campaign that has run a round never un-runs it, so neither `CFG` nor
+`CSTATE` may clear it — a master looter who joined after the first round and has seen none of it
+would otherwise unlock the campaign for the whole raid.
+
+A member who joined before the first round arranges their characters freely until it opens. One
+who joins after it inherits `started` with the first `CFG` or `CSTATE` they receive, and is
+locked like everybody else — including when they take master looter.
+
+A **roster import** writes the active campaign's ordering wholesale, so it is a re-rank like any
+other and `Roster.ApplyImport` refuses one that the lock forbids, before it prunes anything.
 
 The **template** (012 §7) is never locked. It resolves nothing and seeds campaigns that have not
 begun.

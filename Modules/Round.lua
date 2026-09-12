@@ -404,6 +404,9 @@ function Round.Open(items)
         round.source = "Item link"
     end
     Round.current = round
+    -- The campaign has begun, which is what the hierarchy lock turns on (spec 014).
+    -- Stamped on the campaign and broadcast, so every member agrees on it.
+    ns.Campaign.MarkStarted(round.campaignId)
     if ns.Award then ns.Award.Snapshot(round) end     -- spec 007: what the host already had
 
     local body, err = Serialize.encodeOpen(round.campaignId, round.id, tierCount, seconds,
@@ -762,7 +765,7 @@ function Round.BroadcastConfig()
     local host = ns.Database.Host()
     ns.Comms.Send(C.OPS.CFG,
         Serialize.encodeConfig(ns.Campaign.ActiveId(), host.tierCount, host.timerSeconds,
-            host.lootMode, host.lockHierarchy))
+            host.lootMode, host.lockHierarchy, host.started))
     return true
 end
 

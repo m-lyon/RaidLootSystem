@@ -579,7 +579,7 @@ return {
             name = "CFG round-trips the tier count, the timer, the loot mode and the lock",
             input = { kind = "config", campaignId = "Steve-1757155200", tierCount = 3, timerSeconds = 180,
                       lootMode = "ROLL", lockHierarchy = true },
-            expected = { ok = true, body = "Steve-1757155200^3^180^ROLL^1", campaignId = "Steve-1757155200", tierCount = 3,
+            expected = { ok = true, body = "Steve-1757155200^3^180^ROLL^1^0", campaignId = "Steve-1757155200", tierCount = 3,
                          timerSeconds = 180, lootMode = "ROLL", lockHierarchy = true },
         },
         {
@@ -588,7 +588,7 @@ return {
             name = "an unlocked campaign encodes and decodes as unlocked",
             input = { kind = "config", campaignId = "Steve-1757155200", tierCount = 3, timerSeconds = 180,
                       lootMode = "ROLL", lockHierarchy = false },
-            expected = { ok = true, body = "Steve-1757155200^3^180^ROLL^0", campaignId = "Steve-1757155200", tierCount = 3,
+            expected = { ok = true, body = "Steve-1757155200^3^180^ROLL^0^0", campaignId = "Steve-1757155200", tierCount = 3,
                          timerSeconds = 180, lootMode = "ROLL", lockHierarchy = false },
         },
         {

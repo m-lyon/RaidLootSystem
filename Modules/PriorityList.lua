@@ -296,7 +296,14 @@ function Priority.Broadcast(campaignId)
     local priority = DB(campaignId)
     if not priority or #(priority.order or {}) == 0 then return false end
     local events = pendingEvents[campaignId]
-    local ok = ns.Comms.Send(C.OPS.SKLIST, Priority.Encode(campaignId, priority, events))
+    local body, err = Priority.Encode(campaignId, priority, events)
+    if not body then
+        -- Sending nothing would report success and throw the queued events away.
+        ns.Print("the priority list could not be sent (" .. tostring(err)
+            .. "); its events are still queued.")
+        return false
+    end
+    local ok = ns.Comms.Send(C.OPS.SKLIST, body)
     if ok then pendingEvents[campaignId] = nil end
     return ok
 end
@@ -308,7 +315,19 @@ function Priority.BroadcastState(campaignId)
     campaignId = campaignId or ns.Campaign.ActiveId()
     local campaign = ns.Campaign.Get(campaignId)
     if not campaign then return false end
-    local body, err = ns.Serialize.encodeCampaign(ns.Campaign.Normalise(campaign))
+    -- Never answer a SYNC with a worse copy than the asker already has: an empty
+    -- list, or a log this host itself could not chain, would replace everyone's.
+    local priority = ns.Campaign.Normalise(campaign).priority
+    if #(priority.order or {}) == 0 then
+        ns.Debug("not sending CSTATE: this client holds no list for " .. tostring(campaignId))
+        return false
+    end
+    if priority.logIncomplete then
+        ns.Print("a member asked for this campaign's history, but your own copy of it is "
+            .. "incomplete, so it was not sent.")
+        return false
+    end
+    local body, err = ns.Serialize.encodeCampaign(campaign)
     if not body then
         ns.Print("the campaign could not be sent: " .. tostring(err))
         return false
@@ -720,18 +739,36 @@ local function onCstate(sender, body)
     if incoming.host.lockHierarchy ~= nil then
         campaign.host.lockHierarchy = incoming.host.lockHierarchy
     end
+    -- One-way, as on CFG: a campaign that has begun stays begun (spec 014).
+    if incoming.host.started then campaign.host.started = true end
 
     local priority = campaign.priority
+    -- An older version of the same list is not an answer to anything: a host who
+    -- joined late and holds less than we do must not roll us backwards. A different
+    -- seed is a reseed, which legitimately restarts the numbering.
+    if (incoming.priority.version or 0) < (priority.version or 0)
+        and (incoming.priority.seed or 0) == (priority.seed or 0) then
+        ns.Debug(string.format("ignored a CSTATE at version %d, behind the stored %d",
+            incoming.priority.version or 0, priority.version or 0))
+        return
+    end
     priority.version = incoming.priority.version
     priority.seed = incoming.priority.seed
     priority.seedChars = incoming.priority.seedChars
     priority.order = incoming.priority.order
     priority.log = incoming.priority.log
-    priority.logIncomplete = nil
+    -- The flag is cleared only by a log that actually replays to the order it came
+    -- with; a truncated one leaves it set, so `verify` and the next SYNC still say so.
+    local verified = Priority.Verify(priority)
+    priority.logIncomplete = verified.ok and nil or true
 
     ns.Print(string.format("received the history for \"%s\": version %d, %d characters, "
         .. "%d logged events.", campaign.label or incoming.id, priority.version,
         #priority.order, #priority.log))
+    if priority.logIncomplete then
+        ns.Print("that history does not replay to the list it came with, so it is still "
+            .. "marked incomplete. Ask the master looter to resend it.")
+    end
     noticeText = nil
     fireChanged()
     if ns.Campaign.FireChanged then ns.Campaign.FireChanged() end
@@ -808,7 +845,7 @@ local function tierIndex(tierCount)
     local out = {}
     for _, member in ipairs(ns.Campaign.Members()) do
         for position, char in ipairs(member.order) do
-            out[char] = ns.Tiers.forPosition(position, tierCount)
+            out[char:lower()] = ns.Tiers.forPosition(position, tierCount)
         end
     end
     return out
@@ -978,7 +1015,7 @@ function Priority.RefreshSection(panel)
     -- list position, and a band is a grouping of the same rows.
     local model = {}
     for i, name in ipairs(order) do
-        model[i] = { position = i, char = name, tier = tierOf[name] }
+        model[i] = { position = i, char = name, tier = tierOf[name:lower()] }
     end
     local groups = ns.TierRoster.groupRows(model, tierCount)
 

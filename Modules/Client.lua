@@ -78,7 +78,12 @@ end
 function Client.TierCountInForce(campaignId)
     local count = Client.TierCount(campaignId)
     if count then return count, true end
-    return ns.Database.DefaultTierCount(), false
+    -- The named campaign's own stored setting, not the active one's: the hierarchy
+    -- editor draws a campaign that may not be active, and banding it by another
+    -- campaign's count is simply wrong.
+    local campaign = ns.Campaign.Get(campaignId or ns.Campaign.ActiveId())
+    local stored = campaign and ns.Campaign.Normalise(campaign).host.tierCount
+    return stored or ns.Database.DefaultTierCount(), false
 end
 
 --- The loot mode the round runs under, as far as this client knows. Spec 010's SKLIST
@@ -352,6 +357,9 @@ local function onConfig(sender, body)
         -- Always assigned, never `or`-defaulted: false is a real value here and the
         -- idiom cannot carry one, so an unlock would never reach anybody.
         if msg.lockHierarchy ~= nil then host.lockHierarchy = msg.lockHierarchy end
+        -- One-way: a campaign that has run a round never un-runs it, and a host who
+        -- joined late and has not seen one must not clear it for the group.
+        if msg.started then host.started = true end
     end
     fireChanged()
 end

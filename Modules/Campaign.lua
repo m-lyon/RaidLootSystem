@@ -608,10 +608,12 @@ end
 -- Called for our own publish and for every ROSTER we accept; the timestamp is what
 -- lets the roster say how old a band is.
 -- @return true, or nil plus a reason
-function Campaign.RecordHierarchy(campaignId, player, order, chars)
+-- @param at  when this ordering was submitted; now by default. A refused change
+--            passes the stored timestamp through, because nothing was submitted.
+function Campaign.RecordHierarchy(campaignId, player, order, chars, at)
     local campaign = Campaign.Get(campaignId)
     if not campaign then return nil, "no such campaign" end
-    local ok, why = Campaign.RecordMember(campaign, player, order, chars, time())
+    local ok, why = Campaign.RecordMember(campaign, player, order, chars, at or time())
     if not ok then return nil, why end
     -- Deliberately no fireChanged: this runs on every ROSTER, which the group
     -- events fire often, and the roster path already tells its own listeners when
@@ -644,7 +646,21 @@ function Campaign.HierarchyLocked(campaignId)
     campaignId = campaignId or Campaign.ActiveId()
     local campaign = Campaign.Get(campaignId)
     if not campaign or campaign.host.lockHierarchy == false then return false end
+    -- The host stamps `started` when the first round opens and it rides on CFG and
+    -- CSTATE, so a member who joined mid-campaign -- including one who takes master
+    -- looter -- reads the same answer as everyone else. Own history still counts,
+    -- for a group whose host predates the flag.
+    if campaign.host.started then return true end
     return Campaign.HasStarted(campaignId)
+end
+
+--- Mark a campaign as begun (spec 014). Called when a round opens; the flag then
+-- travels with CFG and CSTATE.
+function Campaign.MarkStarted(campaignId)
+    local campaign = Campaign.Get(campaignId or Campaign.ActiveId())
+    if not campaign then return false end
+    Campaign.Normalise(campaign).host.started = true
+    return true
 end
 
 --- Drop one member's stored ordering. For the simulator, whose fake players publish
@@ -671,6 +687,21 @@ function Campaign.StoredOrder(campaignId, player, order)
     if not order then return nil end
     for stored, other in pairs(members) do
         if Campaign.SameMember(stored, other.order, player, order) then return other.order end
+    end
+    return nil
+end
+
+--- When one member's stored ordering was recorded, under the same matching rule
+-- StoredOrder uses, or nil.
+function Campaign.StoredAt(campaignId, player, order)
+    local campaign = Campaign.Get(campaignId)
+    local members = campaign and campaign.members
+    if not members then return nil end
+    local record = members[player]
+    if record then return record.at end
+    if not order then return nil end
+    for stored, other in pairs(members) do
+        if Campaign.SameMember(stored, other.order, player, order) then return other.at end
     end
     return nil
 end

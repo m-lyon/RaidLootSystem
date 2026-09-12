@@ -70,7 +70,7 @@ local function tierIndex(tierCount)
     local out = {}
     for _, member in ipairs(ns.Campaign.Members()) do
         for position, char in ipairs(member.order) do
-            out[char] = ns.Tiers.forPosition(position, tierCount)
+            out[char:lower()] = ns.Tiers.forPosition(position, tierCount)
         end
     end
     return out
@@ -87,7 +87,7 @@ local function context(order, tierCount)
         present[name] = ns.Roster.IsPresent(name) and true or nil
         classes[name] = ns.Roster.ClassOfAny(name)
         contested[name] = (claim and claim.contested) and true or nil
-        tiers[name] = tierOf[name]
+        tiers[name] = tierOf[name:lower()]
     end
     return { owners = owners, present = present, classes = classes,
              contested = contested, tiers = tiers, me = UnitName("player") }

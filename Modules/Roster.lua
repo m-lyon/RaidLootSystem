@@ -881,6 +881,7 @@ local function onRoster(sender, body)
     -- The stored ordering stands, the change is refused, and it is said out loud
     -- rather than dropped quietly.
     local stored = ns.Campaign.StoredOrder(msg.campaignId, sender, msg.order)
+    local refused = false
     if stored and ns.Campaign.HierarchyLocked(msg.campaignId) then
         local ok, why = Roster.LockedChangeAllowed(stored, msg.order)
         if not ok then
@@ -895,10 +896,15 @@ local function onRoster(sender, body)
                 ns.Print(line)
             end
             msg.order = Util.copy(stored)
+            refused = true
         end
     end
 
-    ns.Campaign.RecordHierarchy(msg.campaignId, sender, msg.order, msg.chars)
+    -- A refused change is not a submission, so the record keeps the timestamp of the
+    -- ordering actually in force rather than reading as submitted just now (spec 013
+    -- section 3).
+    ns.Campaign.RecordHierarchy(msg.campaignId, sender, msg.order, msg.chars,
+        refused and ns.Campaign.StoredAt(msg.campaignId, sender, msg.order) or nil)
 
     -- The claim index, though, is rebuilt for the ACTIVE campaign only (spec 012
     -- section 8): you never need claims for a campaign you are not raiding in, and
@@ -934,6 +940,18 @@ function Roster.ApplyImport(order, chars)
     -- campaigns exactly as it found them.
     local ok, why = Roster.Validate(order, chars)
     if not ok then return nil, why end
+    -- An import writes the active campaign's ordering wholesale, so it is a re-rank
+    -- like any other and the lock has to hold here too (spec 014). Refused before
+    -- pruneHierarchies touches anything, so a refused import changes nothing.
+    local activeId = ns.Campaign.ActiveId()
+    if ns.Campaign.HierarchyLocked(activeId) then
+        local allowed, why2 = Roster.LockedChangeAllowed(ns.Database.Hierarchy() or {}, order)
+        if not allowed then
+            return nil, string.format("\"%s\" has started and its hierarchies are locked (%s). "
+                .. "The master looter can unlock them in the host panel.",
+                ns.Campaign.LabelFor(activeId), tostring(why2))
+        end
+    end
     -- The character table is replaced wholesale, so every other campaign's hierarchy
     -- can be left naming a character this import dropped.
     pruneHierarchies(chars)
