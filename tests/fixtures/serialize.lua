@@ -180,6 +180,13 @@ local function run(input, ns)
                  timerSeconds = msg.timerSeconds, lootMode = msg.lootMode,
                  lockHierarchy = msg.lockHierarchy }
 
+    elseif input.kind == "decodeConfig" then
+        local msg, why = S.decodeConfig(input.body)
+        if not msg then return { ok = false, why = why } end
+        return { ok = true, campaignId = msg.campaignId, tierCount = msg.tierCount,
+                 timerSeconds = msg.timerSeconds, lootMode = msg.lootMode,
+                 lockHierarchy = msg.lockHierarchy }
+
     elseif input.kind == "decodeOnly" then
         local msg, why = S[input.decoder](input.body)
         return { ok = msg ~= nil, why = why }
@@ -595,9 +602,9 @@ return {
             -- A host running a build from before spec 014 sends four fields. The
             -- default is on, so their raid is not silently unlocked.
             name = "a CFG with no lock field reads as locked",
-            input = { kind = "decodeOnly", decoder = "decodeConfig",
-                      body = "Steve-1757155200^3^180^ROLL" },
-            expected = { ok = true },
+            input = { kind = "decodeConfig", body = "Steve-1757155200^3^180^ROLL" },
+            expected = { ok = true, campaignId = "Steve-1757155200", tierCount = 3,
+                         timerSeconds = 180, lootMode = "ROLL", lockHierarchy = true },
         },
         {
             name = "a CFG with a non-numeric timer is rejected",

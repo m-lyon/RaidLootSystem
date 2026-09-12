@@ -952,6 +952,21 @@ function Roster.ApplyImport(order, chars)
                 ns.Campaign.LabelFor(activeId), tostring(why2))
         end
     end
+    -- Pruning a dropped character out of another campaign's hierarchy is a removal, and
+    -- a removal is a re-rank: everything below it moves up a place. So it is refused
+    -- here exactly as Roster.Remove refuses it (spec 014).
+    for campaignId, campaign in pairs(ns.Database.Campaigns()) do
+        if ns.Campaign.HierarchyLocked(campaignId) then
+            for _, ranked in ipairs(campaign.hierarchy or {}) do
+                if chars[ranked] == nil then
+                    return nil, string.format("\"%s\" has started and its hierarchies are "
+                        .. "locked, and this import drops %s, which is ranked in it. The "
+                        .. "master looter can unlock them in the host panel.",
+                        ns.Campaign.LabelFor(campaignId), ranked)
+                end
+            end
+        end
+    end
     -- The character table is replaced wholesale, so every other campaign's hierarchy
     -- can be left naming a character this import dropped.
     pruneHierarchies(chars)

@@ -646,7 +646,15 @@ local function requestState(msg, stored, round)
     -- Ask about the campaign that needs the repair, not whichever one is active:
     -- the host would otherwise compare the wrong list's version, find it in step
     -- and send nothing, leaving this one flagged incomplete for good.
-    if ns.Client and ns.Client.RequestSync then ns.Client.RequestSync(msg.campaignId) end
+    -- RequestSync refuses inside C.SYNC_INTERVAL, and nothing else asks again from here:
+    -- later SKLISTs chain cleanly off the version just taken wholesale. So a throttled
+    -- request is said out loud rather than leaving the log flagged incomplete in silence.
+    if ns.Client and ns.Client.RequestSync then
+        if not ns.Client.RequestSync(msg.campaignId) then
+            ns.Print("the request for its history was throttled; ask again with /rls sync "
+                .. "in a few seconds.")
+        end
+    end
 end
 
 --- SKLIST from the host: chain the events when in step, replace and resync when not.

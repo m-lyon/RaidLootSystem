@@ -404,9 +404,6 @@ function Round.Open(items)
         round.source = "Item link"
     end
     Round.current = round
-    -- The campaign has begun, which is what the hierarchy lock turns on (spec 014).
-    -- Stamped on the campaign and broadcast, so every member agrees on it.
-    ns.Campaign.MarkStarted(round.campaignId)
     if ns.Award then ns.Award.Snapshot(round) end     -- spec 007: what the host already had
 
     local body, err = Serialize.encodeOpen(round.campaignId, round.id, tierCount, seconds,
@@ -415,6 +412,10 @@ function Round.Open(items)
         Round.current = nil
         return false, "this loot could not be encoded (" .. tostring(err) .. ")."
     end
+    -- The campaign has begun, which is what the hierarchy lock turns on (spec 014).
+    -- Stamped only once the round really opens: a round that failed to encode must not
+    -- freeze every member's ranking with nothing to show for it.
+    ns.Campaign.MarkStarted(round.campaignId)
     ns.Comms.Send(C.OPS.OPEN, body)
     -- The list follows OPEN, never inside it (spec 010 section 8).
     if round.lootMode == C.LOOT_MODE.SK and ns.Priority then ns.Priority.Broadcast() end
@@ -590,6 +591,12 @@ local function onSubmit(sender, body)
     maybeAutoClose(round)
 end
 
+-- campaignId -> GetTime() of the last CSTATE answered from it. A whole campaign, log
+-- and all, is the largest thing this addon sends, and after a reseed or a mass reload
+-- every client asks at once; unthrottled, those dumps share the one outgoing queue with
+-- OPEN and RESULT and push a live round minutes behind (spec 010 section 8).
+local lastStateSent = {}
+
 local function onSync(sender, body)
     if not Round.IsHost() then return end
 
@@ -601,7 +608,14 @@ local function onSync(sender, body)
         -- The version asked about is the one the client can replay to, so a client
         -- holding the right order with no history behind it still gets answered.
         if ask.priorityVersion ~= ns.Priority.HistoryVersion(ask.campaignId) then
-            ns.Priority.BroadcastState(ask.campaignId)
+            local now = GetTime()
+            local last = lastStateSent[ask.campaignId]
+            if last and now - last < C.SYNC_INTERVAL then
+                ns.Debug("coalesced a CSTATE for " .. tostring(ask.campaignId)
+                    .. "; one went out less than " .. C.SYNC_INTERVAL .. " seconds ago")
+            elseif ns.Priority.BroadcastState(ask.campaignId) then
+                lastStateSent[ask.campaignId] = now
+            end
         end
     end
 
@@ -756,9 +770,14 @@ end
 
 --- Tier count is frozen at open, so this is refused mid-round rather than applied.
 -- @return true, or false plus a reason
-function Round.BroadcastConfig()
+-- @param key  the setting that changed, when there is just one; `lockHierarchy` is the
+--   one shared setting that is not frozen mid-round, and a lock the host alone stopped
+--   enforcing is no unlock at all -- every member's editor and onRoster gate reads its
+--   own copy (spec 014 section 6).
+function Round.BroadcastConfig(key)
     if not Round.IsHost() then return false, "you are not the master looter." end
-    if Round.current and Round.current.state == C.ROUND_STATE.OPEN then
+    if key ~= "lockHierarchy"
+        and Round.current and Round.current.state == C.ROUND_STATE.OPEN then
         return false, "settings are frozen while a round is open; "
             .. "your change applies to the next one."
     end
@@ -846,7 +865,7 @@ function Round.ChangeSetting(key, value)
 
     if key == "qualityThreshold" and ns.LootDetect.Rescan then ns.LootDetect.Rescan() end
     if shared and Round.IsHost() then
-        Round.BroadcastConfig()
+        Round.BroadcastConfig(key)
         say(kind, { tierCount = value, seconds = value, lootMode = value, locked = value })
     end
     if ns.HierarchyEditor then ns.HierarchyEditor.Refresh() end
