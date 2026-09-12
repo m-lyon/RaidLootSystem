@@ -673,15 +673,25 @@ end
 -- whole campaign. A half-written log is worse than an absent one -- it replays to the
 -- wrong answer and gives no reason (section 8).
 local function requestState(msg, stored, round)
-    noticeText = string.format("Priority list for \"%s\" replaced by the host's copy "
-        .. "(version %d -> %d). Fetching its history.",
-        ns.Campaign.LabelFor(msg.campaignId), stored.version or 0, msg.version)
+    -- The same list with no history behind it (a list saved before logs were
+    -- replicated) is not replaced by anything, so it is not announced as replaced.
+    local same = (stored.version or 0) == (msg.version or 0)
+        and #PriorityList.diff(stored.order or {}, msg.order or {}) == 0
+    if not same then
+        noticeText = string.format("Priority list for \"%s\" replaced by the host's copy "
+            .. "(version %d -> %d). Fetching its history.",
+            ns.Campaign.LabelFor(msg.campaignId), stored.version or 0, msg.version)
+    end
     stored.version, stored.seed, stored.order = msg.version, msg.seed, msg.order
     stored.log = {}
     stored.seedChars = {}
     stored.logIncomplete = true       -- until a CSTATE arrives; verify says so
-    ns.Print(noticeText)
-    if round then round.priorityNotice = noticeText end
+    if same then
+        ns.Debug("priority list history for " .. tostring(msg.campaignId) .. " is missing; fetching it")
+    else
+        ns.Print(noticeText)
+        if round then round.priorityNotice = noticeText end
+    end
     -- Ask about the campaign that needs the repair, not whichever one is active:
     -- the host would otherwise compare the wrong list's version, find it in step
     -- and send nothing, leaving this one flagged incomplete for good.
@@ -689,7 +699,8 @@ local function requestState(msg, stored, round)
     -- later SKLISTs chain cleanly off the version just taken wholesale. So a throttled
     -- request is said out loud rather than leaving the log flagged incomplete in silence.
     if ns.Client and ns.Client.RequestSync then
-        if not ns.Client.RequestSync(msg.campaignId) then
+        if not ns.Client.RequestSync(msg.campaignId)
+            and not (ns.Client.HistoryRequested and ns.Client.HistoryRequested(msg.campaignId)) then
             ns.Print("the request for its history was throttled; ask again with /rls sync "
                 .. "in a few seconds.")
         end

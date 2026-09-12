@@ -584,6 +584,18 @@ return {
                          members = { "Dave=Dave,Davebot@2", "Steve=Steve,Sneaky,Dave@1" } },
         },
         {
+            -- Carol is a new alt Alice's stored ordering does not list yet, so the
+            -- mutual test misses it; the append still names Alice and extends her
+            -- ordering, so it is her record and not a second owner of her characters.
+            name = "publishing an append from an alt the record does not name replaces it",
+            input = { op = "members", records = {
+                { player = "Alice", order = { "Alice", "Bot1" }, at = 1 },
+                { player = "Carol", order = { "Alice", "Bot1", "Carol" }, at = 2 },
+            } },
+            expected = { filled = true, listed = 2, logged = 1, version = 7,
+                         tierCount = 3, members = { "Carol=Alice,Bot1,Carol@2" } },
+        },
+        {
             name = "two unrelated players keep a record each",
             input = { op = "members", records = {
                 { player = "Matt", order = { "Matt", "Mattbot" }, at = 1 },

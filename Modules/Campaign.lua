@@ -132,6 +132,19 @@ function Campaign.SameMember(storedPlayer, storedOrder, player, order)
         and Util.indexOf(storedOrder or {}, player) ~= nil
 end
 
+--- Does `order` name `storedPlayer` and extend their stored ordering at the end? That
+-- is the same player publishing from an alt the stored ordering does not yet list,
+-- which the mutual test cannot see.
+function Campaign.AppendsTo(storedPlayer, storedOrder, order)
+    storedOrder, order = storedOrder or {}, order or {}
+    if #storedOrder == 0 or #order <= #storedOrder then return false end
+    if Util.indexOf(order, storedPlayer) == nil then return false end
+    for i = 1, #storedOrder do
+        if tostring(storedOrder[i]):lower() ~= tostring(order[i]):lower() then return false end
+    end
+    return true
+end
+
 --- Record one member's ordering on a campaign record. Replaces rather than merges:
 -- a resubmission is the whole of what that member now ranks, and merging would
 -- resurrect a character they had just removed.
@@ -146,7 +159,8 @@ function Campaign.RecordMember(campaign, player, order, chars, at)
     -- publish from any of the alts collapses them.
     for stored, record in pairs(campaign.members) do
         if stored ~= player
-            and Campaign.SameMember(stored, record.order, player, order) then
+            and (Campaign.SameMember(stored, record.order, player, order)
+                 or Campaign.AppendsTo(stored, record.order, order)) then
             campaign.members[stored] = nil
         end
     end

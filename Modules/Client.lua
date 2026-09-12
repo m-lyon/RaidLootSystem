@@ -24,6 +24,7 @@ Client.config = nil          -- last CFG seen from the host
 local listeners = {}
 local frame
 local lastSync = 0
+local lastSyncAsk               -- { campaignId, version } of the last SYNC that went out
 local lastHost
 local expectedCount          -- entries in our last SUBMIT, for the section 5 check
 local lastSent = {}          -- the entries themselves, so a refused one can be named
@@ -362,6 +363,8 @@ local function onConfig(sender, body)
         -- One-way: a campaign that has run a round never un-runs it, and a host who
         -- joined late and has not seen one must not clear it for the group.
         if msg.started then host.started = true end
+        -- The hierarchy editor and the viewers read these too, not only the roll window.
+        if ns.Campaign.FireChanged then ns.Campaign.FireChanged() end
     end
     fireChanged()
 end
@@ -421,8 +424,16 @@ function Client.RequestSync(campaignId)
     -- The campaign and the list version ride along so the host can answer a history
     -- that has fallen behind without being asked twice (spec 010 section 8).
     campaignId = campaignId or ns.Campaign.ActiveId()
-    return ns.Comms.Send(C.OPS.SYNC, Serialize.encodeSync(id, campaignId,
-        ns.Priority and ns.Priority.HistoryVersion(campaignId) or 0))
+    local version = ns.Priority and ns.Priority.HistoryVersion(campaignId) or 0
+    lastSyncAsk = { campaignId = campaignId, version = version }
+    return ns.Comms.Send(C.OPS.SYNC, Serialize.encodeSync(id, campaignId, version))
+end
+
+--- True when a SYNC asking for this campaign's whole history (version 0) went out
+-- inside C.SYNC_INTERVAL, so the host is already answering it.
+function Client.HistoryRequested(campaignId)
+    return lastSyncAsk ~= nil and GetTime() - lastSync < C.SYNC_INTERVAL
+        and lastSyncAsk.campaignId == campaignId and lastSyncAsk.version == 0
 end
 
 --------------------------------------------------------------------------------

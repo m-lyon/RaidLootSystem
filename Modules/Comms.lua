@@ -65,6 +65,17 @@ function Comms.Send(op, body)
 end
 
 --- Send to one player. Used for targeted replies; bots are never comms peers.
+--- Queue a message whose body is built when it reaches the head of the queue.
+-- OPEN carries seconds remaining, so encoding it at call time and then waiting
+-- behind a long CSTATE would hand clients a deadline later than the host's.
+-- @param build  function returning the body, or nil to send nothing
+function Comms.SendDeferred(op, build)
+    local channel = Comms.Channel()
+    if not channel then return false, "not in a group" end
+    queue[#queue + 1] = { op = op, build = build, channel = channel }
+    return true
+end
+
 function Comms.SendWhisper(op, body, target)
     for _, wire in ipairs(Serialize.pack(op, body, newMsgId())) do
         queue[#queue + 1] = { wire = wire, channel = "WHISPER", target = target }
@@ -134,6 +145,17 @@ local function onUpdate(_, elapsed)
     while sendAccumulator >= interval and #queue > 0 do
         sendAccumulator = sendAccumulator - interval
         local item = table.remove(queue, 1)
+        while item and item.build do
+            local body = item.build()
+            if body then
+                local chunks = Serialize.pack(item.op, body, newMsgId())
+                for i = #chunks, 1, -1 do
+                    table.insert(queue, 1, { wire = chunks[i], channel = item.channel })
+                end
+            end
+            item = table.remove(queue, 1)
+        end
+        if not item then break end
         Comms.transport(C.PREFIX, item.wire, item.channel, item.target)
     end
     if #queue == 0 then sendAccumulator = 0 end

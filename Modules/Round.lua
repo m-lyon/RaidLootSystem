@@ -363,6 +363,16 @@ local function buildContext(round)
     }
 end
 
+--- OPEN carries seconds remaining (spec 000 section 5), so they are worked out when the
+-- message leaves the queue: a CSTATE draining ahead of it would otherwise hand every
+-- client a deadline later than the host's.
+local function sendOpen(round)
+    ns.Comms.SendDeferred(C.OPS.OPEN, function()
+        return (Serialize.encodeOpen(round.campaignId, round.id, round.tierCount,
+            math.max(0, round.endsAt - GetTime()), round.items, round.lootMode))
+    end)
+end
+
 --- Open a round over `items` (spec 004 supplies them).
 -- @return true, or false plus a reason the host can show
 function Round.Open(items)
@@ -420,7 +430,7 @@ function Round.Open(items)
     -- the moment it becomes true; a member who joined late would otherwise re-rank
     -- freely and learn of the refusal from a chat line much later (spec 014 section 3).
     Round.BroadcastConfig("started")
-    ns.Comms.Send(C.OPS.OPEN, body)
+    sendOpen(round)
     -- The list follows OPEN, never inside it (spec 010 section 8).
     if round.lootMode == C.LOOT_MODE.SK and ns.Priority then ns.Priority.Broadcast() end
 
@@ -454,7 +464,7 @@ function Round.Extend(seconds)
             .. "the deadline is unchanged."
     end
     round.endsAt = endsAt
-    ns.Comms.Send(C.OPS.OPEN, body)
+    sendOpen(round)
     say("EXTEND", { seconds = seconds, left = secondsLeft })
     fireChanged()
     return true
@@ -506,10 +516,7 @@ function Round.DropSlots(goneSlots)
 
     -- Clients replace their item list on a same-id OPEN (spec 002 section 3), so the
     -- shrunken round reaches them the same way the original did.
-    local secondsLeft = math.max(0, round.endsAt - GetTime())
-    local body = Serialize.encodeOpen(round.campaignId, round.id, round.tierCount, secondsLeft,
-        round.items, round.lootMode)
-    if body then ns.Comms.Send(C.OPS.OPEN, body) end
+    sendOpen(round)
     stateDirty = true
     fireChanged()
     return true
@@ -641,10 +648,7 @@ local function onSync(sender, body)
     local round = Round.current
     if not round or round.state ~= C.ROUND_STATE.OPEN then return end
 
-    local secondsLeft = math.max(0, round.endsAt - GetTime())
-    local body2 = Serialize.encodeOpen(round.campaignId, round.id, round.tierCount, secondsLeft,
-        round.items, round.lootMode)
-    if body2 then ns.Comms.Send(C.OPS.OPEN, body2) end
+    sendOpen(round)
     -- SYNC resends OPEN, SKLIST and STATE (spec 010 section 8).
     if round.lootMode == C.LOOT_MODE.SK and ns.Priority then ns.Priority.Broadcast() end
     broadcastState()
