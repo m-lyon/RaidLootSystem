@@ -165,6 +165,8 @@ end
 -- @return true, or nil plus a reason
 function Roster.LockedChangeAllowed(storedOrder, incomingOrder, tierCount)
     storedOrder, incomingOrder = storedOrder or {}, incomingOrder or {}
+    -- Nothing submitted yet: there is no ranking to protect (spec 014 section 7).
+    if #storedOrder == 0 then return true end
     for i = 1, #storedOrder do
         local was, now = storedOrder[i], incomingOrder[i]
         if now == nil then
@@ -181,6 +183,14 @@ function Roster.LockedChangeAllowed(storedOrder, incomingOrder, tierCount)
         return nil, "a character added to a locked hierarchy must land in Rest"
     end
     return true
+end
+
+--- May this character be appended to a locked ordering? The incoming order is the
+-- stored one plus the name, built explicitly.
+function Roster.LockedAppendAllowed(storedOrder, name, tierCount)
+    local incoming = Util.copy(storedOrder or {})
+    incoming[#incoming + 1] = name
+    return Roster.LockedChangeAllowed(storedOrder, incoming, tierCount)
 end
 
 --- "contested - Steve and Dave both claim Sneaky" (section 5).
@@ -446,9 +456,6 @@ local function pruneHierarchies(chars)
     Roster.PruneToChars(ns.Database.DefaultHierarchy(), chars)
 end
 
---- Take a character out of your roster entirely: it is global, so it leaves every
--- campaign's hierarchy and the template with it. Leaving a dangling name behind
--- would make the campaigns you are not looking at fail validation.
 --- The id of a locked campaign that ranks this character, or nil.
 function Roster.LockedRankingOf(name)
     local stored = Roster.Resolve(name) or name
@@ -461,6 +468,9 @@ function Roster.LockedRankingOf(name)
     return nil
 end
 
+--- Take a character out of your roster entirely: it is global, so it leaves every
+-- campaign's hierarchy and the template with it. Leaving a dangling name behind
+-- would make the campaigns you are not looking at fail validation.
 function Roster.Remove(name)
     local stored = Roster.Resolve(name) or name
     local chars = Util.deepCopy(DB().chars)
@@ -578,7 +588,7 @@ function Roster.SetIncludedIn(target, name, included)
         -- of the tier count would otherwise add straight into a real tier.
         if lockedReason(target) then
             local campaign = ns.Campaign.Get(target or ns.Campaign.ActiveId())
-            local ok, why = Roster.LockedChangeAllowed(list, { unpack(list), stored },
+            local ok, why = Roster.LockedAppendAllowed(list, stored,
                 campaign and campaign.host.tierCount)
             if not ok then return nil, why end
         end
@@ -960,8 +970,12 @@ local function onRoster(sender, body)
     -- A refused change is not a submission, so the record keeps the timestamp of the
     -- ordering actually in force rather than reading as submitted just now (spec 013
     -- section 3).
-    ns.Campaign.RecordHierarchy(msg.campaignId, sender, msg.order, msg.chars,
-        refused and ns.Campaign.StoredAt(msg.campaignId, sender, msg.order) or nil)
+    if refused then
+        ns.Campaign.RecordHierarchy(msg.campaignId, sender, msg.order, msg.chars,
+            ns.Campaign.StoredAt(msg.campaignId, sender, msg.order), true)
+    else
+        ns.Campaign.RecordHierarchy(msg.campaignId, sender, msg.order, msg.chars)
+    end
 
     -- The claim index, though, is rebuilt for the ACTIVE campaign only (spec 012
     -- section 8): you never need claims for a campaign you are not raiding in, and

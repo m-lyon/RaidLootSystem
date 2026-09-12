@@ -335,7 +335,7 @@ function Priority.BroadcastState(campaignId)
         ns.Debug("not sending CSTATE: this client holds no list for " .. tostring(campaignId))
         return false
     end
-    if priority.logIncomplete then
+    if priority.logIncomplete or not Priority.LogComplete(priority) then
         ns.Print("a member asked for this campaign's history, but your own copy of it is "
             .. "incomplete, so it was not sent.")
         return false

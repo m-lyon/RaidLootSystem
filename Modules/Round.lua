@@ -616,7 +616,10 @@ local function onSync(sender, body)
     if ask.campaignId and ns.Priority and ns.Campaign.IsMemberOf(ask.campaignId) then
         -- The version asked about is the one the client can replay to, so a client
         -- holding the right order with no history behind it still gets answered.
-        if ask.priorityVersion ~= ns.Priority.HistoryVersion(ask.campaignId) then
+        -- Zero is always answered: a host whose own log cannot replay also reports
+        -- zero, and staying silent would leave the asker flagged with no word why.
+        if (ask.priorityVersion or 0) == 0
+            or ask.priorityVersion ~= ns.Priority.HistoryVersion(ask.campaignId) then
             local now = GetTime()
             local until_ = lastStateSent[ask.campaignId]
             if until_ and now < until_ then

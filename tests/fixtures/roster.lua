@@ -12,6 +12,10 @@ local function run(input, ns)
         local ok, why = Roster.LockedChangeAllowed(input.stored, input.incoming, input.tierCount)
         return { ok = ok == true, why = why or "" }
 
+    elseif input.kind == "lockedAppend" then
+        local ok, why = Roster.LockedAppendAllowed(input.stored, input.name, input.tierCount)
+        return { ok = ok == true, why = why or "" }
+
     elseif input.kind == "validate" then
         local ok, why = Roster.Validate(input.order, input.chars)
         return { ok = ok == true, why = why }
@@ -445,6 +449,22 @@ return {
             -- allows anything.
             name = "a first submission is unconstrained",
             input = { kind = "locked", stored = {}, incoming = { "Matt", "Mattbot" } },
+            expected = { ok = true, why = "" },
+        },
+        {
+            -- What ships passes a tier count; an empty stored order must still allow
+            -- the first submission, or a member with no characters yet is locked out.
+            name = "a first submission is unconstrained with a tier count",
+            input = { kind = "locked", stored = {}, incoming = { "Matt", "Mattbot" },
+                      tierCount = 3 },
+            expected = { ok = true, why = "" },
+        },
+        {
+            -- SetIncludedIn's path: the incoming order has to be the whole stored
+            -- list plus one, not just its first entry plus one.
+            name = "ticking a character on appends to a stored list of several",
+            input = { kind = "lockedAppend", stored = { "Matt", "Mattbot", "Mattpal" },
+                      name = "Mattalt", tierCount = 3 },
             expected = { ok = true, why = "" },
         },
     },

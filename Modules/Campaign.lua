@@ -610,10 +610,12 @@ end
 -- @return true, or nil plus a reason
 -- @param at  when this ordering was submitted; now by default. A refused change
 --            passes the stored timestamp through, because nothing was submitted.
-function Campaign.RecordHierarchy(campaignId, player, order, chars, at)
+-- @param keepAt  take `at` as given, even nil, rather than defaulting it to now
+function Campaign.RecordHierarchy(campaignId, player, order, chars, at, keepAt)
     local campaign = Campaign.Get(campaignId)
     if not campaign then return nil, "no such campaign" end
-    local ok, why = Campaign.RecordMember(campaign, player, order, chars, at or time())
+    if not keepAt then at = at or time() end
+    local ok, why = Campaign.RecordMember(campaign, player, order, chars, at)
     if not ok then return nil, why end
     -- Deliberately no fireChanged: this runs on every ROSTER, which the group
     -- events fire often, and the roster path already tells its own listeners when
