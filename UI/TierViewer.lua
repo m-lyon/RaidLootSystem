@@ -175,6 +175,7 @@ function Viewer.Refresh()
             rowIndex = rowIndex + 1
             local row = rows[rowIndex] or createRow(rowIndex)
             row.dot:SetTexture(nil)
+            row:SetAlpha(1)
             row.name:SetText("|cff666666nobody has ranked a character here|r")
             Widgets.Tooltip(row, group.label, "No member has ranked this many characters.")
             row:ClearAllPoints()

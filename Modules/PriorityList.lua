@@ -304,11 +304,27 @@ end
 -- to the active one, so a broadcast can never carry one campaign's list under
 -- another's id.
 function Priority.Broadcast(campaignId)
-    if not ns.Round.IsHost() then return false end
     campaignId = campaignId or ns.Campaign.ActiveId()
+    if not ns.Round.IsHost() then
+        -- Not host: nobody will receive these, and the real host's list supersedes
+        -- them. Kept, they would ride a later SKLIST and resync the whole raid.
+        pendingEvents[campaignId] = nil
+        return false
+    end
     local priority = DB(campaignId)
     if not priority or #(priority.order or {}) == 0 then return false end
+    -- Only the run of queued events that leads up to the stored version can chain.
     local events = pendingEvents[campaignId]
+    if events then
+        local kept, want = {}, priority.version or 0
+        for i = #events, 1, -1 do
+            if (events[i].version or 0) ~= want then break end
+            table.insert(kept, 1, events[i])
+            want = want - 1
+        end
+        events = #kept > 0 and kept or nil
+        pendingEvents[campaignId] = events
+    end
     local body, err = Priority.Encode(campaignId, priority, events)
     if not body then
         -- Sending nothing would report success and throw the queued events away.
@@ -705,6 +721,8 @@ local function onSklist(sender, body)
     end
 
     if not ns.Comms.IsSelf(sender) then
+        -- Someone else's list now stands; anything this client queued is superseded.
+        pendingEvents[msg.campaignId] = nil
         local stored = DB(msg.campaignId)
         if stored then
             local action = Priority.ChainAction(stored, msg)
@@ -758,6 +776,7 @@ local function onCstate(sender, body)
     local campaign = ns.Campaign.Get(incoming.id)
     if not campaign then return end
     ns.Campaign.Normalise(campaign)
+    pendingEvents[incoming.id] = nil
 
     -- The campaign is the source of truth for how the group plays it, so the shared
     -- host settings come with it (spec 012 section 9). The hierarchy is on the campaign
@@ -775,10 +794,9 @@ local function onCstate(sender, body)
 
     local priority = campaign.priority
     -- An older version of the same list is not an answer to anything: a host who
-    -- joined late and holds less than we do must not roll us backwards. A different
-    -- seed is a reseed, which legitimately restarts the numbering.
-    if (incoming.priority.version or 0) < (priority.version or 0)
-        and (incoming.priority.seed or 0) == (priority.seed or 0) then
+    -- joined late and holds less than we do must not roll us backwards. A reseed is
+    -- stamped version + 1, so a lower version is older whatever its seed.
+    if (incoming.priority.version or 0) < (priority.version or 0) then
         ns.Debug(string.format("ignored a CSTATE at version %d, behind the stored %d",
             incoming.priority.version or 0, priority.version or 0))
         -- A client that took a newer list wholesale while this one was draining asked
