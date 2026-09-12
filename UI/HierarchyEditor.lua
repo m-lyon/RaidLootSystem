@@ -314,8 +314,9 @@ function Editor.Refresh()
         if not locked and entryRow.position and entryRow.position < #order then row.down:Enable()
         else row.down:Disable() end
         -- A removal promotes everything below it, so it is a re-rank too and the
-        -- lock refuses it (spec 014).
-        if locked then row.remove:Disable() else row.remove:Enable() end
+        -- lock refuses it (spec 014) -- for a character ranked in a locked campaign,
+        -- exactly as Roster.Remove does, so a mistaken unticked add can still go.
+        if Roster().LockedRankingOf(name) then row.remove:Disable() else row.remove:Enable() end
         row:SetAlpha(entryRow.included and 1 or 0.6)
         row:Show()
 

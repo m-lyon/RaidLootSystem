@@ -768,6 +768,14 @@ local function onCstate(sender, body)
         and (incoming.priority.seed or 0) == (priority.seed or 0) then
         ns.Debug(string.format("ignored a CSTATE at version %d, behind the stored %d",
             incoming.priority.version or 0, priority.version or 0))
+        -- A client that took a newer list wholesale while this one was draining asked
+        -- once, and the host coalesced that ask into this stale answer. Nothing else
+        -- will ask again, so say so rather than leave the log incomplete in silence.
+        if priority.logIncomplete then
+            ns.Print(string.format("the history for \"%s\" arrived behind the list you "
+                .. "hold and was ignored; ask again with /rls sync in a few seconds.",
+                campaign.label or incoming.id))
+        end
         return
     end
     priority.version = incoming.priority.version

@@ -694,6 +694,27 @@ function Campaign.StoredOrder(campaignId, player, order)
     return nil
 end
 
+--- Stored records, other than the player's own, whose ordering shares any character
+-- with an incoming one. One-way on purpose, unlike SameMember: under a lock a member
+-- publishing from a character their stored ordering does not rank matches neither
+-- lookup StoredOrder makes, and would otherwise record a re-rank unchecked (spec 014).
+-- Sorted by player so a refusal names the same record every time.
+function Campaign.OverlappingOrders(campaign, player, order)
+    local out = {}
+    for stored, record in pairs((campaign or {}).members or {}) do
+        if stored ~= player then
+            for _, name in ipairs(order or {}) do
+                if Util.indexOf(record.order or {}, name) then
+                    out[#out + 1] = { player = stored, order = record.order }
+                    break
+                end
+            end
+        end
+    end
+    table.sort(out, function(a, b) return a.player < b.player end)
+    return out
+end
+
 --- When one member's stored ordering was recorded, under the same matching rule
 -- StoredOrder uses, or nil.
 function Campaign.StoredAt(campaignId, player, order)

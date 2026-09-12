@@ -111,6 +111,18 @@ local function run(input, ns)
                 record.at)
         end
 
+        -- A publish under a lock from a player no record matches (spec 014): each
+        -- stored record sharing a character, and whether the lock allows it.
+        if input.publish then
+            local checked = {}
+            for i, other in ipairs(Campaign.OverlappingOrders(campaign, input.publish.player,
+                    input.publish.order)) do
+                local ok = ns.Roster.LockedChangeAllowed(other.order, input.publish.order)
+                checked[i] = other.player .. (ok and "=allowed" or "=refused")
+            end
+            return { checked = checked }
+        end
+
         local out = {}
         for i, member in ipairs(Campaign.MemberList(campaign)) do
             out[i] = string.format("%s=%s@%s", member.player,
@@ -591,6 +603,31 @@ return {
             } },
             expected = { filled = true, listed = 2, logged = 1, version = 7,
                          tierCount = 3, members = { "Matt=Mattpal@400" } },
+        },
+
+        {
+            -- Alice's record does not name Carol, so neither StoredOrder lookup finds
+            -- it; the overlap still does, and the re-rank is refused.
+            name = "under a lock, publishing a re-rank from an unranked alt is refused",
+            input = { op = "members", records = {
+                { player = "Alice", order = { "Alice", "Bot1", "Bot2" }, at = 1 },
+                { player = "Dave", order = { "Dave" }, at = 2 },
+            }, publish = { player = "Carol", order = { "Bot2", "Bot1", "Alice" } } },
+            expected = { checked = { "Alice=refused" } },
+        },
+        {
+            name = "under a lock, an unranked alt appending to the stored order is allowed",
+            input = { op = "members", records = {
+                { player = "Alice", order = { "Alice", "Bot1" }, at = 1 },
+            }, publish = { player = "Carol", order = { "Alice", "Bot1", "Carol" } } },
+            expected = { checked = { "Alice=allowed" } },
+        },
+        {
+            name = "a publish sharing no character with any record checks nothing",
+            input = { op = "members", records = {
+                { player = "Alice", order = { "Alice", "Bot1" }, at = 1 },
+            }, publish = { player = "Craig", order = { "Craig" } } },
+            expected = { checked = {} },
         },
 
         ------------------------------------------------------------------

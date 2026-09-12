@@ -443,6 +443,18 @@ end
 --- Take a character out of your roster entirely: it is global, so it leaves every
 -- campaign's hierarchy and the template with it. Leaving a dangling name behind
 -- would make the campaigns you are not looking at fail validation.
+--- The id of a locked campaign that ranks this character, or nil.
+function Roster.LockedRankingOf(name)
+    local stored = Roster.Resolve(name) or name
+    for campaignId, campaign in pairs(ns.Database.Campaigns()) do
+        if Util.indexOf(campaign.hierarchy or {}, stored)
+            and ns.Campaign.HierarchyLocked(campaignId) then
+            return campaignId
+        end
+    end
+    return nil
+end
+
 function Roster.Remove(name)
     local stored = Roster.Resolve(name) or name
     local chars = Util.deepCopy(DB().chars)
@@ -451,13 +463,11 @@ function Roster.Remove(name)
     -- A removal is a re-rank: everything below it moves up a place. So it is
     -- refused exactly like the untick beside it while any campaign that ranks this
     -- character is locked (spec 014).
-    for campaignId, campaign in pairs(ns.Database.Campaigns()) do
-        if Util.indexOf(campaign.hierarchy or {}, stored)
-            and ns.Campaign.HierarchyLocked(campaignId) then
-            return nil, string.format("\"%s\" has started and its hierarchies are locked, and "
-                .. "%s is ranked in it. The master looter can unlock them in the host panel.",
-                ns.Campaign.LabelFor(campaignId), stored)
-        end
+    local campaignId = Roster.LockedRankingOf(stored)
+    if campaignId then
+        return nil, string.format("\"%s\" has started and its hierarchies are locked, and "
+            .. "%s is ranked in it. The master looter can unlock them in the host panel.",
+            ns.Campaign.LabelFor(campaignId), stored)
     end
 
     chars[stored] = nil
@@ -882,6 +892,28 @@ local function onRoster(sender, body)
     -- rather than dropped quietly.
     local stored = ns.Campaign.StoredOrder(msg.campaignId, sender, msg.order)
     local refused = false
+    if not stored and ns.Campaign.HierarchyLocked(msg.campaignId) then
+        -- No record matches the sender, but one may still rank these characters: a
+        -- member publishing from an alt their stored ordering does not name. That is
+        -- still a change to a locked ordering, and there is no stored ranking of the
+        -- sender's own to substitute, so the publish is refused whole.
+        local overlaps = ns.Campaign.OverlappingOrders(ns.Campaign.Get(msg.campaignId),
+            sender, msg.order)
+        for _, other in ipairs(overlaps) do
+            local ok, why = Roster.LockedChangeAllowed(other.order, msg.order)
+            if not ok then
+                local line = string.format("%s published a hierarchy that ranks %s's "
+                    .. "characters, but \"%s\" is locked (%s); it was not recorded.",
+                    tostring(sender), other.player, ns.Campaign.LabelFor(msg.campaignId),
+                    tostring(why))
+                if warnedLocked[sender] then ns.Debug(line) else
+                    warnedLocked[sender] = true
+                    ns.Print(line)
+                end
+                return
+            end
+        end
+    end
     if stored and ns.Campaign.HierarchyLocked(msg.campaignId) then
         local ok, why = Roster.LockedChangeAllowed(stored, msg.order)
         if not ok then
