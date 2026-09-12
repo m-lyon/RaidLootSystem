@@ -623,6 +623,15 @@ return {
             expected = { checked = { "Alice=allowed" } },
         },
         {
+            -- Dave wrongly ranks Carol's bot. Carol's ordering does not name Dave, so
+            -- Dave's record is not hers: she is recorded and the claim stays contested.
+            name = "under a lock, a late joiner sharing a character with a stranger is not refused",
+            input = { op = "members", records = {
+                { player = "Dave", order = { "Dave", "Carolbot" }, at = 1 },
+            }, publish = { player = "Carol", order = { "Carolbot", "Carol" } } },
+            expected = { checked = {} },
+        },
+        {
             name = "a publish sharing no character with any record checks nothing",
             input = { op = "members", records = {
                 { player = "Alice", order = { "Alice", "Bot1" }, at = 1 },

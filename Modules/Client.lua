@@ -348,7 +348,9 @@ local function onConfig(sender, body)
     -- stops at whoever happens to be master looter: the next one to hold it opens a
     -- round under their own stale default, and a seeded Suicide Kings campaign
     -- silently resolves by roll.
-    local campaign = ns.Campaign.Get(msg.campaignId)
+    -- Never from yourself: the host already holds these, and under /rls simulate the
+    -- looped-back CFG carries the simulation's settings, not the campaign's.
+    local campaign = not ns.Comms.IsSelf(sender) and ns.Campaign.Get(msg.campaignId)
     if campaign then
         local host = ns.Campaign.Normalise(campaign).host
         host.tierCount = msg.tierCount or host.tierCount

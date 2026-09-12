@@ -9,7 +9,7 @@ local function run(input, ns)
     local Roster = ns.Roster
 
     if input.kind == "locked" then
-        local ok, why = Roster.LockedChangeAllowed(input.stored, input.incoming)
+        local ok, why = Roster.LockedChangeAllowed(input.stored, input.incoming, input.tierCount)
         return { ok = ok == true, why = why or "" }
 
     elseif input.kind == "validate" then
@@ -393,6 +393,21 @@ return {
             input = { kind = "locked", stored = { "Matt", "Mattbot" },
                       incoming = { "Matt", "Mattbot", "Mattpal" } },
             expected = { ok = true, why = "" },
+        },
+        {
+            name = "an append past the tier count lands in Rest and is allowed",
+            input = { kind = "locked", stored = { "Matt", "Mattbot", "Mattpal" },
+                      incoming = { "Matt", "Mattbot", "Mattpal", "Mattalt" }, tierCount = 3 },
+            expected = { ok = true, why = "" },
+        },
+        {
+            -- Ranked short of the tier count: the new character would sit in T2 and
+            -- jump every other member's Rest characters.
+            name = "an append that would land in a real tier is refused",
+            input = { kind = "locked", stored = { "Matt" },
+                      incoming = { "Matt", "Mattbot" }, tierCount = 3 },
+            expected = { ok = false,
+                         why = "a character added to a locked hierarchy must land in Rest" },
         },
         {
             -- A removal is a reorder wearing a disguise: taking out your T1

@@ -163,7 +163,7 @@ end
 -- removal is a reorder wearing a disguise, because taking out your T1 promotes
 -- every character below it by one.
 -- @return true, or nil plus a reason
-function Roster.LockedChangeAllowed(storedOrder, incomingOrder)
+function Roster.LockedChangeAllowed(storedOrder, incomingOrder, tierCount)
     storedOrder, incomingOrder = storedOrder or {}, incomingOrder or {}
     for i = 1, #storedOrder do
         local was, now = storedOrder[i], incomingOrder[i]
@@ -173,6 +173,12 @@ function Roster.LockedChangeAllowed(storedOrder, incomingOrder)
         if tostring(was):lower() ~= tostring(now):lower() then
             return nil, "characters cannot be re-ranked in a locked hierarchy"
         end
+    end
+    -- An append that would sit above Rest (a member who ranked fewer characters than
+    -- there are tiers) jumps every other member's Rest characters.
+    if #incomingOrder > #storedOrder and (tierCount or 0) > 0
+        and not Tiers.isRest(Tiers.forPosition(#storedOrder + 1, tierCount), tierCount) then
+        return nil, "a character added to a locked hierarchy must land in Rest"
     end
     return true
 end
@@ -568,7 +574,14 @@ function Roster.SetIncludedIn(target, name, included)
     if included and not at then
         -- Allowed even while locked: it appends, so it lands in Rest and jumps
         -- nobody (spec 014). Without it a character rolled mid-campaign could
-        -- never be brought in at all.
+        -- never be brought in at all. Only into Rest, though: a member ranked short
+        -- of the tier count would otherwise add straight into a real tier.
+        if lockedReason(target) then
+            local campaign = ns.Campaign.Get(target or ns.Campaign.ActiveId())
+            local ok, why = Roster.LockedChangeAllowed(list, { unpack(list), stored },
+                campaign and campaign.host.tierCount)
+            if not ok then return nil, why end
+        end
         list[#list + 1] = stored
     elseif not included and at then
         local locked = lockedReason(target)
@@ -900,7 +913,8 @@ local function onRoster(sender, body)
         local overlaps = ns.Campaign.OverlappingOrders(ns.Campaign.Get(msg.campaignId),
             sender, msg.order)
         for _, other in ipairs(overlaps) do
-            local ok, why = Roster.LockedChangeAllowed(other.order, msg.order)
+            local ok, why = Roster.LockedChangeAllowed(other.order, msg.order,
+                ns.Campaign.Get(msg.campaignId).host.tierCount)
             if not ok then
                 local line = string.format("%s published a hierarchy that ranks %s's "
                     .. "characters, but \"%s\" is locked (%s); it was not recorded.",
@@ -915,7 +929,8 @@ local function onRoster(sender, body)
         end
     end
     if stored and ns.Campaign.HierarchyLocked(msg.campaignId) then
-        local ok, why = Roster.LockedChangeAllowed(stored, msg.order)
+        local ok, why = Roster.LockedChangeAllowed(stored, msg.order,
+            ns.Campaign.Get(msg.campaignId).host.tierCount)
         if not ok then
             -- Once per sender per login session: a diverged client republishes on
             -- every roster event, and an unbounded repeat buries the raid's chat
@@ -987,7 +1002,8 @@ function Roster.ApplyImport(order, chars)
     -- pruneHierarchies touches anything, so a refused import changes nothing.
     local activeId = ns.Campaign.ActiveId()
     if ns.Campaign.HierarchyLocked(activeId) then
-        local allowed, why2 = Roster.LockedChangeAllowed(ns.Database.Hierarchy() or {}, order)
+        local allowed, why2 = Roster.LockedChangeAllowed(ns.Database.Hierarchy() or {}, order,
+            ns.Campaign.Get(activeId).host.tierCount)
         if not allowed then
             return nil, string.format("\"%s\" has started and its hierarchies are locked (%s). "
                 .. "The master looter can unlock them in the host panel.",

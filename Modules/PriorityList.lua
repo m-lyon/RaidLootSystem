@@ -165,6 +165,15 @@ function Priority.Differs(stored, received)
     return #PriorityList.diff(stored.order or {}, received.order or {}) > 0
 end
 
+--- Does this log replay all the way to its list's version? It must start at a seed and
+-- end at the stored version. A list stored before logs were replicated holds a
+-- version with an empty log, and chaining onto that looks complete while it is not.
+function Priority.LogComplete(priority)
+    local log = priority.log or {}
+    return #log > 0 and log[1].kind == "seed"
+        and (log[#log].version or 0) == (priority.version or 0)
+end
+
 --- Can the events on a SKLIST be appended to this client's log, or has it fallen too
 -- far behind to chain them (section 8)?
 --
@@ -177,6 +186,10 @@ function Priority.ChainAction(stored, received)
     local from = stored.version or 0
     local to = received.version or 0
     if to < from then return "resync" end            -- a reseed, or a different list
+    -- An already-flagged log is awaiting its CSTATE; any other gap has to ask for one.
+    if from > 0 and not stored.logIncomplete and not Priority.LogComplete(stored) then
+        return "resync"
+    end
     if to == from then
         return #PriorityList.diff(stored.order or {}, received.order or {}) > 0
             and "resync" or "current"
@@ -270,7 +283,7 @@ end
 function Priority.HistoryVersion(campaignId)
     local priority = DB(campaignId)
     if not priority or priority.logIncomplete then return 0 end
-    if #(priority.log or {}) == 0 then return 0 end
+    if not Priority.LogComplete(priority) then return 0 end
     return priority.version or 0
 end
 

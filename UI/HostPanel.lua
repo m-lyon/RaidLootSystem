@@ -292,7 +292,7 @@ local function change(key, value)
 end
 
 local function buildSettings(parent)
-    local panel = section(parent, "Raid settings", 250)
+    local panel = section(parent, "Raid settings", 280)
 
     panel.tier = Widgets.Slider(panel, "RaidLootSystemHostTierSlider", "Tier count",
         C.MIN_TIER_COUNT, C.MAX_TIER_COUNT, 1,
