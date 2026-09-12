@@ -51,15 +51,17 @@ local function newMsgId()
 end
 
 --- Queue one message. It is chunked here and drained at C.SEND_RATE per second.
--- @return true when queued, false plus a reason when there is nowhere to send it
+-- @return true when queued (plus the chunk count queued for it), false plus a
+--         reason when there is nowhere to send it
 function Comms.Send(op, body)
     local channel = Comms.Channel()
     if not channel then return false, "not in a group" end
 
-    for _, wire in ipairs(Serialize.pack(op, body, newMsgId())) do
+    local chunks = Serialize.pack(op, body, newMsgId())
+    for _, wire in ipairs(chunks) do
         queue[#queue + 1] = { wire = wire, channel = channel }
     end
-    return true
+    return true, #chunks
 end
 
 --- Send to one player. Used for targeted replies; bots are never comms peers.

@@ -332,7 +332,13 @@ function Priority.BroadcastState(campaignId)
         ns.Print("the campaign could not be sent: " .. tostring(err))
         return false
     end
-    return ns.Comms.Send(C.OPS.CSTATE, body)
+    local ok, chunks = ns.Comms.Send(C.OPS.CSTATE, body)
+    -- The CSTATE carries the whole log up to the current version, so anything still
+    -- queued from before it is already included -- left in place, it re-attaches to
+    -- the next SKLIST and makes that message's event count outrun its version delta,
+    -- which Priority.ChainAction reads as a gap and resyncs a client that was fine.
+    if ok then pendingEvents[campaignId] = nil end
+    return ok, chunks
 end
 
 --- Apply one mutation on the host: store, log, announce, broadcast.

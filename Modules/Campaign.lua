@@ -635,7 +635,10 @@ end
 function Campaign.HasStarted(campaignId)
     if not campaignId or campaignId == "" then return false end
     for _, record in ipairs(ns.History and ns.History.Records() or {}) do
-        if record.campaignId == campaignId then return true end
+        -- A simulated record must never outlive its simulation (spec 009): counting
+        -- one here would leave a never-raided campaign permanently locked once
+        -- /rls simulate had run in it, even after Simulate.finish() cleans up.
+        if record.campaignId == campaignId and not record.simulated then return true end
     end
     return false
 end

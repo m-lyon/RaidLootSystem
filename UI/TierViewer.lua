@@ -15,6 +15,7 @@ local Viewer = ns.TierViewer
 local TierRoster = ns.TierRoster
 local Tiers = ns.Tiers
 local Widgets = ns.Widgets
+local Client = ns.Client
 
 local ROW_H = 18
 local BAND_H = 20
@@ -136,10 +137,14 @@ function Viewer.Refresh()
         return
     end
 
-    local tierCount = campaign.host.tierCount or 0
+    -- Resolved the same way the hierarchy editor and the priority viewer resolve it,
+    -- through the same call, so a round open with a frozen count never draws a
+    -- different band count here than it decides with (spec 011 section 4).
+    local tierCount, tierSynced = Client.TierCountInForce(campaign.id)
     local members = ns.Campaign.MemberList(campaign)
-    frame.header:SetText(string.format("\"%s\" -- %s.", campaign.label or campaign.id,
-        tierCount > 0 and (tierCount .. " tiers, then Rest") or "flat roll, no tiers"))
+    local tierLabel = tierCount > 0 and (tierCount .. " tiers, then Rest") or "flat roll, no tiers"
+    frame.header:SetText(string.format("\"%s\" -- %s%s|r.", campaign.label or campaign.id,
+        tierSynced and "|cffaaaaaa" or "|cff666666", tierLabel))
 
     local present = {}
     for _, member in ipairs(members) do

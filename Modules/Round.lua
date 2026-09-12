@@ -595,10 +595,15 @@ local function onSubmit(sender, body)
     maybeAutoClose(round)
 end
 
--- campaignId -> GetTime() of the last CSTATE answered from it. A whole campaign, log
--- and all, is the largest thing this addon sends, and after a reseed or a mass reload
--- every client asks at once; unthrottled, those dumps share the one outgoing queue with
--- OPEN and RESULT and push a live round minutes behind (spec 010 section 8).
+-- campaignId -> GetTime() before which another CSTATE for it is coalesced. A whole
+-- campaign, log and all, is the largest thing this addon sends, and after a reseed
+-- or a mass reload every client asks at once; unthrottled, those dumps share the one
+-- outgoing queue with OPEN and RESULT and push a live round minutes behind (spec 010
+-- section 8). The window has to cover how long the dump actually takes to drain
+-- (chunk count / C.SEND_RATE), not a flat C.SYNC_INTERVAL -- a campaign with a few
+-- hundred logged events chunks into far more than SYNC_INTERVAL seconds of traffic
+-- at C.CHUNK_BODY_MAX bytes each, and a fixed window lets every repeated SYNC queue
+-- another full copy behind the one still sending.
 local lastStateSent = {}
 
 local function onSync(sender, body)
@@ -613,16 +618,19 @@ local function onSync(sender, body)
         -- holding the right order with no history behind it still gets answered.
         if ask.priorityVersion ~= ns.Priority.HistoryVersion(ask.campaignId) then
             local now = GetTime()
-            local last = lastStateSent[ask.campaignId]
-            if last and now - last < C.SYNC_INTERVAL then
+            local until_ = lastStateSent[ask.campaignId]
+            if until_ and now < until_ then
                 ns.Debug("coalesced a CSTATE for " .. tostring(ask.campaignId)
-                    .. "; one went out less than " .. C.SYNC_INTERVAL .. " seconds ago")
+                    .. "; one is still draining")
             else
                 -- Stamped whether or not it went out: a refusal with a standing cause
                 -- (an incomplete log here, an encode failure) prints a line, and a raid
-                -- of clients retrying inside SYNC_INTERVAL would fill the host's chat.
-                lastStateSent[ask.campaignId] = now
-                ns.Priority.BroadcastState(ask.campaignId)
+                -- of clients retrying inside the window would fill the host's chat.
+                -- The window covers the estimated drain time, not just SYNC_INTERVAL,
+                -- so a repeated SYNC cannot queue another full dump behind the first.
+                local ok, chunks = ns.Priority.BroadcastState(ask.campaignId)
+                local drain = ok and (chunks or 1) / C.SEND_RATE or 0
+                lastStateSent[ask.campaignId] = now + math.max(C.SYNC_INTERVAL, drain)
             end
         end
     end
