@@ -358,8 +358,12 @@ local function hostMutate(event, text, quiet, campaignId)
     local logged = next_.log[#next_.log]
     if event.kind == "seed" then
         -- A seed restarts the log, so no client can chain onto it; the full state
-        -- goes out instead and the queue starts over with it.
+        -- goes out instead and the queue starts over with it. The new log begins at
+        -- the seed and is complete by construction, so a stale incomplete flag is
+        -- cleared here -- otherwise BroadcastState refuses the one message the seed
+        -- path exists to send.
         pendingEvents[campaignId] = nil
+        priority.logIncomplete = nil
     elseif logged then
         local queued = pendingEvents[campaignId] or {}
         queued[#queued + 1] = logged
@@ -846,19 +850,6 @@ local BAND_H = 20
 
 local bands = {}
 
---- char -> tier, from what each member submitted for this campaign (spec 013
--- section 3). Stored, so the bands are right after a reload rather than empty
--- until somebody republishes.
-local function tierIndex(tierCount)
-    local out = {}
-    for _, member in ipairs(ns.Campaign.Members()) do
-        for position, char in ipairs(member.order) do
-            out[char:lower()] = ns.Tiers.forPosition(position, tierCount)
-        end
-    end
-    return out
-end
-
 local function confirm(kind, text, payload)
     StaticPopup_Show("RLS_CONFIRM_PRIORITY", text, nil, { kind = kind, payload = payload })
 end
@@ -1014,9 +1005,8 @@ function Priority.RefreshSection(panel)
 
     local me = UnitName("player")
     local claims = ns.Roster.claims
-    local campaign = ns.Campaign.Active()
-    local tierCount = (campaign and campaign.host.tierCount) or 0
-    local tierOf = tierIndex(tierCount)
+    local tierCount = ns.Client.TierCountInForce(ns.Campaign.ActiveId())
+    local tierOf = ns.Campaign.TierIndex(tierCount)
 
     -- Grouped by tier, and inside a band still in list order, which is the order a
     -- round awards in (spec 003 section 5). The controls are unchanged: they act on

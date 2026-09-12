@@ -706,9 +706,40 @@ function Campaign.StoredAt(campaignId, player, order)
     return nil
 end
 
+--- One member's stored character table, under the same matching rule StoredOrder
+-- uses, or nil.
+function Campaign.StoredChars(campaignId, player, order)
+    local campaign = Campaign.Get(campaignId)
+    local members = campaign and campaign.members
+    if not members then return nil end
+    local record = members[player]
+    if record then return record.chars end
+    if not order then return nil end
+    for stored, other in pairs(members) do
+        if Campaign.SameMember(stored, other.order, player, order) then return other.chars end
+    end
+    return nil
+end
+
 --- The submitted hierarchies of one campaign, active by default.
 function Campaign.Members(campaignId)
     return Campaign.MemberList(Campaign.Get(campaignId or Campaign.ActiveId()))
+end
+
+--- char -> tier, from what each member submitted for this campaign (spec 013
+-- section 3). Stored, so the bands are right after a reload rather than empty until
+-- somebody republishes. A character's tier comes from its position in its OWNER's
+-- hierarchy, never from a position on the priority list (spec 010 section 3), and an
+-- owner who has submitted nothing leaves their characters without one. The two
+-- priority-list surfaces share this so they cannot band the same list differently.
+function Campaign.TierIndex(tierCount, campaignId)
+    local out = {}
+    for _, member in ipairs(Campaign.Members(campaignId)) do
+        for position, char in ipairs(member.order) do
+            out[char:lower()] = ns.Tiers.forPosition(position, tierCount)
+        end
+    end
+    return out
 end
 
 function Campaign.DeleteRefusal(campaignId)

@@ -59,26 +59,9 @@ end
 
 --- Resolve every WoW-facing lookup the row model needs, so PriorityList.viewRows
 -- stays arithmetic over plain tables (spec 011 section 4).
---
--- A character's tier comes from its position in its OWNER's hierarchy. Read from
--- the campaign's stored member records (spec 013 section 3), so the badges and the
--- bands survive a reload instead of emptying until somebody republishes. What a
--- tier is not is a position on this list: the two decide different halves of a
--- contest (spec 010 section 3). An owner who has submitted nothing to this
--- campaign leaves their characters without a tier, and they band separately.
-local function tierIndex(tierCount)
-    local out = {}
-    for _, member in ipairs(ns.Campaign.Members()) do
-        for position, char in ipairs(member.order) do
-            out[char:lower()] = ns.Tiers.forPosition(position, tierCount)
-        end
-    end
-    return out
-end
-
 local function context(order, tierCount)
     local claims = ns.Roster.claims
-    local tierOf = tierIndex(tierCount)
+    local tierOf = ns.Campaign.TierIndex(tierCount)
     local owners, present, classes, contested, tiers = {}, {}, {}, {}, {}
     for _, name in ipairs(order) do
         local claim = claims[name:lower()]

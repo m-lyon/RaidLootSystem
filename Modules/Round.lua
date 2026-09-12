@@ -416,6 +416,10 @@ function Round.Open(items)
     -- Stamped only once the round really opens: a round that failed to encode must not
     -- freeze every member's ranking with nothing to show for it.
     ns.Campaign.MarkStarted(round.campaignId)
+    -- `started` is what engages the lock and it only travels on CFG, so it goes out
+    -- the moment it becomes true; a member who joined late would otherwise re-rank
+    -- freely and learn of the refusal from a chat line much later (spec 014 section 3).
+    Round.BroadcastConfig("started")
     ns.Comms.Send(C.OPS.OPEN, body)
     -- The list follows OPEN, never inside it (spec 010 section 8).
     if round.lootMode == C.LOOT_MODE.SK and ns.Priority then ns.Priority.Broadcast() end
@@ -613,8 +617,12 @@ local function onSync(sender, body)
             if last and now - last < C.SYNC_INTERVAL then
                 ns.Debug("coalesced a CSTATE for " .. tostring(ask.campaignId)
                     .. "; one went out less than " .. C.SYNC_INTERVAL .. " seconds ago")
-            elseif ns.Priority.BroadcastState(ask.campaignId) then
+            else
+                -- Stamped whether or not it went out: a refusal with a standing cause
+                -- (an incomplete log here, an encode failure) prints a line, and a raid
+                -- of clients retrying inside SYNC_INTERVAL would fill the host's chat.
                 lastStateSent[ask.campaignId] = now
+                ns.Priority.BroadcastState(ask.campaignId)
             end
         end
     end
@@ -773,10 +781,11 @@ end
 -- @param key  the setting that changed, when there is just one; `lockHierarchy` is the
 --   one shared setting that is not frozen mid-round, and a lock the host alone stopped
 --   enforcing is no unlock at all -- every member's editor and onRoster gate reads its
---   own copy (spec 014 section 6).
+--   own copy (spec 014 section 6). `started` is exempt for the same reason: it becomes
+--   true at the moment a round opens and is useless to a member who hears it later.
 function Round.BroadcastConfig(key)
     if not Round.IsHost() then return false, "you are not the master looter." end
-    if key ~= "lockHierarchy"
+    if key ~= "lockHierarchy" and key ~= "started"
         and Round.current and Round.current.state == C.ROUND_STATE.OPEN then
         return false, "settings are frozen while a round is open; "
             .. "your change applies to the next one."

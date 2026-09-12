@@ -896,6 +896,16 @@ local function onRoster(sender, body)
                 ns.Print(line)
             end
             msg.order = Util.copy(stored)
+            -- The stored ordering names characters the sender's new table may no longer
+            -- describe, and a row with no entry loses its class colour. Keep the stored
+            -- entries for exactly those names.
+            local previous = ns.Campaign.StoredChars(msg.campaignId, sender, stored) or {}
+            msg.chars = Util.copy(msg.chars or {})
+            for _, name in ipairs(msg.order) do
+                if msg.chars[name] == nil and previous[name] then
+                    msg.chars[name] = Util.copy(previous[name])
+                end
+            end
             refused = true
         end
     end
@@ -955,10 +965,15 @@ function Roster.ApplyImport(order, chars)
     -- Pruning a dropped character out of another campaign's hierarchy is a removal, and
     -- a removal is a re-rank: everything below it moves up a place. So it is refused
     -- here exactly as Roster.Remove refuses it (spec 014).
+    -- Tested the way PruneToChars prunes, on the lowercased name: an entry whose
+    -- capitalisation differs from the imported key is not actually dropped, and
+    -- refusing the whole import over it would be the two rules disagreeing.
+    local importedNames = {}
+    for name in pairs(chars) do importedNames[name:lower()] = true end
     for campaignId, campaign in pairs(ns.Database.Campaigns()) do
         if ns.Campaign.HierarchyLocked(campaignId) then
             for _, ranked in ipairs(campaign.hierarchy or {}) do
-                if chars[ranked] == nil then
+                if not importedNames[tostring(ranked):lower()] then
                     return nil, string.format("\"%s\" has started and its hierarchies are "
                         .. "locked, and this import drops %s, which is ranked in it. The "
                         .. "master looter can unlock them in the host panel.",
