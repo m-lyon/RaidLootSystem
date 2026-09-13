@@ -426,7 +426,7 @@ Under `SK`, added to 005:
 - The detail panel shows entrants ordered by list position, so the outcome is legible before
   submission. Under SK the result is fully determined at close, and pretending otherwise would
   be theatre.
-- Results mode shows `position 3` in place of a roll, plus `-> bottom` on the winner, and marks
+- Results mode shows a tier rank in place of a roll (005 §5), plus `-> suicide` on the winner, and marks
   entries `withdrawn (won [Item])` where rule (1) or the star removed them. An entry that
   silently vanished from the results table is indistinguishable from a bug.
 

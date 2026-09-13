@@ -189,6 +189,10 @@ can open with `/rls sk`. Its row model is `PriorityList.viewRows` in `Core/`, an
   before the next is consulted, so "third in T1" is the real place in the queue. The global index
   is still on the row (`position`) and is still what moves, suicides, the log and the
   announcements are written in -- do not confuse the two when touching either surface.
+  The roll window's grid and detail panel draw the same rank, via `TierRoster.ranks`. Its results
+  view (and history, which renders through it) instead ranks among that item's entrants, because
+  the list-wide rank is not recoverable from `ROLLS`. Spec 005 §3 and §5. Neither view draws
+  the global index; the resolved winner reads `#1 -> suicide`, not `-> bottom`.
 
 Spec 013 adds `Core/TierRoster.lua` and `UI/TierViewer.lua`: the campaign tier roster every
 player can open with `/rls tiers`, built from `campaign.members` -- what each member submitted,

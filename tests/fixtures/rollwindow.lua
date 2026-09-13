@@ -34,11 +34,46 @@ local function run(input, ns)
         local inCount, total, names = RW.Outstanding(input.expected, input.submitted)
         return { inCount = inCount, total = total, outstanding = table.concat(names, ",") }
 
-    elseif input.op == "detail" then
+    elseif input.op == "entrytiers" then
         local out = {}
-        for i, d in ipairs(RW.DetailRows(input.entries, input.isSK, input.priority)) do
+        for char, tier in pairs(RW.EntryTiers(input.tiers, input.allEntries)) do
+            out[#out + 1] = char .. "=" .. tier
+        end
+        table.sort(out)
+        return out
+
+    elseif input.op == "ranks" then
+        local grid, detail = RW.Ranks(input.priority, input.tiers, input.allEntries, input.tierCount)
+        local function fmt(t)
+            local out = {}
+            for char, rank in pairs(t) do out[#out + 1] = char .. "=" .. rank end
+            table.sort(out)
+            return out
+        end
+        return { grid = fmt(grid), detail = fmt(detail) }
+
+    elseif input.op == "entrydetail" then
+        -- The real pipeline refreshEntry wires up for the detail panel: live tiers,
+        -- overridden by each entry's stamped tier, ranked, then rendered as detail
+        -- rows -- so a rank a fixture checks here is one the panel would actually
+        -- show, not just a property of the intermediate table.
+        local tiers = RW.EntryTiers(input.tiers, input.allEntries)
+        local tierRanks = ns.TierRoster.ranks(input.priority, tiers, input.tierCount)
+        local out = {}
+        for i, d in ipairs(RW.DetailRows(input.entries, input.isSK, input.priority, tierRanks)) do
             out[i] = string.format("T%d %s (%s) #%s", d.tier, d.char, d.owner or "?",
                 tostring(d.listIdx or "?"))
+            if d.tierRank then out[i] = out[i] .. " rank " .. d.tierRank end
+        end
+        return out
+
+    elseif input.op == "detail" then
+        local out = {}
+        for i, d in ipairs(RW.DetailRows(input.entries, input.isSK, input.priority,
+                input.tierRanks)) do
+            out[i] = string.format("T%d %s (%s) #%s", d.tier, d.char, d.owner or "?",
+                tostring(d.listIdx or "?"))
+            if d.tierRank then out[i] = out[i] .. " rank " .. d.tierRank end
         end
         return out
 
@@ -291,6 +326,79 @@ return {
                       } },
             expected = { "T2 Sneaky (Steve) #3", "T2 Ash (Anna) #9", "T2 Zed (Anna) #?" },
         },
+        {
+            -- Spec 013 section 6: the number drawn is the rank inside the tier. The
+            -- sort still runs on list index, which orders a tier the same way.
+            name = "under SK the panel carries each entrant's rank inside its tier",
+            input = { op = "detail", isSK = true,
+                      priority = { Sneaky = 3, Ash = 9 },
+                      tierRanks = { Sneaky = 1, Ash = 2 },
+                      entries = {
+                          { char = "Ash", owner = "Anna", tier = 2 },
+                          { char = "Sneaky", owner = "Steve", tier = 2 },
+                      } },
+            expected = { "T2 Sneaky (Steve) #3 rank 1", "T2 Ash (Anna) #9 rank 2" },
+        },
+        {
+            -- An entry's tier is a snapshot taken at submission (section 6) and can
+            -- drift from the live index if a hierarchy is resubmitted mid-round. The
+            -- entered character's stamped tier wins, so the rank later computed from
+            -- this table agrees with the tier the detail panel labels the row with;
+            -- an uninvolved character is untouched.
+            name = "entrytiers overrides the live index with each entry's stamped tier",
+            input = { op = "entrytiers",
+                      tiers = { ash = 2, sneaky = 1, zed = 2 },
+                      allEntries = {
+                          [1] = { { char = "Ash", tier = 1 } },
+                          [2] = { { char = "Sneaky", tier = 1 } },
+                      } },
+            expected = { "ash=1", "sneaky=1", "zed=2" },
+        },
+        {
+            -- The full chain refreshEntry wires up for the panel: live tiers are
+            -- overridden by each entry's stamped tier, then ranked, then rendered.
+            -- Ash's stamped tier (1) differs from its live one (2), and its rank
+            -- must be computed inside the stamped tier -- 2nd behind Sneaky, not
+            -- whatever it would rank among tier 2's members. Zed's own entry is
+            -- still stamped tier 2 (allEntries carries it, unchanged from live), but
+            -- moving Ash out of tier 2 leaves Zed alone there, so Zed's rank in this
+            -- table (1) differs from its live rank (2, behind Ash) even though Zed
+            -- never resubmitted -- the detail panel drags in untouched band-mates.
+            name = "entrydetail ranks a resubmitted entry inside its stamped tier",
+            input = { op = "entrydetail", isSK = true, tierCount = 2,
+                      tiers = { ash = 2, sneaky = 1, zed = 2 },
+                      priority = { Ash = 5, Sneaky = 3, Zed = 9 },
+                      allEntries = { [1] = { { char = "Ash", tier = 1 },
+                                              { char = "Sneaky", tier = 1 } },
+                                     [2] = { { char = "Zed", tier = 2 } } },
+                      entries = {
+                          { char = "Ash", owner = "Anna", tier = 1 },
+                          { char = "Sneaky", owner = "Steve", tier = 1 },
+                          { char = "Zed", owner = "Anna", tier = 2 },
+                      } },
+            expected = { "T1 Sneaky (Steve) #3 rank 1", "T1 Ash (Anna) #5 rank 2",
+                         "T2 Zed (Anna) #9 rank 1" },
+        },
+        {
+            -- Regression (spec 005/013): refreshEntry must keep the grid's numbers on
+            -- the live tier index even though the detail panel overrides by the
+            -- entry's stamped tier. Same inputs as the case above: Ash's stamped tier
+            -- (1) differs from its live one (2). The grid must match plain
+            -- TierRoster.ranks over the live index -- what /rls sk shows -- for every
+            -- character including Zed, who never resubmitted; only the detail table
+            -- may move Zed's rank as a side effect of Ash's move.
+            name = "ranks keeps the grid on the live tier index while the detail table follows stamped tiers",
+            input = { op = "ranks", tierCount = 2,
+                      tiers = { ash = 2, sneaky = 1, zed = 2 },
+                      priority = { Ash = 5, Sneaky = 3, Zed = 9 },
+                      allEntries = { [1] = { { char = "Ash", tier = 1 },
+                                              { char = "Sneaky", tier = 1 } },
+                                     [2] = { { char = "Zed", tier = 2 } } } },
+            expected = {
+                grid = { "Ash=1", "Sneaky=1", "Zed=2" },
+                detail = { "Ash=2", "Sneaky=1", "Zed=1" },
+            },
+        },
 
         ----------------------------------------------------------------------
         -- The results table (section 5)
@@ -358,9 +466,11 @@ return {
                          rows = { "T1 Steve(Steve) 50 WON" } },
         },
         {
-            -- Spec 010 section 11: positions instead of rolls, "-> bottom" on the winner,
-            -- and a withdrawn entry named with what it won instead.
-            name = "under SK rows show positions, the winner drops, a withdrawn entry says why",
+            -- Spec 010 section 11: ranks instead of rolls, "-> suicide" on the winner,
+            -- and a withdrawn entry named with what it won instead. The number is the
+            -- rank among the tier's consulted entrants (spec 013 section 6); the winner
+            -- is marked as suiciding, with no list index: that is not shown to players.
+            name = "under SK rows show tier ranks, the winner drops, a withdrawn entry says why",
             input = { op = "results", itemIdx = 2, isSK = true, owners = OWNERS,
                       results = { { itemIdx = 1, winner = "Steve", tier = 1, roll = 0, outcome = "WON" },
                                   { itemIdx = 2, winner = "Bonk", tier = 1, roll = 0, outcome = "WON" } },
@@ -372,9 +482,30 @@ return {
             expected = {
                 unclaimed = false, degraded = false,
                 winners = { "1:Bonk(Dave)" },
-                rows = { "T1 Bonk(Dave) position 4 -> bottom WON",
-                         "T1 Chop(Dave) position 7",
+                rows = { "T1 Bonk(Dave) #1 -> suicide WON",
+                         "T1 Chop(Dave) #2",
                          "T1 Steve(Steve) withdrawn (won item 1)" },
+            },
+        },
+        {
+            -- A not-consulted T2 entry takes no rank, and the count restarts per tier:
+            -- a T2 entrant low on the list is still first among T2's consulted.
+            name = "under SK the tier rank restarts per tier and skips unconsulted entries",
+            input = { op = "results", itemIdx = 1, isSK = true, owners = OWNERS,
+                      results = { { itemIdx = 1, winner = "Chop", tier = 1, roll = 0, outcome = "WON" } },
+                      rolls = {
+                          { itemIdx = 1, char = "Chop", tier = 1, roll = 0, listIdx = 9, status = "", rerolled = {} },
+                          { itemIdx = 1, char = "Smash", tier = 2, roll = 0, listIdx = 2, status = "NC", rerolled = {} },
+                          { itemIdx = 1, char = "Bonk", tier = 1, roll = 0, listIdx = 12, status = "", rerolled = {} },
+                          { itemIdx = 1, char = "Sneaky", tier = 2, roll = 0, listIdx = 20, status = "", rerolled = {} },
+                      } },
+            expected = {
+                unclaimed = false, degraded = false,
+                winners = { "1:Chop(Dave)" },
+                rows = { "T1 Chop(Dave) #1 -> suicide WON",
+                         "T1 Bonk(Dave) #2",
+                         "T2 Sneaky(Steve) #1",
+                         "T2 Smash(Steve) T2 - not consulted" },
             },
         },
 

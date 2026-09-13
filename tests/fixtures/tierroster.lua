@@ -61,6 +61,14 @@ local function run(input, ns)
         end
         return out
 
+    elseif input.op == "ranks" then
+        -- "Bob=1": the rank the roll window draws beside Bob.
+        local ranks = TierRoster.ranks(input.positions, input.tiers, input.tierCount)
+        local out = {}
+        for char, rank in pairs(ranks) do out[#out + 1] = char .. "=" .. rank end
+        table.sort(out)
+        return out
+
     elseif input.op == "row" then
         -- One row in full, so the fields the window reads are pinned.
         local bands = TierRoster.bands(input.members, input.tierCount, input.ctx)
@@ -213,6 +221,16 @@ return {
                 { char = "Cat", position = 3, tier = 1 },
             } },
             expected = { "T1: Cat#3/1", "T2: -", "Rest: Ann#1/1", "No hierarchy: Bob#2/1" },
+        },
+        {
+            -- The roll window holds the list as SKLIST's name -> index map and the
+            -- tiers as Campaign.TierIndex's lowercase keys; the ranks must still be
+            -- groupRows' numbers, keyed by the name as the map spells it.
+            name = "ranks from a position map match groupRows' tier numbers",
+            input = { op = "ranks", tierCount = 2,
+                      positions = { Ann = 1, Bob = 2, Cat = 3, Dan = 4, Eve = 5 },
+                      tiers = { ann = 2, bob = 1, cat = 3, dan = 1 } },
+            expected = { "Ann=1", "Bob=1", "Cat=1", "Dan=2", "Eve=1" },
         },
         {
             name = "the unknown band is absent when every row has a tier",

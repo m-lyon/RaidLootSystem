@@ -53,9 +53,12 @@ for the rest of the night reopened a stale result. Old rounds are read in the hi
 - Ordered by hierarchy position, so your highest priority is at the top.
 - **Tier badge** on every row, computed for the round's frozen tier count. Colour-coded, with
   Rest visually distinct from the numbered tiers.
-- **Priority position** beside it under `lootMode = "SK"` (010 §11) — the character's index in
-  the list, with positions above the raid's median visually distinct. *Am I near the top* is the
-  thing people want to know at a glance. Nothing renders under `ROLL`.
+- **Priority position** beside it under `lootMode = "SK"` (010 §11) — the character's rank
+  inside its tier, the same number the priority viewer draws (013 §6), with list positions above
+  the raid's median visually distinct. *Am I near the top* is the thing people want to know at a
+  glance. Nothing renders under `ROLL`. This was the list index until 013 §6 banded the list: a
+  tier is walked to exhaustion before the next, so the global index is not a place in any queue,
+  and two screens numbering one character differently read as a bug.
 - **The star control** under `SK` — one radio per character row across the item columns, marking
   that character's priority pick and clearing any previous star for it.
 - Class-coloured name; a marker on your own character.
@@ -96,6 +99,9 @@ the outcome is legible before submission. Suicide Kings is deterministic: once t
 known the winner is known, and presenting it as suspenseful would be theatre. The panel should
 read as *"this is who wins unless someone else enters"*.
 
+Each entrant is numbered by its rank inside its tier, as on the grid rows; the order is still
+list position, which orders a tier identically.
+
 The positions come from the host's `SKLIST` (010 §8), never from local state. A client that has
 not received it shows positions as unknown and says so — substituting its own copy could show a
 player a position the host will not honour.
@@ -128,7 +134,16 @@ On `RESULT` + `ROLLS`, the window switches. Per item:
   status (rolled / not consulted / withdrawn) and the re-roll list (000 §5); the roll value alone
   cannot distinguish a not-consulted entry from a withdrawn one, and a client that guessed would
   mislabel someone's entry.
-- Under `SK`, the winner's row also shows `-> bottom`, and entries removed by the one-win rule or
+- Under `SK` the number drawn is each consulted entry's **rank inside its tier among that item's
+  entrants** — the order the tier was walked in. Not the list-wide rank the entry grid shows: by
+  results the list has moved, and `ROLLS` carries list indices only for who entered, so that
+  number cannot be rebuilt here or from a history record, which renders through this same view.
+  Ranking `ROLLS`' own indices is an ordering of the host's numbers, not a re-derivation of the
+  outcome. Not-consulted and withdrawn entries take no rank.
+- Under `SK`, the winner's row also shows `-> suicide` after its tier rank. Not `-> bottom`: a
+  suicide lands on the last present index, which need not be the last row (010 §6), and the list
+  index that would qualify "bottom" is not shown to players -- it is the number the list is keyed
+  and logged by, not a place in anyone's queue. Entries removed by the one-win rule or
   by another character's star are marked `withdrawn (won [Item])` (010 §7). An entry that
   silently vanished from the results table is indistinguishable from a bug.
 - **Not-consulted entries shown explicitly**, greyed, labelled `"T3 — not consulted"` (003 §5).
