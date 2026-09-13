@@ -145,6 +145,27 @@ function TierRoster.groupRows(rows, tierCount)
     return bands
 end
 
+--- Each character's rank inside its tier, for a screen that holds the list as a
+-- name -> index map rather than as rows -- the roll window, from the host's SKLIST.
+--
+-- Goes through groupRows so the number is the one the two list surfaces draw for
+-- the same character; a third derivation would be free to disagree with them.
+-- @param positions  { [char] = list index }, as PriorityList.positions returns
+-- @param tiers      { [lowercase char] = tier }, as Campaign.TierIndex returns
+-- @return { [char] = tierPosition }, keyed as `positions` is
+function TierRoster.ranks(positions, tiers, tierCount)
+    tiers = tiers or {}
+    local rows = {}
+    for char, position in pairs(positions or {}) do
+        rows[#rows + 1] = { char = char, position = position, tier = tiers[keyOf(char)] }
+    end
+    table.sort(rows, function(a, b) return a.position < b.position end)
+    TierRoster.groupRows(rows, tierCount)
+    local out = {}
+    for _, row in ipairs(rows) do out[row.char] = row.tierPosition end
+    return out
+end
+
 --- Members announcing this campaign who have submitted no ordering. Named rather
 -- than counted (section 5): "not submitted: Craig" is actionable, "2/3" is not.
 -- @param announced  array of player names seen in this campaign

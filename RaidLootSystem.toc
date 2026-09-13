@@ -2,7 +2,7 @@
 ## Title: Raid Loot System
 ## Notes: Tiered raid loot distribution for players running several characters.
 ## Author: Matt Lyon
-## Version: 0.3.0
+## Version: 0.3.1
 ## SavedVariables: RaidLootSystemDB
 
 # Load order is fixed by spec 000 section 3: Libs, Core, Data, Modules, UI, bootstrap.

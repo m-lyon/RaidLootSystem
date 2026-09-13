@@ -207,12 +207,14 @@ end
 --- The accepted entries for one item, in the order the panel lists them.
 -- Under ROLL: by tier, then owner, then name. Under SK: by list position, so the
 -- outcome is legible before submission; unknown positions sort last.
--- @param priority  charName -> list index, from the host's SKLIST, or nil
-function RollWindow.DetailRows(entries, isSK, priority)
+-- @param priority   charName -> list index, from the host's SKLIST, or nil
+-- @param tierRanks  charName -> rank inside its tier (TierRoster.ranks), or nil
+function RollWindow.DetailRows(entries, isSK, priority, tierRanks)
     local rows = {}
     for _, e in ipairs(entries or {}) do
         local listIdx = priority and priority[e.char] or nil
-        rows[#rows + 1] = { char = e.char, owner = e.owner, tier = e.tier, listIdx = listIdx }
+        rows[#rows + 1] = { char = e.char, owner = e.owner, tier = e.tier, listIdx = listIdx,
+                            tierRank = tierRanks and tierRanks[e.char] or nil }
     end
     table.sort(rows, function(a, b)
         if a.tier ~= b.tier then return a.tier < b.tier end
@@ -299,7 +301,36 @@ function RollWindow.ResultTable(itemIdx, results, rolls, owners, isSK)
         end
         return a.char < b.char
     end)
+
+    -- Under SK, each consulted entry's rank inside its tier among this item's
+    -- entrants: the order the tier was walked in (spec 003 section 5). Not the
+    -- list-wide rank the viewer draws -- by now the list has moved, and ROLLS
+    -- carries list indices only for who entered, so that number cannot be
+    -- rebuilt here or in a history record.
+    if isSK then
+        local seen = {}
+        for _, row in ipairs(out.rows) do
+            if row.status == C.ROLL_STATUS.ROLLED then
+                seen[row.tier] = (seen[row.tier] or 0) + 1
+                row.tierRank = seen[row.tier]
+                if row.won then
+                    for _, w in ipairs(out.winners) do
+                        if w.char:lower() == row.char:lower() then w.tierRank = row.tierRank end
+                    end
+                end
+            end
+        end
+    end
     return out
+end
+
+--- The SK text for a winner: its rank in the tier, and that it suicides.
+--
+-- Not "-> bottom": a suicide lands on the last present index, which is not the
+-- last row when the tail is absent (spec 010 section 6), and the list index that
+-- would qualify it is not shown to players.
+function RollWindow.SuicideText(tierRank)
+    return "#" .. tostring(tierRank or "?") .. " -> suicide"
 end
 
 --- The right-hand text of one results row (section 5).
@@ -312,9 +343,8 @@ function RollWindow.RowText(row, isSK, tierLabel, wonLabel)
         return "withdrawn (won " .. (wonLabel or "another item") .. ")"
     end
     if isSK then
-        local text = "position " .. tostring(row.listIdx)
-        if row.won then text = text .. " -> bottom" end
-        return text
+        if row.won then return RollWindow.SuicideText(row.tierRank) end
+        return "#" .. tostring(row.tierRank or "?")
     end
     local rerolled = row.rerolled or {}
     if #rerolled == 0 then return tostring(row.roll) end
@@ -711,12 +741,16 @@ local function refreshEntry(round)
         selectedIdx = items[1] and items[1].idx or nil
     end
 
-    -- Present characters' list positions, for the SK median.
-    local presentPositions = {}
+    -- Present characters' list positions, for the SK median, and every character's
+    -- rank inside its tier -- the number the priority viewer draws (spec 013 section
+    -- 6), from the same owner hierarchies the viewer bands by.
+    local presentPositions, tierRanks = {}, nil
     if sk and round.priority then
         for name, position in pairs(round.priority) do
             if ns.Roster.IsPresent(name) then presentPositions[#presentPositions + 1] = position end
         end
+        tierRanks = ns.TierRoster.ranks(round.priority,
+            ns.Campaign.TierIndex(round.tierCount, round.campaignId), round.tierCount)
     end
 
     -- Columns.
@@ -808,13 +842,16 @@ local function refreshEntry(round)
             Widgets.SetDotPresent(row.dot, char.present)
             row:SetAlpha(char.present and 1 or 0.5)
             if sk then
+                -- The rank is drawn; the colour stays the list-wide near-the-top
+                -- signal, as in the viewer.
                 local position = round.priority and round.priority[char.name] or nil
+                local rank = tierRanks and tierRanks[char.name] or "?"
                 if not position then
                     row.position:SetText("|cff888888?|r")
                 elseif RollWindow.AboveMedian(position, presentPositions) then
-                    row.position:SetText("|cff66ff66#" .. position .. "|r")
+                    row.position:SetText("|cff66ff66#" .. rank .. "|r")
                 else
-                    row.position:SetText("|cffaaaaaa#" .. position .. "|r")
+                    row.position:SetText("|cffaaaaaa#" .. rank .. "|r")
                 end
             else
                 row.position:SetText("")
@@ -848,7 +885,7 @@ local function refreshEntry(round)
     local item = selectedIdx and itemByIdx(round, selectedIdx)
     if item then
         local lines = { "Selected: " .. itemLabel(round, item) }
-        local detail = RollWindow.DetailRows(round.entries[item.idx], sk, round.priority)
+        local detail = RollWindow.DetailRows(round.entries[item.idx], sk, round.priority, tierRanks)
         if #detail == 0 then
             lines[#lines + 1] = "|cff888888No entries accepted yet.|r"
         else
@@ -857,7 +894,7 @@ local function refreshEntry(round)
                 local text = ns.Tiers.label(d.tier, round.tierCount) .. "  "
                     .. colouredChar(d.char) .. " (" .. tostring(d.owner or "?") .. ")"
                 if sk then
-                    text = text .. " |cff888888#" .. tostring(d.listIdx or "?") .. "|r"
+                    text = text .. " |cff888888#" .. tostring(d.listIdx and d.tierRank or "?") .. "|r"
                 end
                 parts[#parts + 1] = text
             end
@@ -1014,7 +1051,7 @@ function RollWindow.RenderResults(content, pool, view)
             local text = "   |cff66ff66Winner|r " .. colouredChar(w.char)
                 .. " (" .. tostring(w.owner or "?") .. ") "
                 .. ns.Tiers.label(w.tier, view.tierCount)
-            local right = sk and ("position " .. tostring(w.listIdx or "?") .. " -> bottom")
+            local right = sk and RollWindow.SuicideText(w.tierRank)
                 or ("roll " .. tostring(w.roll))
             if item.count > 1 then text = text .. "  |cff888888copy " .. w.copy .. "|r" end
             local row = line(text, right)

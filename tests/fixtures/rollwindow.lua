@@ -36,9 +36,11 @@ local function run(input, ns)
 
     elseif input.op == "detail" then
         local out = {}
-        for i, d in ipairs(RW.DetailRows(input.entries, input.isSK, input.priority)) do
+        for i, d in ipairs(RW.DetailRows(input.entries, input.isSK, input.priority,
+                input.tierRanks)) do
             out[i] = string.format("T%d %s (%s) #%s", d.tier, d.char, d.owner or "?",
                 tostring(d.listIdx or "?"))
+            if d.tierRank then out[i] = out[i] .. " rank " .. d.tierRank end
         end
         return out
 
@@ -291,6 +293,19 @@ return {
                       } },
             expected = { "T2 Sneaky (Steve) #3", "T2 Ash (Anna) #9", "T2 Zed (Anna) #?" },
         },
+        {
+            -- Spec 013 section 6: the number drawn is the rank inside the tier. The
+            -- sort still runs on list index, which orders a tier the same way.
+            name = "under SK the panel carries each entrant's rank inside its tier",
+            input = { op = "detail", isSK = true,
+                      priority = { Sneaky = 3, Ash = 9 },
+                      tierRanks = { Sneaky = 1, Ash = 2 },
+                      entries = {
+                          { char = "Ash", owner = "Anna", tier = 2 },
+                          { char = "Sneaky", owner = "Steve", tier = 2 },
+                      } },
+            expected = { "T2 Sneaky (Steve) #3 rank 1", "T2 Ash (Anna) #9 rank 2" },
+        },
 
         ----------------------------------------------------------------------
         -- The results table (section 5)
@@ -358,9 +373,11 @@ return {
                          rows = { "T1 Steve(Steve) 50 WON" } },
         },
         {
-            -- Spec 010 section 11: positions instead of rolls, "-> bottom" on the winner,
-            -- and a withdrawn entry named with what it won instead.
-            name = "under SK rows show positions, the winner drops, a withdrawn entry says why",
+            -- Spec 010 section 11: ranks instead of rolls, "-> suicide" on the winner,
+            -- and a withdrawn entry named with what it won instead. The number is the
+            -- rank among the tier's consulted entrants (spec 013 section 6); the winner
+            -- is marked as suiciding, with no list index: that is not shown to players.
+            name = "under SK rows show tier ranks, the winner drops, a withdrawn entry says why",
             input = { op = "results", itemIdx = 2, isSK = true, owners = OWNERS,
                       results = { { itemIdx = 1, winner = "Steve", tier = 1, roll = 0, outcome = "WON" },
                                   { itemIdx = 2, winner = "Bonk", tier = 1, roll = 0, outcome = "WON" } },
@@ -372,9 +389,30 @@ return {
             expected = {
                 unclaimed = false, degraded = false,
                 winners = { "1:Bonk(Dave)" },
-                rows = { "T1 Bonk(Dave) position 4 -> bottom WON",
-                         "T1 Chop(Dave) position 7",
+                rows = { "T1 Bonk(Dave) #1 -> suicide WON",
+                         "T1 Chop(Dave) #2",
                          "T1 Steve(Steve) withdrawn (won item 1)" },
+            },
+        },
+        {
+            -- A not-consulted T2 entry takes no rank, and the count restarts per tier:
+            -- a T2 entrant low on the list is still first among T2's consulted.
+            name = "under SK the tier rank restarts per tier and skips unconsulted entries",
+            input = { op = "results", itemIdx = 1, isSK = true, owners = OWNERS,
+                      results = { { itemIdx = 1, winner = "Chop", tier = 1, roll = 0, outcome = "WON" } },
+                      rolls = {
+                          { itemIdx = 1, char = "Chop", tier = 1, roll = 0, listIdx = 9, status = "", rerolled = {} },
+                          { itemIdx = 1, char = "Smash", tier = 2, roll = 0, listIdx = 2, status = "NC", rerolled = {} },
+                          { itemIdx = 1, char = "Bonk", tier = 1, roll = 0, listIdx = 12, status = "", rerolled = {} },
+                          { itemIdx = 1, char = "Sneaky", tier = 2, roll = 0, listIdx = 20, status = "", rerolled = {} },
+                      } },
+            expected = {
+                unclaimed = false, degraded = false,
+                winners = { "1:Chop(Dave)" },
+                rows = { "T1 Chop(Dave) #1 -> suicide WON",
+                         "T1 Bonk(Dave) #2",
+                         "T2 Sneaky(Steve) #1",
+                         "T2 Smash(Steve) T2 - not consulted" },
             },
         },
 
