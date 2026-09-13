@@ -229,6 +229,27 @@ function RollWindow.DetailRows(entries, isSK, priority, tierRanks)
     return rows
 end
 
+--- A live tier index with each entered character's tier overridden by the tier
+-- its entry was stamped with (section 6). `Campaign.TierIndex` is this client's
+-- current read of the hierarchies; an entry's `tier` is a snapshot taken at
+-- submission and never moves. The detail panel groups a row by the entry's
+-- stamped tier, so its rank must come from that same tier -- otherwise a
+-- hierarchy resubmitted mid-round (or a stale roster cache) bands the character
+-- one way for the label and another way for the number beside it.
+-- @param tiers       { [lowercase char] = tier }, from Campaign.TierIndex
+-- @param allEntries  round.entries: { [itemIdx] = array of { char, tier, ... } }
+-- @return a new { [lowercase char] = tier } table; `tiers` is not mutated
+function RollWindow.EntryTiers(tiers, allEntries)
+    local out = {}
+    for char, tier in pairs(tiers or {}) do out[char] = tier end
+    for _, list in pairs(allEntries or {}) do
+        for _, e in ipairs(list) do
+            if e.char and e.tier then out[e.char:lower()] = e.tier end
+        end
+    end
+    return out
+end
+
 local function finalRoll(row)
     local rerolled = row.rerolled or {}
     if #rerolled > 0 then return rerolled[#rerolled] end
@@ -749,8 +770,9 @@ local function refreshEntry(round)
         for name, position in pairs(round.priority) do
             if ns.Roster.IsPresent(name) then presentPositions[#presentPositions + 1] = position end
         end
-        tierRanks = ns.TierRoster.ranks(round.priority,
-            ns.Campaign.TierIndex(round.tierCount, round.campaignId), round.tierCount)
+        local tiers = RollWindow.EntryTiers(
+            ns.Campaign.TierIndex(round.tierCount, round.campaignId), round.entries)
+        tierRanks = ns.TierRoster.ranks(round.priority, tiers, round.tierCount)
     end
 
     -- Columns.

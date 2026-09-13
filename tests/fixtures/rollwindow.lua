@@ -34,6 +34,14 @@ local function run(input, ns)
         local inCount, total, names = RW.Outstanding(input.expected, input.submitted)
         return { inCount = inCount, total = total, outstanding = table.concat(names, ",") }
 
+    elseif input.op == "entrytiers" then
+        local out = {}
+        for char, tier in pairs(RW.EntryTiers(input.tiers, input.allEntries)) do
+            out[#out + 1] = char .. "=" .. tier
+        end
+        table.sort(out)
+        return out
+
     elseif input.op == "detail" then
         local out = {}
         for i, d in ipairs(RW.DetailRows(input.entries, input.isSK, input.priority,
@@ -305,6 +313,21 @@ return {
                           { char = "Sneaky", owner = "Steve", tier = 2 },
                       } },
             expected = { "T2 Sneaky (Steve) #3 rank 1", "T2 Ash (Anna) #9 rank 2" },
+        },
+        {
+            -- An entry's tier is a snapshot taken at submission (section 6) and can
+            -- drift from the live index if a hierarchy is resubmitted mid-round. The
+            -- entered character's stamped tier wins, so the rank later computed from
+            -- this table agrees with the tier the detail panel labels the row with;
+            -- an uninvolved character is untouched.
+            name = "entrytiers overrides the live index with each entry's stamped tier",
+            input = { op = "entrytiers",
+                      tiers = { ash = 2, sneaky = 1, zed = 2 },
+                      allEntries = {
+                          [1] = { { char = "Ash", tier = 1 } },
+                          [2] = { { char = "Sneaky", tier = 1 } },
+                      } },
+            expected = { "ash=1", "sneaky=1", "zed=2" },
         },
 
         ----------------------------------------------------------------------
