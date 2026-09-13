@@ -31,7 +31,7 @@ An item becomes a **round candidate** if all hold:
 1. It has an item link (skip coin slots).
 2. `quality >= host.qualityThreshold` (default 4, epic).
 3. It is equippable — `itemInfo.equipLoc` is a real slot — **or** it is a recognised tier token
-   (which is not equippable but is redeemable).
+   (which is not equippable but is redeemable) — **or** it is a recipe (§6).
 
 Everything else — gold, Emblems, crafting mats, quest items, BoE greens — is excluded from
 auto-add but remains **manually addable** from the host panel (006). That covers Primordial
@@ -167,6 +167,26 @@ scheme, and it keeps working if the server adds custom tokens following the same
 Backing that up: an explicit `itemId → classes` override table, populated during implementation
 by querying the server's item database. The override wins where both match. Do not attempt to
 enumerate token item ids from memory.
+
+### Recipes
+
+A profession recipe — "Plans: Invulnerable Mail" — is not equippable either, and the equip test
+dropped it, so epic plans never reached the roll window at all. `ItemInfo.Classify` therefore
+carries `classIndex` through on **every** return path, including the not-equippable one, and sets
+`recipe = true` when it is `Data.CLASS_INDEX.RECIPE`. `LootDetect.IsCandidate` accepts
+`info.recipe` **above** the equip test, next to the token clause.
+
+The class position is resolved even when the subclass index map is unusable: it comes from
+`GetAuctionItemClasses()`, which the length check in §4 says nothing about. Only the subclass
+lookup is gated.
+
+A recipe is still `special` (it is not equippable), so the filter is off for it and nobody is
+excluded, and it is still subject to the quality threshold.
+
+`Data.CLASS_INDEX.RECIPE` is **not verified** against a live client — `Data.RECIPE_INDEX_VERIFIED`
+is `false`. A wrong position auto-lists some other item class instead, which the host unticks in
+the setup list, and leaves recipes in the skipped list where "Add item" puts them back: bounded
+and visible, not silent. `/rls itemclasses` prints the position to check it against.
 
 ### Special items
 

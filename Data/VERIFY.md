@@ -124,6 +124,27 @@ Three things to look at while you are there:
    subclasses here but weapon *permissions* in `Data/ClassArmor.lua`. The two spellings must
    match exactly.
 
+### The recipe class position — NOT verified
+
+`Data.CLASS_INDEX.RECIPE` is `9`, read off reference material for the 3.3.5a auction-house class
+list and **never checked in game**. `Data.RECIPE_INDEX_VERIFIED` is `false`.
+
+| Table | Claim | Status |
+|---|---|---|
+| `Data.CLASS_INDEX.WEAPON` | position 1 | verified 2026-09-06 |
+| `Data.CLASS_INDEX.ARMOR` | position 2 | verified 2026-09-06 |
+| `Data.CLASS_INDEX.RECIPE` | position 9 | **unverified — needs `/rls itemclasses` on a raid night** |
+
+`/rls itemclasses` prints the live class list and names which position we expect recipes at, so
+the check is reading one line. When it agrees, set `Data.RECIPE_INDEX_VERIFIED = true` here and
+add the date.
+
+The failure mode is bounded: the position is only used to mark an item a round candidate
+(spec 004 §6). A wrong one auto-lists some other class of item — the host sees it in the setup
+list and unticks it — and leaves recipes in the skipped list, where "Add item" puts them back.
+No item is awarded wrongly and nobody is filtered off anything, because a recipe is `special`
+either way.
+
 ### What happens while it is unverified
 
 `Modules/ItemInfo.lua` compares the length of each live list against the length of our table at

@@ -36,13 +36,28 @@ Data.SUBCLASS_ORDER_VERIFIED = true
 --------------------------------------------------------------------------------
 -- Class positions
 --------------------------------------------------------------------------------
--- Only two class positions matter. Everything else is either a tier token (handled by
--- Data/TierTokens.lua, by name) or not equippable, and an item that is neither is marked
--- `special` and skips the filter entirely (spec 004 section 6).
+-- WEAPON and ARMOR drive the subclass lookup. RECIPE drives nothing but the candidate
+-- rule: a recipe is not equippable, so without it "Plans: Invulnerable Mail" never
+-- reaches the roll window at all (spec 004 section 6). Everything else is either a tier
+-- token (handled by Data/TierTokens.lua, by name) or not equippable, and an item that is
+-- neither is marked `special` and skips the filter entirely.
+--
+-- WEAPON and ARMOR were confirmed in game on 2026-09-06. RECIPE is NOT VERIFIED -- it is
+-- read off reference material for the 3.3.5a auction-house class list and wants a
+-- `/rls itemclasses` check on a raid night (Data/VERIFY.md).
+--
+-- Its failure mode is bounded and loud rather than silent: a wrong position auto-lists
+-- some other item class -- gems, say -- as round candidates, which the host sees in the
+-- setup list and unticks, and leaves recipes in the skipped list where "Add item" puts
+-- them back. Nothing is awarded wrongly and nobody is filtered off anything, because a
+-- recipe is `special` either way (Core/Eligibility.lua check 3).
+
+Data.RECIPE_INDEX_VERIFIED = false
 
 Data.CLASS_INDEX = {
     WEAPON = 1,
     ARMOR  = 2,
+    RECIPE = 9,
 }
 
 --------------------------------------------------------------------------------

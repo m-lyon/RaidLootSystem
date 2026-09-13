@@ -33,11 +33,17 @@ local function run(input, ns)
         token      = token,
         special    = info.special and true or false,
         unresolved = info.unresolved and true or false,
+        recipe     = info.recipe and true or false,
+        -- The class position must survive every return path in Classify, including the
+        -- not-equippable one that used to drop it (section 6). Asserted on every case
+        -- rather than on one, because the paths are what differ.
+        carriedClass = info.classIndex == (input.raw or {}).classIndex,
     }
 end
 
 -- Positions, as Data/ItemClasses.lua orders them.
-local WEAPON, ARMOR = 1, 2
+local WEAPON, ARMOR, RECIPE = 1, 2, 9
+local CONSUMABLE = 4
 local AXE_1H, SWORD_2H, STAFF = 1, 9, 10
 local WEAPON_MISC, DAGGER, FISHING_POLE = 12, 13, 17
 local ARMOR_MISC, CLOTH, LEATHER, MAIL, PLATE = 1, 2, 3, 4, 5
@@ -55,7 +61,7 @@ end
 
 local NOTHING = {
     equipLoc = "", armor = "", weapon = "", group = "", token = "",
-    special = false, unresolved = false,
+    special = false, unresolved = false, recipe = false, carriedClass = true,
 }
 
 local function expect(fields)
@@ -284,6 +290,39 @@ return {
         {
             name = "an empty lookup is special rather than an error",
             input = { raw = {} },
+            expected = expect({ special = true, unresolved = true }),
+        },
+
+        ----------------------------------------------------------------------
+        -- Recipes, and the class position every path carries (section 6)
+        ----------------------------------------------------------------------
+        {
+            name = "a recipe is flagged as one and stays special",
+            input = { raw = item({ name = "Plans: Invulnerable Mail", equipLoc = "",
+                                   classIndex = RECIPE, subClassIndex = 1 }) },
+            expected = expect({ special = true, recipe = true }),
+        },
+        {
+            name = "a non-equippable that is not a recipe keeps its class position",
+            input = { raw = item({ equipLoc = "", classIndex = CONSUMABLE,
+                                   subClassIndex = 1 }) },
+            expected = expect({ special = true }),
+        },
+        {
+            name = "an equippable item carries its class position too",
+            input = { raw = item({ equipLoc = "INVTYPE_CHEST", classIndex = ARMOR,
+                                   subClassIndex = PLATE }) },
+            expected = expect({ equipLoc = "INVTYPE_CHEST", armor = "PLATE" }),
+        },
+        {
+            name = "a tier token carries its class position and is not a recipe",
+            input = { raw = item({ name = "Breastplate of the Conqueror", equipLoc = "",
+                                   classIndex = CONSUMABLE }) },
+            expected = expect({ group = "CONQUEROR", token = CONQUEROR }),
+        },
+        {
+            name = "an uncached recipe is unresolved, with no class position to read",
+            input = { raw = item({ name = nil, cached = false, equipLoc = "" }) },
             expected = expect({ special = true, unresolved = true }),
         },
     },
