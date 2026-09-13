@@ -356,7 +356,8 @@ function Priority.BroadcastState(campaignId)
     end
     if priority.logIncomplete or not Priority.LogComplete(priority) then
         ns.Print("a member asked for this campaign's history, but your own copy of it is "
-            .. "incomplete, so it was not sent.")
+            .. "incomplete, so it was not sent. If it predates log replication (0.3.0), only "
+            .. "a reseed starts a complete log, and a reseed discards the list positions.")
         return false
     end
     local body, err = ns.Serialize.encodeCampaign(campaign)
@@ -863,9 +864,19 @@ function Priority.RunVerify()
         ns.Print("verify: there is no campaign to verify. Create or join one first.")
         return nil
     end
-    if priority.logIncomplete or not Priority.LogComplete(priority) then
+    if (priority.version or 0) == 0 and #(priority.order or {}) == 0 then
+        ns.Print("verify: this campaign's priority list has never been seeded.")
+        return nil
+    end
+    if priority.logIncomplete and not ns.Round.IsHost() then
         ns.Print("verify: this client took a list it could not chain and is still waiting for "
             .. "its history from the master looter. Try again in a moment.")
+        return nil
+    end
+    if priority.logIncomplete or not Priority.LogComplete(priority) then
+        ns.Print("verify: this client's log of the list is incomplete -- most likely it predates "
+            .. "log replication (0.3.0) -- and there is no history to replay. The positions "
+            .. "still stand; only a reseed starts a complete log, and a reseed discards them.")
         return nil
     end
     local result = Priority.Verify(DB())

@@ -457,12 +457,18 @@ local function pruneHierarchies(chars)
 end
 
 --- The id of a locked campaign that ranks this character, or nil.
-function Roster.LockedRankingOf(name)
+-- @param memo optional table, campaignId -> locked, shared across calls so a caller
+--        checking every row reads each campaign's lock (and its history) once
+function Roster.LockedRankingOf(name, memo)
     local stored = Roster.Resolve(name) or name
     for campaignId, campaign in pairs(ns.Database.Campaigns()) do
-        if Util.indexOf(campaign.hierarchy or {}, stored)
-            and ns.Campaign.HierarchyLocked(campaignId) then
-            return campaignId
+        if Util.indexOf(campaign.hierarchy or {}, stored) then
+            local locked = memo and memo[campaignId]
+            if locked == nil then
+                locked = ns.Campaign.HierarchyLocked(campaignId) and true or false
+                if memo then memo[campaignId] = locked end
+            end
+            if locked then return campaignId end
         end
     end
     return nil
@@ -915,26 +921,29 @@ local function onRoster(sender, body)
     -- rather than dropped quietly.
     local stored = ns.Campaign.StoredOrder(msg.campaignId, sender, msg.order)
     local refused = false
+    local lockedOverlaps = {}
     if not stored and ns.Campaign.HierarchyLocked(msg.campaignId) then
-        -- No record matches the sender, but one may still rank these characters: a
-        -- member publishing from an alt their stored ordering does not name. That is
-        -- still a change to a locked ordering, and there is no stored ranking of the
-        -- sender's own to substitute, so the publish is refused whole.
+        -- No record matches the sender, but one may still rank these characters. That
+        -- is either a member publishing from an alt their stored ordering does not name
+        -- or a stranger wrongly ranking someone's characters, and nothing here can tell
+        -- the two apart. So the publish is not refused: it is recorded, and the stored
+        -- ordering is kept in the claim index beside it, so every shared character reads
+        -- as contested -- loud for either case, instead of silently dropping a roster.
         local overlaps = ns.Campaign.OverlappingOrders(ns.Campaign.Get(msg.campaignId),
             sender, msg.order)
         for _, other in ipairs(overlaps) do
             local ok, why = Roster.LockedChangeAllowed(other.order, msg.order,
                 ns.Campaign.Get(msg.campaignId).host.tierCount)
             if not ok then
+                lockedOverlaps[#lockedOverlaps + 1] = other.player
                 local line = string.format("%s published a hierarchy that ranks %s's "
-                    .. "characters, but \"%s\" is locked (%s); it was not recorded.",
-                    tostring(sender), other.player, ns.Campaign.LabelFor(msg.campaignId),
-                    tostring(why))
+                    .. "characters, but "%s" is locked (%s); the characters they share "
+                    .. "are contested.", tostring(sender), other.player,
+                    ns.Campaign.LabelFor(msg.campaignId), tostring(why))
                 if warnedLocked[sender] then ns.Debug(line) else
                     warnedLocked[sender] = true
                     ns.Print(line)
                 end
-                return
             end
         end
     end
@@ -983,6 +992,14 @@ local function onRoster(sender, body)
     -- groups read as a conflict.
     if msg.campaignId ~= ns.Campaign.ActiveId() then return end
     Roster.published[sender] = { order = msg.order, chars = msg.chars }
+    local campaign = ns.Campaign.Get(msg.campaignId)
+    for _, player in ipairs(lockedOverlaps) do
+        local record = campaign.members and campaign.members[player]
+        if record and not Roster.published[player] then
+            Roster.published[player] = { order = Util.copy(record.order or {}),
+                                         chars = Util.deepCopy(record.chars or {}) }
+        end
+    end
     rebuildClaims()
 end
 

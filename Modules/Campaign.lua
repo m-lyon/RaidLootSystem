@@ -707,7 +707,7 @@ end
 -- does not rank matches neither lookup StoredOrder makes, and would otherwise record a
 -- re-rank unchecked (spec 014). An ordering that does not name the record's player is
 -- someone else's, and a character both rank stays a contested claim, not a refusal.
--- Sorted by player so a refusal names the same record every time.
+-- Sorted by player so a warning names the same record every time.
 function Campaign.OverlappingOrders(campaign, player, order)
     local out = {}
     for stored, record in pairs((campaign or {}).members or {}) do

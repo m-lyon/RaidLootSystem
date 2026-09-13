@@ -269,6 +269,7 @@ function Editor.Refresh()
     -- ticked rows only (spec 012 section 7).
     local model = ns.Campaign.HierarchyRows(chars, order)
 
+    local lockMemo = {}
     local y, bandIndex = 0, 0
     for i = 1, #model do
         local entryRow = model[i]
@@ -316,7 +317,7 @@ function Editor.Refresh()
         -- A removal promotes everything below it, so it is a re-rank too and the
         -- lock refuses it (spec 014) -- for a character ranked in a locked campaign,
         -- exactly as Roster.Remove does, so a mistaken unticked add can still go.
-        if Roster().LockedRankingOf(name) then row.remove:Disable() else row.remove:Enable() end
+        if Roster().LockedRankingOf(name, lockMemo) then row.remove:Disable() else row.remove:Enable() end
         row:SetAlpha(entryRow.included and 1 or 0.6)
         row:Show()
 
