@@ -221,6 +221,11 @@ tier ranking once the campaign has run a round. The rule is `Roster.LockedChange
 the two gates are the editor's mutators and `onRoster`, and unlocking is the host's escape hatch --
 so it is the one shared setting that is *not* frozen mid-round.
 
+v0.4.0 (issue #26) moves the round candidate list out of `UI/HostPanel.lua` and into the roll
+window's host-only setup state, adds `Widgets.Raise` for window layering, makes armour a rank
+rule in `Data/ClassArmor.lua` and makes recipes round candidates (`Data.CLASS_INDEX.RECIPE`,
+unverified -- see `Data/VERIFY.md`).
+
 Spec 015 adds `plainItemNames`, on by default: group announcements name items instead of linking
 them, because a link in raid chat makes every bot open a trade. A client setting, a tick box in the
 host panel's Raid settings, and `/rls links`.
