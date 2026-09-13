@@ -480,14 +480,12 @@ local function onEvent(_, event, arg1)
         if not ns.Round.IsHost() then return end
         LootDetect.Scan(function(items)
             if #items == 0 then return end
-            if ns.HostPanel then
-                ns.HostPanel.Show()
-            else
-                -- Until spec 006's panel exists, the host is told rather than railroaded:
-                -- auto-opening on every corpse would fire on trash and on other people's kills.
-                ns.Print(string.format("%d item(s) here are worth rolling for. "
-                    .. "/rls loot to list them, /rls start to open a round.", #items))
-            end
+            -- The roll window's setup state, not the host panel: one window for the
+            -- whole loot journey (spec 005 section 2). Only the master looter gets it,
+            -- and only when this corpse actually has something worth rolling for.
+            if ns.RollWindow and ns.RollWindow.ShowSetup() then return end
+            ns.Print(string.format("%d item(s) here are worth rolling for. "
+                .. "/rls loot to list them, /rls start to open a round.", #items))
         end)
     elseif event == "LOOT_SLOT_CLEARED" then
         onSlotCleared(arg1)

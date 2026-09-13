@@ -409,6 +409,32 @@ function RollWindow.AboveMedian(position, presentPositions)
 end
 
 --------------------------------------------------------------------------------
+-- Pure: the host's setup state (section 2; moved here from 006 section 3)
+--------------------------------------------------------------------------------
+-- The loot journey happens in one window. A master looter who opens a corpse gets
+-- the candidate list here, ticks it and starts the round in the same frame the
+-- grid and the results then appear in, rather than being handed the whole host
+-- panel -- which is six sections tall and mostly irrelevant at that moment.
+
+--- Should the window render the host's loot setup rather than a round?
+--
+-- @param isHost      Round.IsHost()
+-- @param requested   the host opened a corpse (or asked for the list) and has not
+--                    since been handed a round or a result to look at instead
+-- @param candidates  how many candidate rows LootDetect is holding
+-- @param roundState  the mirrored round's state, or nil when there is no round
+function RollWindow.SetupActive(isHost, requested, candidates, roundState)
+    if not isHost or not requested then return false end
+    if (candidates or 0) == 0 then return false end
+    -- A live round owns the window: the grid and the countdown are what the host
+    -- needs while it runs, and the candidate list is the next corpse's problem.
+    if roundState == C.ROUND_STATE.OPEN or roundState == C.ROUND_STATE.RESOLVING then
+        return false
+    end
+    return true
+end
+
+--------------------------------------------------------------------------------
 -- WoW-facing. Nothing below here runs at file scope.
 --------------------------------------------------------------------------------
 
@@ -426,9 +452,12 @@ local WARN_H = 16
 local BUTTON_H = 22
 local PAD = 16
 local RESULTS_H = 380
+-- The setup list's width: the same span the grid occupies, so the window does not
+-- jump sideways when a round opens on the loot the host just ticked.
+local SETUP_W = HEADER_W + MAX_VISIBLE_COLS * CELL_W + 8
 
 local frame
-local entryPanel, resultsPanel
+local entryPanel, resultsPanel, setupPanel
 local rowHeaders, colHeaderScroll, colHeaderContent, cellScroll, cellContent, hslider
 local rows, columns, cells = {}, {}, {}
 local resultRows = {}
@@ -1178,12 +1207,207 @@ local function refreshResults(round)
 end
 
 --------------------------------------------------------------------------------
+-- Setup mode: the host's candidate list (section 2)
+--------------------------------------------------------------------------------
+-- Moved here from the host panel (006 section 3). The panel is the raid's settings
+-- and the raid's health; this is one corpse's loot, and it belongs next to the grid
+-- it turns into. Everything else about the list is unchanged: the ticks are keyed by
+-- item id so a rebuild cannot renumber them, Start roll asks the same pure
+-- HostPanel.StartBlocker why it may not be pressed, and a new corpse clears the ticks
+-- while a rebuild of the same one keeps them.
+
+local setupRequested = false
+local ticked = {}                   -- itemId -> false when the host unticked it
+local setupRows = {}
+
+local SETUP_ROW_H = 22
+local QUALITY_NAME = { [0] = "poor", "common", "uncommon", "rare", "epic", "legendary" }
+
+local function tickKey(item)
+    return (item.info and item.info.itemId) or item.itemString
+end
+
+local function tickedItems()
+    local items = {}
+    for _, item in ipairs(ns.LootDetect.candidates) do
+        if ticked[tickKey(item)] ~= false then items[#items + 1] = item end
+    end
+    return items
+end
+
+local function startRoll()
+    local items = tickedItems()
+    -- A raid member who is not in this campaign would roll on nothing, so the host
+    -- is warned and names them before the round opens (spec 012 section 6).
+    ns.Campaigns.GuardOpen(function()
+        local ok, why = ns.Round.Open(items)
+        if not ok then ns.Print(why) end
+        RollWindow.Refresh()
+    end)
+end
+
+local function addItem(link)
+    if not link or link == "" then
+        ns.Print("give an item link: paste one, shift-click one, or drop a bag item on the box.")
+        return
+    end
+    ns.LootDetect.AddCandidate(link, function(added)
+        if added then
+            setupPanel.addBox:SetText("")
+            RollWindow.Refresh()
+        end
+    end)
+end
+
+--- A bag item dropped on the add box or its button.
+local function receiveCursorItem()
+    local kind, _, link = GetCursorInfo()
+    if kind == "item" and link then
+        ClearCursor()
+        addItem(link)
+        return true
+    end
+    return false
+end
+
+local function setupRow(i)
+    local row = setupRows[i]
+    if row then return row end
+    row = CreateFrame("Frame", nil, setupPanel.list)
+    row:SetWidth(SETUP_W - 20)
+    row:SetHeight(SETUP_ROW_H)
+
+    row.check = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
+    row.check:SetWidth(20)
+    row.check:SetHeight(20)
+    row.check:SetPoint("LEFT", row, "LEFT", 0, 0)
+    row.check:SetScript("OnClick", function(self)
+        ticked[row.tickKey] = (self:GetChecked() == 1)
+        RollWindow.Refresh()
+    end)
+
+    row.icon = row:CreateTexture(nil, "ARTWORK")
+    row.icon:SetWidth(16)
+    row.icon:SetHeight(16)
+    row.icon:SetPoint("LEFT", row.check, "RIGHT", 2, 0)
+
+    row.label = CreateFrame("Button", nil, row)
+    row.label:SetPoint("LEFT", row.icon, "RIGHT", 4, 0)
+    row.label:SetWidth(SETUP_W - 180)
+    row.label:SetHeight(SETUP_ROW_H)
+    row.label.text = Widgets.Label(row.label, "", "GameFontHighlightSmall")
+    row.label.text:SetAllPoints()
+    row.label.text:SetJustifyH("LEFT")
+    row.label:SetScript("OnEnter", function(self)
+        if not row.itemString then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetHyperlink(row.itemString)
+        GameTooltip:Show()
+    end)
+    row.label:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    row.label:SetScript("OnClick", function()
+        if row.link and IsShiftKeyDown() then ChatEdit_InsertLink(row.link) end
+    end)
+
+    row.remove = Widgets.IconButton(row, "remove", 16, 16, function()
+        ns.LootDetect.RemoveCandidate(row.itemId)
+    end)
+    row.remove:SetPoint("RIGHT", row, "RIGHT", -2, 0)
+    Widgets.Tooltip(row.remove, "Remove",
+        "Take this item out of the round. Add it again by link if you change your mind.")
+
+    row.right = Widgets.Label(row, "", "GameFontHighlightSmall")
+    row.right:SetPoint("RIGHT", row.remove, "LEFT", -4, 0)
+    row.right:SetJustifyH("RIGHT")
+    setupRows[i] = row
+    return row
+end
+
+local function refreshSetup()
+    local LootDetect = ns.LootDetect
+    local items = LootDetect.candidates
+    local n = 0
+
+    for _, item in ipairs(items) do
+        n = n + 1
+        local row = setupRow(n)
+        row.itemIdx = item.idx
+        row.tickKey = tickKey(item)
+        row.itemString = item.itemString
+        row.itemId = item.info and item.info.itemId
+        row.link = item.info and item.info.link
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", setupPanel.list, "TOPLEFT", 0, -(n - 1) * SETUP_ROW_H)
+        row.check:SetChecked(ticked[row.tickKey] ~= false)
+        row.icon:SetTexture(item.info and item.info.icon
+            or "Interface\\Icons\\INV_Misc_QuestionMark")
+        local label = LootDetect.Label(item)
+        if item.count > 1 then label = label .. " |cffffcc00x" .. item.count .. "|r" end
+        if item.info and item.info.special then label = label .. " |cffffcc00*|r" end
+        row.label.text:SetText(label)
+        local quality = item.info and item.info.quality
+        local where = item.lootSlot and ("slot " .. item.lootSlot) or "by link"
+        row.right:SetText("|cff888888" .. (QUALITY_NAME[quality] or "?") .. ", " .. where .. "|r")
+        row:Show()
+    end
+    for i = n + 1, #setupRows do setupRows[i]:Hide() end
+
+    if LootDetect.scanning then
+        setupPanel.hint:SetText("Looking the loot up...")
+    elseif n == 0 then
+        setupPanel.hint:SetText("Nothing here is worth rolling for. Open a corpse as master "
+            .. "looter, or add an item below.")
+    else
+        local skipped = #LootDetect.skipped
+        setupPanel.hint:SetText(skipped > 0 and string.format(
+            "%d skipped by the filter (quality, not equippable). Add one below.", skipped) or "")
+    end
+
+    local round = currentRound()
+    local blocker = ns.HostPanel.StartBlocker({
+        isHost = ns.Round.IsHost(),
+        lootMethod = (GetLootMethod()),
+        roundOpen = round ~= nil and round.state == C.ROUND_STATE.OPEN,
+        scanning = LootDetect.scanning,
+        ticked = #tickedItems(),
+    })
+    if blocker then setupPanel.start:Disable() else setupPanel.start:Enable() end
+    Widgets.Tooltip(setupPanel.start, "Start roll",
+        blocker or string.format("Open a round on the %d ticked item(s).", #tickedItems()))
+
+    local listH = math.max(n, 1) * SETUP_ROW_H
+    setupPanel.list:SetHeight(listH)
+
+    frame:SetWidth(PAD * 2 + SETUP_W)
+    frame:SetHeight(70 + 20 + listH + 12 + BUTTON_H + PAD)
+end
+
+--------------------------------------------------------------------------------
 -- Refresh: pick the mode
 --------------------------------------------------------------------------------
 
 function RollWindow.Refresh()
     if not frame or not frame:IsShown() then return end
     local round = currentRound()
+
+    -- Setup comes first: a host standing over a corpse wants the candidate list,
+    -- whatever an older round of theirs still has on screen (section 2).
+    if RollWindow.SetupActive(ns.Round.IsHost(), setupRequested,
+        #ns.LootDetect.candidates, round and round.state) then
+        frame.titleText:SetText("Raid Loot System - "
+            .. (ns.LootDetect.sourceName or "loot") .. " - "
+            .. #ns.LootDetect.candidates .. " to roll for")
+        frame.status:SetText("")
+        frame.counter:SetText("")
+        frame.banner:SetText("")
+        entryPanel:Hide()
+        resultsPanel:Hide()
+        setupPanel:Show()
+        refreshSetup()
+        return
+    end
+    setupPanel:Hide()
+
     if not round then
         frame.titleText:SetText("Raid Loot System - no round")
         frame.status:SetText("")
@@ -1381,6 +1605,54 @@ local function buildEntryPanel(parent)
     return panel
 end
 
+local function buildSetupPanel(parent)
+    local panel = CreateFrame("Frame", nil, parent)
+    panel:SetPoint("TOPLEFT", parent, "TOPLEFT", PAD, -70)
+    panel:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -PAD, PAD)
+
+    panel.hint = Widgets.Label(panel, "", "GameFontDisableSmall")
+    panel.hint:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
+    panel.hint:SetWidth(SETUP_W - 20)
+    panel.hint:SetJustifyH("LEFT")
+
+    panel.list = CreateFrame("Frame", nil, panel)
+    panel.list:SetPoint("TOPLEFT", panel.hint, "BOTTOMLEFT", 0, -6)
+    panel.list:SetWidth(SETUP_W - 20)
+    panel.list:SetHeight(1)
+
+    panel.addBox = Widgets.EditBox(panel, 200, 20)
+    panel.addBox:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 2, 0)
+    panel.addBox:SetScript("OnEnterPressed", function(self) addItem(self:GetText()) end)
+    panel.addBox:SetScript("OnReceiveDrag", receiveCursorItem)
+    panel.addBox:SetScript("OnMouseDown", function() receiveCursorItem() end)
+
+    panel.addButton = Widgets.Button(panel, "Add item", 80, 20, function()
+        if not receiveCursorItem() then addItem(panel.addBox:GetText()) end
+    end)
+    panel.addButton:SetPoint("LEFT", panel.addBox, "RIGHT", 4, 0)
+    panel.addButton:SetScript("OnReceiveDrag", receiveCursorItem)
+    Widgets.Tooltip(panel.addButton, "Add item",
+        "Add an item the filter left out: paste or shift-click a link into the box, "
+        .. "or drop an item from your bags here.")
+
+    panel.start = Widgets.Button(panel, "Start roll", 100, BUTTON_H, startRoll)
+    panel.start:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", 0, 0)
+
+    -- Shift-clicking a link while the add box has focus puts it there, the way it
+    -- would go into a chat box. The hook moved here with the box (spec 006 section 3).
+    local insertLink = ChatEdit_InsertLink
+    ChatEdit_InsertLink = function(text)
+        if panel.addBox:HasFocus() then
+            panel.addBox:Insert(text)
+            return true
+        end
+        return insertLink(text)
+    end
+
+    panel:Hide()
+    return panel
+end
+
 local function buildResultsPanel(parent)
     local panel = CreateFrame("Frame", nil, parent)
     panel:SetPoint("TOPLEFT", parent, "TOPLEFT", PAD, -70)
@@ -1443,6 +1715,7 @@ local function build()
 
     entryPanel = buildEntryPanel(frame)
     resultsPanel = buildResultsPanel(frame)
+    setupPanel = buildSetupPanel(frame)
 
     -- The countdown and the abort linger, on a light throttle. The window never takes
     -- keyboard input (section 6): nothing here enables it.
@@ -1479,6 +1752,22 @@ function RollWindow.Show()
     RollWindow.Refresh()
 end
 
+--- The host opened a corpse with something worth rolling for (spec 004 section 2).
+-- Auto-shown for the master looter only; a client's window is untouched by loot.
+function RollWindow.ShowSetup()
+    if not ns.Round.IsHost() then return false end
+    if #ns.LootDetect.candidates == 0 then return false end
+    setupRequested = true
+    RollWindow.Show()
+    return true
+end
+
+--- Is the window currently on the host's candidate list?
+function RollWindow.InSetup()
+    return RollWindow.SetupActive(ns.Round.IsHost(), setupRequested,
+        #ns.LootDetect.candidates, (currentRound() or {}).state)
+end
+
 function RollWindow.Hide()
     if frame then frame:Hide() end
 end
@@ -1508,6 +1797,9 @@ end
 -- when they land, and once the player has closed them the window is stale -- the
 -- history browser is where an old round is read, not here (spec 005 section 2).
 function RollWindow.HasContent()
+    -- The host's candidate list is content too: it is now the first screen of the
+    -- loot journey, and the button has to be able to bring it back.
+    if RollWindow.InSetup() then return true end
     local round = currentRound()
     if not round then return false end
     if round.state == C.ROUND_STATE.OPEN then return true end
@@ -1523,6 +1815,7 @@ local function onClientChanged(round)
     -- linger must not then close a live grid.
     if round.state ~= C.ROUND_STATE.ABORTED then abortHideAt = nil end
     if round.state == C.ROUND_STATE.OPEN then
+        setupRequested = false          -- the round owns the window now
         if lastShownRoundId ~= round.id then
             -- A new round opens the window (section 2). A resend of the same round
             -- (SYNC) does not reopen a window the player closed.
@@ -1530,6 +1823,7 @@ local function onClientChanged(round)
             RollWindow.Show()
         end
     elseif round.state == C.ROUND_STATE.CLOSED then
+        setupRequested = false
         if round.results and not RollWindow.IsShown() then RollWindow.Show() end
     elseif round.state == C.ROUND_STATE.ABORTED then
         if RollWindow.IsShown() and not abortHideAt then
@@ -1542,4 +1836,10 @@ end
 function RollWindow.Init()
     ns.Client.RegisterListener(onClientChanged)
     ns.Roster.RegisterListener(function() RollWindow.Refresh() end)
+    ns.LootDetect.RegisterListener(function(_, newScan)
+        -- A new corpse means a fresh set of ticks; a rebuild of the same one (a manual
+        -- add, a lost slot, a moved quality bar) keeps what the host unticked.
+        if newScan then ticked = {} end
+        RollWindow.Refresh()
+    end)
 end

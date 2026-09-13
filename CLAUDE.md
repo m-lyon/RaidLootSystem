@@ -106,6 +106,12 @@ with the reasoning.
   finishes with `Round.ChangeSetting("lootMode", "SK")`. A seeded list left on `ROLL` is
   indistinguishable on screen from a seeded list on `SK`, and the only symptom is that no winner
   ever moves. Spec 010 §5.
+- **The candidate list lives in the roll window, not the host panel.** A master looter who opens
+  a corpse gets the roll window's host-only *setup* state -- tick the items, Add item, Start roll
+  -- and the same frame then becomes the grid, the results and the award controls. The host panel
+  keeps the raid's settings, its health and the live round. The pure rule is
+  `RollWindow.SetupActive`; `HostPanel.StartBlocker` stayed where it is and is called from the
+  roll window. Spec 005 §2, spec 006 §3.
 - **The open announcement leads with the loot mode**, "Rolling:" or "SK:". It is the host's own
   read-back that the mode is what they think it is. Chat abbreviates; panels and dialogs spell
   "Suicide Kings" out. Spec 006 §4.
@@ -169,8 +175,8 @@ plus `tests/purity.sh`.
 `Modules/{Round,Roster,ItemInfo,LootDetect}.lua` each have a pure half above a "WoW-facing"
 divider; the fixture runner loads all four. Keep new pure logic above that line.
 
-`Round.Open` is reachable now. Until the host panel (006) exists, `/rls loot`, `/rls start`
-and `/rls roll <link>` are the seam that drives it.
+`Round.Open` is reachable now. `/rls loot`, `/rls start` and `/rls roll <link>` remain as the
+scriptable seam that drives it; the screen for it is the roll window's setup state.
 
 Specs 005 through 008 and 010 are built too: `UI/{RollWindow,HostPanel,HistoryBrowser}.lua`,
 `Modules/{Award,Pending,History,PriorityList,Announce}.lua`, `Core/PriorityList.lua`, with the

@@ -34,6 +34,10 @@ local function run(input, ns)
         local inCount, total, names = RW.Outstanding(input.expected, input.submitted)
         return { inCount = inCount, total = total, outstanding = table.concat(names, ",") }
 
+    elseif input.op == "setup" then
+        return RW.SetupActive(input.isHost, input.requested, input.candidates,
+            input.roundState)
+
     elseif input.op == "entrytiers" then
         local out = {}
         for char, tier in pairs(RW.EntryTiers(input.tiers, input.allEntries)) do
@@ -532,5 +536,34 @@ return {
             input = { op = "median", position = 12, present = { 12, 3, 5, 20, 9 } },
             expected = false,
         },
+
+        ----------------------------------------------------------------------
+        -- The host's setup state (section 2)
+        ----------------------------------------------------------------------
+        { name = "a host with candidates and no round sees the setup list",
+          input = { op = "setup", isHost = true, requested = true, candidates = 3 },
+          expected = true },
+        { name = "a client never sees it, whatever the corpse holds",
+          input = { op = "setup", isHost = false, requested = true, candidates = 3 },
+          expected = false },
+        { name = "an open round owns the window instead",
+          input = { op = "setup", isHost = true, requested = true, candidates = 3,
+                    roundState = "OPEN" },
+          expected = false },
+        { name = "so does a round still being resolved",
+          input = { op = "setup", isHost = true, requested = true, candidates = 3,
+                    roundState = "RESOLVING" },
+          expected = false },
+        { name = "a closed round does not: the next corpse is the host's business",
+          input = { op = "setup", isHost = true, requested = true, candidates = 2,
+                    roundState = "CLOSED" },
+          expected = true },
+        { name = "an empty candidate list shows nothing",
+          input = { op = "setup", isHost = true, requested = true, candidates = 0 },
+          expected = false },
+        { name = "a host who has not opened a corpse is not dragged into setup",
+          input = { op = "setup", isHost = true, requested = false, candidates = 3 },
+          expected = false },
+
     },
 }

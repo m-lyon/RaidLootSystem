@@ -9,15 +9,15 @@ local ns = ...
 local function run(input, ns)
     local M = ns.Minimap
     if input.op == "primary" then
-        return M.PrimaryTarget(input.isHost, input.hasContent)
+        return M.PrimaryTarget(input.isHost, input.hasContent, input.inSetup)
     elseif input.op == "ctrl" then
-        return M.CtrlTarget(input.isHost, input.hasContent) or "nothing"
+        return M.CtrlTarget(input.isHost, input.hasContent, input.inSetup) or "nothing"
     elseif input.op == "reachable" then
         -- Every window the button can open, across both chords plus the fixed
         -- shift-click. Nothing a role needs may become unreachable.
-        local seen = { [M.PrimaryTarget(input.isHost, input.hasContent)] = true,
+        local seen = { [M.PrimaryTarget(input.isHost, input.hasContent, input.inSetup)] = true,
                        HIERARCHY = true }
-        local ctrl = M.CtrlTarget(input.isHost, input.hasContent)
+        local ctrl = M.CtrlTarget(input.isHost, input.hasContent, input.inSetup)
         if ctrl then seen[ctrl] = true end
         local out = {}
         for _, k in ipairs({ "HIERARCHY", "HOST", "ROLL" }) do
@@ -63,5 +63,21 @@ return {
         { name = "a player outside a round keeps the hierarchy",
           input = { op = "reachable", isHost = false, hasContent = false },
           expected = { "HIERARCHY" } },
+
+        -- The host's loot journey (spec 005 section 2): with the candidate list up,
+        -- the roll window is the primary click and the panel is the chord. Both are
+        -- still reachable, which is the property that matters.
+        { name = "a host looking at a corpse gets the roll window",
+          input = { op = "primary", isHost = true, hasContent = true, inSetup = true },
+          expected = "ROLL" },
+        { name = "ctrl gives that host the panel instead",
+          input = { op = "ctrl", isHost = true, hasContent = true, inSetup = true },
+          expected = "HOST" },
+        { name = "a host in setup can still reach all three windows",
+          input = { op = "reachable", isHost = true, hasContent = true, inSetup = true },
+          expected = { "HIERARCHY", "HOST", "ROLL" } },
+        { name = "setup means nothing to a player who is not the host",
+          input = { op = "primary", isHost = false, hasContent = true, inSetup = true },
+          expected = "ROLL" },
     },
 }

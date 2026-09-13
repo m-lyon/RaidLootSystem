@@ -75,8 +75,9 @@ local function setTierCount(argument)
 end
 
 --------------------------------------------------------------------------------
--- Loot (spec 004). The host panel (spec 006) will own these; until it exists they are
--- the seam that makes detection and rounds usable and demonstrable.
+-- Loot (spec 004). The roll window's setup state (spec 005 section 2) is the screen
+-- for these now; the commands remain as the scriptable seam, and as the way in when
+-- the window has been closed.
 --------------------------------------------------------------------------------
 
 local function lootList()
@@ -99,6 +100,8 @@ local function lootList()
                 item.count > 1 and (" x" .. item.count) or "", marker))
         end
         ns.Print("/rls start opens a round on all of them.")
+        -- And put the window back up: the list is a screen now, not a chat dump.
+        if ns.RollWindow then ns.RollWindow.ShowSetup() end
     end
 
     for _, skip in ipairs(LootDetect.skipped) do
@@ -191,8 +194,9 @@ end
 
 local function help()
     ns.Print("commands:")
-    ns.Print("  /rls              open the window for your role: the host panel as master "
-        .. "looter, else the roll window, else your hierarchy")
+    ns.Print("  /rls              open the window for your role: the loot window over a "
+        .. "corpse or during a round, the host panel as master looter otherwise, "
+        .. "else your hierarchy")
     ns.Print("  /rls window       open the roll window")
     ns.Print("  /rls hierarchy    open your hierarchy")
     ns.Print("  /rls host         open the host panel, or left-click the minimap button "
@@ -233,7 +237,8 @@ local function dispatch(input)
         -- The same decision the minimap button makes, from the same function: the
         -- button and a bare /rls have always opened the same window, and two copies of
         -- the rule would drift the first time one of them changed (spec 006 section 3).
-        local target = ns.Minimap.PrimaryTarget(ns.Round.IsHost(), ns.RollWindow.HasContent())
+        local target = ns.Minimap.PrimaryTarget(ns.Round.IsHost(), ns.RollWindow.HasContent(),
+            ns.RollWindow.InSetup())
         if target == "HOST" then
             ns.HostPanel.Toggle()
         elseif target == "ROLL" then

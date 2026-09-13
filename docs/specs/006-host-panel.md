@@ -8,8 +8,9 @@
 
 ## 1. Scope
 
-The master looter's control surface: raid settings, round candidates, roster health, live
-submission tracking, and the controls that open, close and abort a round.
+The master looter's control surface: raid settings, roster health, live submission tracking, and
+the controls that close and abort a round. Opening one is done from the roll window's setup state
+(005 §2), which is where the candidate list moved.
 
 Separated from 005 because it has a different actor and different permissions. Every player uses
 the roll window; one person uses this. Merging them would mean permission-gating half the
@@ -48,26 +49,23 @@ disabled with the prompt *"Seed the priority list to enable Suicide Kings"*, lin
 section below. This is why there is no half-configured state to explain: an empty list under SK
 is unreachable rather than special-cased.
 
-### Round candidates
+### Round candidates — moved to the roll window
 
-Populated on `LOOT_OPENED` (004 §2). Lists each candidate item with icon, link, quality, and a
-`x2` badge for duplicates. Each has a checkbox, default ticked.
+The candidate list, **Add item**, **Remove**, **Start roll** and the skipped-item count live in
+the roll window's setup state now (005 §2). The loot journey is one window: pick the items, open
+the round, read the results, award, without the six-section panel opening on every corpse.
 
-- **Add item** — accepts a dropped item link or a bag item, for anything the filter excluded.
-- **Remove** — takes one item out of the list, whatever put it there: an item-link addition, a
-  promoted skipped row, or a plain corpse row. Unticking excludes an item from the next round
-  but leaves the row; removing is for a row that should not be on offer at all. It stays out
-  until the next corpse scan or an **Add item** on the same link.
-- **Start roll** — opens the round with the ticked items. Disabled with a reason when
-  preconditions fail (not master loot, no items, round already open).
+What stays here is `HostPanel.StartBlocker` — still the rule for why a round may not be opened,
+still fixture-tested by the `hostpanel` suite, and now called by the roll window.
 
-**After a round closes** its items are withdrawn from the list — they have been rolled for, and
-leaving them there invites a second round on loot already awarded. Anything the host left
-unticked stays, so the section reads as what is still outstanding. An **abort** withdraws
-nothing: the round did not happen, and the host will want to start it again.
+The withdrawal rule is unchanged and still 004 §3's: **after a round closes** its items are
+withdrawn from the list, anything left unticked stays, and an **abort** withdraws nothing.
 
-Nothing opens automatically. Auto-opening would fire on trash pulls and on other people's
-kills.
+The setup state *does* open automatically, for the master looter, on a corpse that holds at least
+one candidate. This spec used to say nothing opens automatically, on the grounds that auto-opening
+would fire on trash pulls and other people's kills; it does not — only the master looter's own
+`LOOT_OPENED` with candidates above the quality bar reaches it, and the window it opens is now a
+list of items rather than the whole control surface.
 
 ### Roster health
 
@@ -124,9 +122,11 @@ A bare **`/rls`** makes the same decision from the same function. The button and
 have always opened the same window, and two copies of the rule would drift the first time one of
 them changed.
 
-A host does not lose the roll window. It opens itself on `OPEN` and again on the results (005 §2),
-and **ctrl-click** reaches it whenever it has something to show. Shift-click is still the
-hierarchy and right-click is still a republish. The tooltip names the action the next click will
+A host does not lose the roll window. It opens itself on `OPEN`, again on the results, and on a
+corpse worth rolling for (005 §2), and **ctrl-click** reaches it whenever it has something to
+show. While the setup list *is* up the two swap: left-click gives the host that list back and
+ctrl-click gives the panel, because the window in front of a host mid-loot-journey is the one
+they meant. Shift-click is still the hierarchy and right-click is still a republish. The tooltip names the action the next click will
 actually perform, because the primary one now depends on who you are.
 
 ## 4. Announcements — `Modules/Announce.lua`
@@ -176,7 +176,8 @@ items with twenty entries is a lot of lines, so they queue and drain rather than
 - Two clients claiming one character surfaces it in Contested with both names.
 - A raid member with no roster claim appears in Unclaimed.
 - A raid member without the addon shows as "not running" in Addon status.
-- Start roll is disabled with a specific reason when loot method is not master loot.
+- Start roll (in the roll window, 005 §2) is disabled with a specific reason when loot method is
+  not master loot.
 - Close now resolves immediately using only submitted entries.
 - Verbosity Off produces zero chat output across a full round.
 - Verbose output for a 6-item, 20-entry round drains without tripping the client's chat throttle.

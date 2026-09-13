@@ -1,7 +1,8 @@
 -- UI/HostPanel.lua
 --
--- The master looter's control surface (spec 006): raid settings, round candidates,
--- roster health, the live round, and the loot-still-on-corpse banner. Only reachable
+-- The master looter's control surface (spec 006): raid settings, roster health, the
+-- live round, and the loot-still-on-corpse banner. The round candidate list moved to
+-- the roll window's setup state (spec 005 section 2). Only reachable
 -- while this client holds master looter; losing it closes the panel.
 --
 -- Everything above the "WoW-facing" divider is pure and fixture-tested by the
@@ -102,10 +103,8 @@ local PAD = 16
 local SCROLL_RIGHT_TRIM = 14
 
 local frame, content
-local settings, candidates, health, priority, live, banner, pending, awaiting, campaign
-local candidateRows, healthRows, liveRows, pendingRows, awaitingRows = {}, {}, {}, {}, {}
-local ticked = {}                   -- itemId -> false when the host unticked it. Keyed by
-                                    -- id, not idx: a rebuild renumbers idx.
+local settings, health, priority, live, banner, pending, awaiting, campaign
+local healthRows, liveRows, pendingRows, awaitingRows = {}, {}, {}, {}
 local refreshAccumulator = 0
 
 local function DB() return ns.Database end
@@ -143,7 +142,7 @@ end
 
 local function layoutSections()
     local y = 0
-    for _, panel in ipairs({ banner, awaiting, pending, campaign, settings, candidates,
+    for _, panel in ipairs({ banner, awaiting, pending, campaign, settings,
                              health, priority, live }) do
         if panel:IsShown() then
             panel:ClearAllPoints()
@@ -415,200 +414,16 @@ local function refreshSettings()
 end
 
 --------------------------------------------------------------------------------
--- Round candidates (section 3)
+-- Round candidates: not here any more (section 3)
 --------------------------------------------------------------------------------
-
-local function tickKey(item)
-    return (item.info and item.info.itemId) or item.itemString
-end
-
-local function tickedItems()
-    local items = {}
-    for _, item in ipairs(ns.LootDetect.candidates) do
-        if ticked[tickKey(item)] ~= false then items[#items + 1] = item end
-    end
-    return items
-end
-
-local function startRoll()
-    local items = tickedItems()
-    -- A raid member who is not in this campaign would roll on nothing, so the host
-    -- is warned and names them before the round opens (spec 012 section 6).
-    ns.Campaigns.GuardOpen(function()
-        local ok, why = ns.Round.Open(items)
-        if not ok then ns.Print(why) end
-        HostPanel.Refresh()
-    end)
-end
-
-local function addItem(link)
-    if not link or link == "" then
-        ns.Print("give an item link: paste one, shift-click one, or drop a bag item on the box.")
-        return
-    end
-    ns.LootDetect.AddCandidate(link, function(added)
-        if added then
-            candidates.addBox:SetText("")
-            HostPanel.Refresh()
-        end
-    end)
-end
-
---- A bag item dropped on the add box or its button.
-local function receiveCursorItem()
-    local kind, _, link = GetCursorInfo()
-    if kind == "item" and link then
-        ClearCursor()
-        addItem(link)
-        return true
-    end
-    return false
-end
-
-local function buildCandidates(parent)
-    local panel = section(parent, "Round candidates", 120)
-
-    panel.hint = Widgets.Label(panel, "", "GameFontDisableSmall")
-    panel.hint:SetPoint("TOPLEFT", panel.title, "BOTTOMLEFT", 0, -2)
-    panel.hint:SetWidth(INNER - 20)
-    panel.hint:SetJustifyH("LEFT")
-
-    panel.list = CreateFrame("Frame", nil, panel)
-    panel.list:SetPoint("TOPLEFT", panel.hint, "BOTTOMLEFT", 0, -4)
-    panel.list:SetWidth(INNER - 20)
-    panel.list:SetHeight(1)
-
-    panel.addBox = Widgets.EditBox(panel, 200, 20)
-    panel.addBox:SetScript("OnEnterPressed", function(self) addItem(self:GetText()) end)
-    panel.addBox:SetScript("OnReceiveDrag", receiveCursorItem)
-    panel.addBox:SetScript("OnMouseDown", function() receiveCursorItem() end)
-    panel.addButton = Widgets.Button(panel, "Add item", 80, 20, function()
-        if not receiveCursorItem() then addItem(panel.addBox:GetText()) end
-    end)
-    panel.addButton:SetPoint("LEFT", panel.addBox, "RIGHT", 4, 0)
-    panel.addButton:SetScript("OnReceiveDrag", receiveCursorItem)
-    Widgets.Tooltip(panel.addButton, "Add item",
-        "Add an item the filter left out: paste or shift-click a link into the box, "
-        .. "or drop an item from your bags here.")
-
-    panel.start = Widgets.Button(panel, "Start roll", 100, 22, startRoll)
-    panel.start:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -10, 8)
-    panel.addBox:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 12, 8)
-
-    return panel
-end
-
-local function candidateRow(i)
-    local row = candidateRows[i]
-    if row then return row end
-    row = CreateFrame("Frame", nil, candidates.list)
-    row:SetWidth(INNER - 20)
-    row:SetHeight(ROW_H)
-
-    row.check = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
-    row.check:SetWidth(20)
-    row.check:SetHeight(20)
-    row.check:SetPoint("LEFT", row, "LEFT", 0, 0)
-    row.check:SetScript("OnClick", function(self)
-        ticked[row.tickKey] = (self:GetChecked() == 1)
-        HostPanel.Refresh()
-    end)
-
-    row.icon = row:CreateTexture(nil, "ARTWORK")
-    row.icon:SetWidth(16)
-    row.icon:SetHeight(16)
-    row.icon:SetPoint("LEFT", row.check, "RIGHT", 2, 0)
-
-    row.label = CreateFrame("Button", nil, row)
-    row.label:SetPoint("LEFT", row.icon, "RIGHT", 4, 0)
-    row.label:SetWidth(INNER - 150)
-    row.label:SetHeight(ROW_H)
-    row.label.text = Widgets.Label(row.label, "", "GameFontHighlightSmall")
-    row.label.text:SetAllPoints()
-    row.label.text:SetJustifyH("LEFT")
-    row.label:SetScript("OnEnter", function(self)
-        if not row.itemString then return end
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetHyperlink(row.itemString)
-        GameTooltip:Show()
-    end)
-    row.label:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    row.label:SetScript("OnClick", function()
-        if row.link and IsShiftKeyDown() then ChatEdit_InsertLink(row.link) end
-    end)
-
-    row.remove = Widgets.IconButton(row, "remove", 16, 16, function()
-        ns.LootDetect.RemoveCandidate(row.itemId)
-    end)
-    row.remove:SetPoint("RIGHT", row, "RIGHT", -2, 0)
-    Widgets.Tooltip(row.remove, "Remove",
-        "Take this item out of the round. Add it again by link if you change your mind.")
-
-    row.right = Widgets.Label(row, "", "GameFontHighlightSmall")
-    row.right:SetPoint("RIGHT", row.remove, "LEFT", -4, 0)
-    row.right:SetJustifyH("RIGHT")
-    candidateRows[i] = row
-    return row
-end
-
-local QUALITY_NAME = { [0] = "poor", "common", "uncommon", "rare", "epic", "legendary" }
-
-local function refreshCandidates()
-    local LootDetect = ns.LootDetect
-    local items = LootDetect.candidates
-    local n = 0
-
-    for _, item in ipairs(items) do
-        n = n + 1
-        local row = candidateRow(n)
-        row.itemIdx = item.idx
-        row.tickKey = tickKey(item)
-        row.itemString = item.itemString
-        row.itemId = item.info and item.info.itemId
-        row.link = item.info and item.info.link
-        row:ClearAllPoints()
-        row:SetPoint("TOPLEFT", candidates.list, "TOPLEFT", 0, -(n - 1) * ROW_H)
-        row.check:SetChecked(ticked[row.tickKey] ~= false)
-        row.icon:SetTexture(item.info and item.info.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
-        local label = LootDetect.Label(item)
-        if item.count > 1 then label = label .. " |cffffcc00x" .. item.count .. "|r" end
-        if item.info and item.info.special then label = label .. " |cffffcc00*|r" end
-        row.label.text:SetText(label)
-        local quality = item.info and item.info.quality
-        local where = item.lootSlot and ("slot " .. item.lootSlot) or "by link"
-        row.right:SetText("|cff888888" .. (QUALITY_NAME[quality] or "?") .. ", " .. where .. "|r")
-        row:Show()
-    end
-    for i = n + 1, #candidateRows do candidateRows[i]:Hide() end
-
-    if LootDetect.scanning then
-        candidates.hint:SetText("Looking the loot up...")
-    elseif #items == 0 then
-        candidates.hint:SetText("Nothing here is worth rolling for. Open a corpse as master looter, "
-            .. "or add an item below.")
-    else
-        local skipped = #LootDetect.skipped
-        candidates.hint:SetText(skipped > 0
-            and string.format("%d skipped by the filter (quality, not equippable). Add one below.", skipped)
-            or "")
-    end
-
-    local round = ns.Round.current
-    local blocker = HostPanel.StartBlocker({
-        isHost = ns.Round.IsHost(),
-        lootMethod = (GetLootMethod()),
-        roundOpen = round ~= nil and round.state == C.ROUND_STATE.OPEN,
-        scanning = LootDetect.scanning,
-        ticked = #tickedItems(),
-    })
-    if blocker then candidates.start:Disable() else candidates.start:Enable() end
-    Widgets.Tooltip(candidates.start, "Start roll",
-        blocker or string.format("Open a round on the %d ticked item(s).", #tickedItems()))
-
-    local listH = math.max(n, 1) * ROW_H
-    candidates.list:SetHeight(listH)
-    candidates:SetHeight(48 + listH + 40)
-end
+-- The candidate list, the Add item box, Start roll and the skipped-item count moved
+-- to the roll window's setup state (spec 005 section 2). The whole loot journey --
+-- pick the items, open the round, read the results, award -- now happens in one
+-- frame, instead of opening a six-section host panel on every corpse.
+--
+-- What stayed: HostPanel.StartBlocker above, which is still the rule for why a round
+-- may not be opened, and which the roll window calls. The panel remains the raid's
+-- settings and the raid's health.
 
 --------------------------------------------------------------------------------
 -- Roster health (section 3)
@@ -1021,21 +836,9 @@ local function build()
     pending = buildPending(content)
     campaign = buildCampaign(content)
     settings = buildSettings(content)
-    candidates = buildCandidates(content)
     health = buildHealth(content)
     priority = buildPriority(content)
     live = buildLive(content)
-
-    -- Shift-clicking a link while the add box has focus puts it there, the way it
-    -- would go into a chat box.
-    local insertLink = ChatEdit_InsertLink
-    ChatEdit_InsertLink = function(text)
-        if candidates.addBox:HasFocus() then
-            candidates.addBox:Insert(text)
-            return true
-        end
-        return insertLink(text)
-    end
 
     frame:SetScript("OnShow", function() HostPanel.Refresh() end)
     frame:SetScript("OnUpdate", function(_, elapsed)
@@ -1060,7 +863,6 @@ function HostPanel.Refresh()
     if not frame or not frame:IsShown() then return end
     refreshCampaign()
     refreshSettings()
-    refreshCandidates()
     refreshHealth()
     refreshPriority()
     refreshLive()
@@ -1096,12 +898,9 @@ end
 
 function HostPanel.Init()
     ns.Round.RegisterListener(function() HostPanel.Refresh() end)
-    ns.LootDetect.RegisterListener(function(_, newScan)
-        -- A new corpse means a fresh set of ticks; a rebuild of the same one (a manual
-        -- add, a lost slot, a moved quality bar) keeps what the host unticked.
-        if newScan then ticked = {} end
-        HostPanel.Refresh()
-    end)
+    -- The candidate list lives in the roll window now, but the corpse banner here
+    -- still tracks what is unresolved on it (section 3).
+    ns.LootDetect.RegisterListener(function() HostPanel.Refresh() end)
     ns.Roster.RegisterListener(function() HostPanel.Refresh() end)
     ns.Campaign.RegisterListener(function() HostPanel.Refresh() end)
 end

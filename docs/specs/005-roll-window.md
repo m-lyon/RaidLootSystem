@@ -13,9 +13,34 @@ gets used hundreds of times; it is the addon's centre of gravity.
 
 **Out of scope:** host-only controls (006), awarding (007).
 
-## 2. Two modes, one window
+## 2. Three modes, one window
 
-The window has an **entry mode** (round is `OPEN`) and a **results mode** (round is `CLOSED`).
+The whole loot journey happens in this frame: pick the items, open the round, read the results,
+award. A master looter used to be handed the six-section host panel on every corpse, which is
+too big a window for the one question it was being opened to ask.
+
+### Setup mode — host only
+
+Shown when this client is the master looter, `LootDetect` is holding at least one candidate row,
+and no round is open or resolving. It carries what 006 §3 called *Round candidates*: the tickable
+candidate rows, the `x2` and `*` badges, per-row Remove, the **Add item** box with its
+cursor-drop target and its `ChatEdit_InsertLink` hook, the count of what the filter skipped, and
+**Start roll**.
+
+It opens itself on `LOOT_OPENED` for the host with something worth rolling for. Clients are
+unaffected by loot windows entirely.
+
+Loot mode, tier count, the timer and every other raid-wide setting stay in the host panel: they
+are the raid's rules, not this corpse's contents, and they are changed between rounds rather than
+over a body.
+
+`RollWindow.SetupActive(isHost, requested, candidates, roundState)` is the pure rule. A live or
+resolving round always wins the window; a *closed* one does not, because by then the host is
+standing over the next corpse and a stale result is not what they asked for.
+
+### Entry and results modes
+
+The window also has an **entry mode** (round is `OPEN`) and a **results mode** (round is `CLOSED`).
 It switches in place rather than opening a second frame, so people's eyes stay in one location.
 
 It opens automatically on `OPEN`, and again on `CLOSED` when the results land. The minimap
@@ -24,6 +49,9 @@ screen**; once the player closes a concluded round the button goes back to the h
 A concluded round has nothing left to do in it, and leaving it on the button meant every click
 for the rest of the night reopened a stale result. Old rounds are read in the history browser
 (008), which is what that screen is for.
+
+A host with a candidate list up gets this window from the minimap button and a bare `/rls` too,
+with the host panel moved to ctrl-click (`Minimap.PrimaryTarget` / `CtrlTarget`, 006 §3).
 
 ## 3. Entry mode: the grid
 
