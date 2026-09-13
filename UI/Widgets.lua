@@ -70,8 +70,53 @@ function Widgets.NextFrame(fn)
 end
 
 --------------------------------------------------------------------------------
--- Windows
+-- Windows, and click-to-front layering
 --------------------------------------------------------------------------------
+-- Two overlapping windows used to interleave: some of the front one's contents drew
+-- over the back one and some drew under it. Raising a frame's level on 3.3.5a does
+-- NOT restack the children it already has -- each child keeps the absolute level it
+-- was given when it was created -- so moving the window alone leaves its contents
+-- behind. Widgets.Raise walks the tree and shifts every descendant by the same
+-- delta, which preserves each one's offset from its parent and moves the whole
+-- window as a unit.
+--
+-- Levels are re-assigned from a back-to-front stack rather than simply incremented,
+-- because frame levels are capped on this client and a night of clicking would walk
+-- a window off the top. Nine windows at LEVEL_STEP apart stay well inside the cap,
+-- and each window keeps LEVEL_STEP levels of headroom for its own descendants.
+--
+-- Strata stays "DIALOG" for every window: StaticPopup and dropdown lists live above
+-- it, and a confirmation the player cannot see is worse than any layering bug.
+
+local BASE_LEVEL = 2
+local LEVEL_STEP = 12
+local stack = {}                    -- windows, back to front
+
+local function shiftLevels(frame, delta)
+    frame:SetFrameLevel(math.max(0, frame:GetFrameLevel() + delta))
+    local children = { frame:GetChildren() }
+    for i = 1, #children do shiftLevels(children[i], delta) end
+end
+
+--- Bring `frame` and everything inside it to the front of the addon's windows.
+function Widgets.Raise(frame)
+    if not frame then return end
+    for i = 1, #stack do
+        if stack[i] == frame then
+            if i == #stack then return end      -- already in front; nothing to restack
+            table.remove(stack, i)
+            break
+        end
+    end
+    stack[#stack + 1] = frame
+
+    for i = 1, #stack do
+        local window = stack[i]
+        local target = BASE_LEVEL + (i - 1) * LEVEL_STEP
+        local delta = target - window:GetFrameLevel()
+        if delta ~= 0 then shiftLevels(window, delta) end
+    end
+end
 
 --- A movable, closable window whose position is remembered in saved variables.
 -- @param key identifies the stored position (spec 000 section 4, settings.windows)
@@ -104,9 +149,15 @@ function Widgets.Window(globalName, key, title, width, height)
 
     f:SetScript("OnDragStart", function(self) self:StartMoving() end)
     f:SetScript("OnDragStop", savePosition)
+    -- Click anywhere on the window's own background to bring it forward. A click that
+    -- lands on a child control is that control's, as it should be.
+    f:SetScript("OnMouseDown", function(self) Widgets.Raise(self) end)
 
     --- Restore the remembered position, or centre the window on first use.
     function f:RestorePosition()
+        -- Every Show path goes through here, so this is where a window newly put on
+        -- screen takes the front.
+        Widgets.Raise(self)
         local state = ns.Database.WindowState(key)
         self:ClearAllPoints()
         if state.point then

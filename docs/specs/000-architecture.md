@@ -261,6 +261,13 @@ of the handler runs.
 - **Naming:** `PascalCase` for modules and functions, `camelCase` for locals and fields,
   `SCREAMING_CASE` for constants in `Core/Constants.lua`.
 - **No XML.** Frames are created in Lua via `CreateFrame`. It keeps diffs reviewable.
+- **Windows stack as units.** Every `Widgets.Window` sits in strata `DIALOG` — so Blizzard's
+  `StaticPopup` and the dropdown lists stay above them — and takes the front through
+  `Widgets.Raise`, on a click on its background and on every show. `Raise` walks `GetChildren()`
+  recursively and shifts each descendant by the same delta: setting a parent's frame level alone
+  does **not** restack children that already exist on 3.3.5a, which is what made two overlapping
+  windows interleave, half in front and half behind. Levels are re-assigned from a back-to-front
+  stack rather than incremented, because the client caps frame levels.
 - **English only.** No locale layer in v1; strings live next to their use site.
 - **Errors are surfaced, never swallowed.** A failed award, a dropped message set, or a version
   mismatch produces a visible message. Silent failure in a loot addon costs people items.

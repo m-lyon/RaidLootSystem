@@ -57,6 +57,11 @@ with the reasoning.
   chokepoint, so a line-level transform like the item-link strip cannot be defeated by a format
   added later -- and it is where the whisper exemption is decided. Spec 015 §4.
 - **Only the host writes to raid chat.** Clients never announce.
+- **Setting a frame's level does not restack the children it already has** on 3.3.5a. Raising a
+  window means walking `GetChildren()` and shifting every descendant by the same delta, which is
+  what `Widgets.Raise` does and why two overlapping windows used to draw half in front of each
+  other and half behind. Every window keeps strata `DIALOG`, so `StaticPopup` and dropdowns stay
+  above them. Spec 000 §8.
 - **Nothing irreversible without a confirmation dialog** — awarding loot, clearing history,
   overwriting a roster on import.
 - **Failures are surfaced, never swallowed.** A silently dropped entry or a silently failed award
