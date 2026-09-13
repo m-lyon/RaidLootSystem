@@ -817,7 +817,7 @@ end
 --   one shared setting that is not frozen mid-round, and a lock the host alone stopped
 --   enforcing is no unlock at all -- every member's editor and onRoster gate reads its
 --   own copy (spec 014 section 6). `started` is exempt for the same reason: it becomes
---   true at the moment a round opens and is useless to a member who hears it later.
+--   true when a round resolves and is useless to a member who hears it later.
 function Round.BroadcastConfig(key)
     if not Round.IsHost() then return false, "you are not the master looter." end
     if key ~= "lockHierarchy" and key ~= "started"

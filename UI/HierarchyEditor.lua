@@ -252,9 +252,14 @@ function Editor.Refresh()
     -- refused learned the second one the hard way (spec 014 section 6).
     local locked = not editingDefault() and ns.Campaign.HierarchyLocked(target)
     if locked then
+        -- Only promise an add that SetIncludedIn would accept: an append above Rest is
+        -- refused too.
+        local campaign = ns.Campaign.Get(target)
+        local canAppend = ns.Roster.LockedAppendAllowed(order, "?",
+            campaign and campaign.host.tierCount)
         frame.warning:SetText("|cffffcc00This campaign has started and its hierarchies are "
-            .. "locked. You can still add a character; it joins at the bottom. The master "
-            .. "looter can unlock them.|r")
+            .. "locked. " .. (canAppend and "You can still add a character; it joins your "
+            .. "Rest tier. " or "") .. "The master looter can unlock them.|r")
     elseif not editingDefault() and roundIsOpen() then
         frame.warning:SetText("|cffffcc00A roll is open. Entries you already submitted keep "
             .. "the tiers they had at submit time.|r")

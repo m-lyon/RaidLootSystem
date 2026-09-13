@@ -234,6 +234,7 @@ local Widgets
 local listeners = {}
 local rows = {}
 local noticeText                    -- shown in the roll window after a replace
+local warnedStale = {}              -- campaignId -> true, once per login session
 
 -- campaignId -> the logged events since that campaign's last successful broadcast.
 -- A run of quiet mutations (a round's suicides) accumulates here and rides out on the
@@ -765,10 +766,15 @@ local function onSklist(sender, body)
                 -- still has the newer version to hold the line with (section 8).
                 ns.Debug(string.format("ignored a SKLIST at version %d, behind the stored %d",
                     msg.version or 0, stored.version or 0))
-                ns.Print(string.format("the master looter's priority list for \"%s\" is older "
-                    .. "than yours (version %d, you hold %d) and was not taken. They are "
-                    .. "behind; loot should be mastered by someone holding the newer list.",
-                    ns.Campaign.LabelFor(msg.campaignId), msg.version or 0, stored.version or 0))
+                -- Once per campaign per login session: a behind host sends SKLIST on
+                -- every open, award and SYNC answer.
+                if not warnedStale[msg.campaignId] then
+                    warnedStale[msg.campaignId] = true
+                    ns.Print(string.format("the master looter's priority list for \"%s\" is "
+                        .. "older than yours (version %d, you hold %d) and was not taken. They "
+                        .. "are behind; loot should be mastered by someone holding the newer list.",
+                        ns.Campaign.LabelFor(msg.campaignId), msg.version or 0, stored.version or 0))
+                end
             else
                 requestState(msg, stored, round)
             end

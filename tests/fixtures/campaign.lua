@@ -114,13 +114,34 @@ local function run(input, ns)
         -- A publish under a lock from a player no record matches (spec 014): each
         -- stored record sharing a character, and whether the lock allows it.
         if input.publish then
-            local checked = {}
-            for i, other in ipairs(Campaign.OverlappingOrders(campaign, input.publish.player,
-                    input.publish.order)) do
-                local ok = ns.Roster.LockedChangeAllowed(other.order, input.publish.order)
+            local publish = input.publish
+            local checked, refused = {}, {}
+            for i, other in ipairs(Campaign.OverlappingOrders(campaign, publish.player,
+                    publish.order)) do
+                local ok = ns.Roster.LockedChangeAllowed(other.order, publish.order,
+                    publish.tierCount)
                 checked[i] = other.player .. (ok and "=allowed" or "=refused")
+                if not ok then refused[#refused + 1] = other.player end
             end
-            return { checked = checked }
+            if not publish.record then return { checked = checked } end
+
+            -- What onRoster does with it: the publish is recorded under its sender, and
+            -- each refused overlap's stored ordering sits beside it in the claim index.
+            Campaign.RecordMember(campaign, publish.player, publish.order, nil, publish.at)
+            local published = { [publish.player] = { order = publish.order } }
+            for _, player in ipairs(refused) do
+                published[player] = { order = campaign.members[player].order }
+            end
+            local contested = {}
+            for _, claim in pairs(ns.Roster.BuildClaims(published)) do
+                if claim.contested then contested[#contested + 1] = claim.name end
+            end
+            table.sort(contested)
+            local out = {}
+            for i, member in ipairs(Campaign.MemberList(campaign)) do
+                out[i] = member.player .. "=" .. table.concat(member.order, ",")
+            end
+            return { checked = checked, contested = contested, members = out }
         end
 
         local out = {}
@@ -633,18 +654,29 @@ return {
         {
             -- Alice's record does not name Carol, so neither StoredOrder lookup finds
             -- it; the overlap still does, and the re-rank is refused.
-            name = "under a lock, publishing a re-rank from an unranked alt is refused",
+            name = "under a lock, a re-rank from an unranked alt is reported and contests the shared characters",
             input = { op = "members", records = {
                 { player = "Alice", order = { "Alice", "Bot1", "Bot2" }, at = 1 },
                 { player = "Dave", order = { "Dave" }, at = 2 },
-            }, publish = { player = "Carol", order = { "Bot2", "Bot1", "Alice" } } },
+            }, publish = { player = "Carol", order = { "Bot2", "Bot1", "Alice" },
+                           tierCount = 2, record = true, at = 3 } },
+            expected = { checked = { "Alice=refused" },
+                         contested = { "Alice", "Bot1", "Bot2" },
+                         members = { "Alice=Alice,Bot1,Bot2", "Carol=Bot2,Bot1,Alice",
+                                     "Dave=Dave" } },
+        },
+        {
+            name = "under a lock, an unranked alt's append that would land above Rest is refused",
+            input = { op = "members", records = {
+                { player = "Alice", order = { "Alice" }, at = 1 },
+            }, publish = { player = "Carol", order = { "Alice", "Carol" }, tierCount = 3 } },
             expected = { checked = { "Alice=refused" } },
         },
         {
             name = "under a lock, an unranked alt appending to the stored order is allowed",
             input = { op = "members", records = {
                 { player = "Alice", order = { "Alice", "Bot1" }, at = 1 },
-            }, publish = { player = "Carol", order = { "Alice", "Bot1", "Carol" } } },
+            }, publish = { player = "Carol", order = { "Alice", "Bot1", "Carol" }, tierCount = 2 } },
             expected = { checked = { "Alice=allowed" } },
         },
         {
