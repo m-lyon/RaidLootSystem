@@ -38,6 +38,9 @@ local function run(input, ns)
         return RW.SetupActive(input.isHost, input.requested, input.candidates,
             input.roundState)
 
+    elseif input.op == "autoclose" then
+        return RW.CanAutoClose(input.round, input.awards, input.pending)
+
     elseif input.op == "entrytiers" then
         local out = {}
         for char, tier in pairs(RW.EntryTiers(input.tiers, input.allEntries)) do
@@ -565,5 +568,46 @@ return {
           input = { op = "setup", isHost = true, requested = false, candidates = 3 },
           expected = false },
 
+        ----------------------------------------------------------------------
+        -- Auto-closing a finished round (section 2)
+        ----------------------------------------------------------------------
+        { name = "every item decided and nothing outstanding closes the window",
+          input = { op = "autoclose",
+                    round = { state = "CLOSED", items = { { idx = 1 }, { idx = 2 } },
+                              results = { { itemIdx = 1 }, { itemIdx = 2 } } },
+                    awards = {}, pending = {} },
+          expected = true },
+        { name = "an item with no result yet keeps it open",
+          input = { op = "autoclose",
+                    round = { state = "CLOSED", items = { { idx = 1 }, { idx = 2 } },
+                              results = { { itemIdx = 1 } } },
+                    awards = {}, pending = {} },
+          expected = false },
+        { name = "an award still to be made keeps it open: that is where the button is",
+          input = { op = "autoclose",
+                    round = { state = "CLOSED", items = { { idx = 1 } },
+                              results = { { itemIdx = 1 } } },
+                    awards = { { itemIdx = 1 } }, pending = {} },
+          expected = false },
+        { name = "a trade the host still owes keeps it open too",
+          input = { op = "autoclose",
+                    round = { state = "CLOSED", items = { { idx = 1 } },
+                              results = { { itemIdx = 1 } } },
+                    awards = {}, pending = { { winner = "Bonk" } } },
+          expected = false },
+        { name = "an open round never auto-closes",
+          input = { op = "autoclose",
+                    round = { state = "OPEN", items = { { idx = 1 } },
+                              results = { { itemIdx = 1 } } },
+                    awards = {}, pending = {} },
+          expected = false },
+        { name = "an aborted round never auto-closes: it lingers and says why",
+          input = { op = "autoclose",
+                    round = { state = "ABORTED", items = { { idx = 1 } } },
+                    awards = {}, pending = {} },
+          expected = false },
+        { name = "no round at all is not a reason to close",
+          input = { op = "autoclose", awards = {}, pending = {} },
+          expected = false },
     },
 }

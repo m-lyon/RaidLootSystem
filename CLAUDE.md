@@ -112,6 +112,11 @@ with the reasoning.
   keeps the raid's settings, its health and the live round. The pure rule is
   `RollWindow.SetupActive`; `HostPanel.StartBlocker` stayed where it is and is called from the
   roll window. Spec 005 §2, spec 006 §3.
+- **Only the host auto-closes anything.** When a round closes the host's Blizzard loot frame is
+  shut (`CloseLoot()`), and the roll window hides itself once every item has a decision *and*
+  nothing is awaiting an award or a pending trade -- `RollWindow.CanAutoClose`. A client's
+  results stay on screen until they dismiss them, and the abort linger is untouched. Closing over
+  an unmade award would hide the only control that finishes it. Spec 005 §2.
 - **The open announcement leads with the loot mode**, "Rolling:" or "SK:". It is the host's own
   read-back that the mode is what they think it is. Chat abbreviates; panels and dialogs spell
   "Suicide Kings" out. Spec 006 §4.

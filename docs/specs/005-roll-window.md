@@ -38,6 +38,18 @@ over a body.
 resolving round always wins the window; a *closed* one does not, because by then the host is
 standing over the next corpse and a stale result is not what they asked for.
 
+### Auto-close
+
+When a round closes, the host's Blizzard loot frame is closed for them (`CloseLoot()`).
+
+The roll window itself closes only when **every item has a decision and nothing is waiting to be
+handed over** — `RollWindow.CanAutoClose(round, awards, pending)`. An award that has not been made
+is made *from the results view*, so closing over it would hide the one control that finishes the
+job, and a pending trade has two hours to run and wants the reminder.
+
+**Clients never auto-close.** Their results stay until dismissed. The abort linger (§6) is
+unchanged.
+
 ### Entry and results modes
 
 The window also has an **entry mode** (round is `OPEN`) and a **results mode** (round is `CLOSED`).

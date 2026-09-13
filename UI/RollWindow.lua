@@ -434,6 +434,37 @@ function RollWindow.SetupActive(isHost, requested, candidates, roundState)
     return true
 end
 
+--- May the host's window close itself now that the round is over (section 2)?
+--
+-- Every item has a decision AND nothing is waiting to be handed over. An award
+-- that has not been made yet is made from the results view, so closing over it
+-- would hide the one control that finishes the job; a pending trade has two hours
+-- to run and the host needs the reminder. Clients never auto-close at all -- their
+-- results stay until they dismiss them.
+--
+-- @param round    the mirrored round
+-- @param awards   Award.OutstandingRecords(): awarded to nobody yet, or failed
+-- @param pending  Pending.OutstandingRecords(): won, not yet delivered
+function RollWindow.CanAutoClose(round, awards, pending)
+    if not round then return false end
+    if round.state ~= C.ROUND_STATE.CLOSED then return false end
+
+    local results = round.results
+    if not results or #results == 0 then return false end
+    local decided = {}
+    for _, result in ipairs(results) do decided[result.itemIdx] = true end
+    for _, item in ipairs(round.items or {}) do
+        -- An item the host dropped from the round mid-flight has no result and
+        -- never will; an item still being resolved has none yet. Neither is a
+        -- decision, so neither closes the window.
+        if not decided[item.idx] then return false end
+    end
+
+    if #(awards or {}) > 0 then return false end
+    if #(pending or {}) > 0 then return false end
+    return true
+end
+
 --------------------------------------------------------------------------------
 -- WoW-facing. Nothing below here runs at file scope.
 --------------------------------------------------------------------------------
@@ -1746,6 +1777,15 @@ local function build()
             abortHideAt = nil
             frame:Hide()
         end
+
+        -- The host's window closes itself once the round is finished with: every item
+        -- decided and nothing awaiting an award or a trade (section 2). Clients never
+        -- auto-close; their results stay until they dismiss them.
+        if ns.Round.IsHost() and ns.Award and ns.Pending and not RollWindow.InSetup()
+            and RollWindow.CanAutoClose(round, ns.Award.OutstandingRecords(),
+                ns.Pending.OutstandingRecords()) then
+            frame:Hide()
+        end
     end)
 
     frame:SetScript("OnShow", function() RollWindow.Refresh() end)
@@ -1835,6 +1875,10 @@ local function onClientChanged(round)
         end
     elseif round.state == C.ROUND_STATE.CLOSED then
         setupRequested = false
+        -- The corpse has nothing left to offer this round, so the host's loot window
+        -- is dismissed for them: one fewer frame over the results, and one fewer
+        -- thing to click before moving on (section 2).
+        if ns.Round.IsHost() and ns.LootDetect.windowOpen then CloseLoot() end
         if round.results and not RollWindow.IsShown() then RollWindow.Show() end
     elseif round.state == C.ROUND_STATE.ABORTED then
         if RollWindow.IsShown() and not abortHideAt then
