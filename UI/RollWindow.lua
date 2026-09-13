@@ -1013,7 +1013,8 @@ local function refreshEntry(round)
 
     -- Window size follows the grid. The terms are the entry panel's anchors, top to
     -- bottom: column header, grid, the gap holding the slider, the toggle, the detail
-    -- panel, the warning line, the buttons.
+    -- panel, the warning line, the button row. BUTTON_H covers the whole footer row --
+    -- Pass all, Full list, the dirty indicator and Submit all sit on it at that height.
     local width = PAD * 2 + HEADER_W + visibleCols * CELL_W + 8
     local height = 70 + COL_HEADER_H + gridH + TOGGLE_GAP + TOGGLE_H + 4 + DETAIL_H
         + 2 + WARN_H + 6 + BUTTON_H + PAD
@@ -1599,8 +1600,18 @@ local function buildEntryPanel(parent)
     panel.submit = Widgets.Button(panel, "Submit", 130, BUTTON_H, function() submitGrid(false) end)
     panel.submit:SetPoint("TOPRIGHT", panel.warning, "BOTTOMRIGHT", 0, -6)
 
+    -- "unsent changes" sits between the left-hand buttons and Submit. Anchored only
+    -- by its right edge it grew leftwards *under* Full list and Pass all and read as
+    -- clipped text; the left anchor is what stops it, and the fixed height keeps it on
+    -- the one footer row the height arithmetic below allows for. Full list is hidden
+    -- under ROLL but keeps its point, so the anchor resolves either way.
     panel.dirty = Widgets.Label(panel, "", "GameFontHighlightSmall")
+    panel.dirty:SetPoint("LEFT", panel.fullList, "RIGHT", 8, 0)
     panel.dirty:SetPoint("RIGHT", panel.submit, "LEFT", -8, 0)
+    panel.dirty:SetHeight(BUTTON_H)
+    panel.dirty:SetJustifyH("RIGHT")
+    panel.dirty:SetJustifyV("MIDDLE")
+    if panel.dirty.SetNonSpaceWrap then panel.dirty:SetNonSpaceWrap(false) end
 
     return panel
 end
