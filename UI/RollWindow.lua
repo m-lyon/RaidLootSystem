@@ -765,14 +765,22 @@ local function refreshEntry(round)
     -- Present characters' list positions, for the SK median, and every character's
     -- rank inside its tier -- the number the priority viewer draws (spec 013 section
     -- 6), from the same owner hierarchies the viewer bands by.
-    local presentPositions, tierRanks = {}, nil
+    --
+    -- Two separate rank tables, not one: the grid bands and labels each row by this
+    -- client's own live hierarchy (`rosterRows`' `char.tier`), so its rank must come
+    -- from that same live TierIndex or it disagrees with `/rls sk` for every
+    -- character sharing a tier with one whose entry was stamped elsewhere. The
+    -- detail panel bands by the entry's *stamped* tier instead (comment above
+    -- RollWindow.EntryTiers), so it needs the overridden table.
+    local presentPositions, tierRanks, detailRanks = {}, nil, nil
     if sk and round.priority then
         for name, position in pairs(round.priority) do
             if ns.Roster.IsPresent(name) then presentPositions[#presentPositions + 1] = position end
         end
-        local tiers = RollWindow.EntryTiers(
-            ns.Campaign.TierIndex(round.tierCount, round.campaignId), round.entries)
-        tierRanks = ns.TierRoster.ranks(round.priority, tiers, round.tierCount)
+        local liveTiers = ns.Campaign.TierIndex(round.tierCount, round.campaignId)
+        tierRanks = ns.TierRoster.ranks(round.priority, liveTiers, round.tierCount)
+        local entryTiers = RollWindow.EntryTiers(liveTiers, round.entries)
+        detailRanks = ns.TierRoster.ranks(round.priority, entryTiers, round.tierCount)
     end
 
     -- Columns.
@@ -907,7 +915,7 @@ local function refreshEntry(round)
     local item = selectedIdx and itemByIdx(round, selectedIdx)
     if item then
         local lines = { "Selected: " .. itemLabel(round, item) }
-        local detail = RollWindow.DetailRows(round.entries[item.idx], sk, round.priority, tierRanks)
+        local detail = RollWindow.DetailRows(round.entries[item.idx], sk, round.priority, detailRanks)
         if #detail == 0 then
             lines[#lines + 1] = "|cff888888No entries accepted yet.|r"
         else

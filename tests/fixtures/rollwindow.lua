@@ -42,6 +42,21 @@ local function run(input, ns)
         table.sort(out)
         return out
 
+    elseif input.op == "entrydetail" then
+        -- The real pipeline refreshEntry wires up for the detail panel: live tiers,
+        -- overridden by each entry's stamped tier, ranked, then rendered as detail
+        -- rows -- so a rank a fixture checks here is one the panel would actually
+        -- show, not just a property of the intermediate table.
+        local tiers = RW.EntryTiers(input.tiers, input.allEntries)
+        local tierRanks = ns.TierRoster.ranks(input.priority, tiers, input.tierCount)
+        local out = {}
+        for i, d in ipairs(RW.DetailRows(input.entries, input.isSK, input.priority, tierRanks)) do
+            out[i] = string.format("T%d %s (%s) #%s", d.tier, d.char, d.owner or "?",
+                tostring(d.listIdx or "?"))
+            if d.tierRank then out[i] = out[i] .. " rank " .. d.tierRank end
+        end
+        return out
+
     elseif input.op == "detail" then
         local out = {}
         for i, d in ipairs(RW.DetailRows(input.entries, input.isSK, input.priority,
@@ -328,6 +343,27 @@ return {
                           [2] = { { char = "Sneaky", tier = 1 } },
                       } },
             expected = { "ash=1", "sneaky=1", "zed=2" },
+        },
+        {
+            -- The full chain refreshEntry wires up for the panel: live tiers are
+            -- overridden by each entry's stamped tier, then ranked, then rendered.
+            -- Ash's stamped tier (1) differs from its live one (2), and its rank
+            -- must be computed inside the stamped tier -- 2nd behind Sneaky, not
+            -- whatever it would rank among tier 2's members. Zed is uninvolved and
+            -- keeps its live tier and the rank that comes with it.
+            name = "entrydetail ranks a resubmitted entry inside its stamped tier",
+            input = { op = "entrydetail", isSK = true, tierCount = 2,
+                      tiers = { ash = 2, sneaky = 1, zed = 2 },
+                      priority = { Ash = 5, Sneaky = 3, Zed = 9 },
+                      allEntries = { [1] = { { char = "Ash", tier = 1 },
+                                              { char = "Sneaky", tier = 1 } } },
+                      entries = {
+                          { char = "Ash", owner = "Anna", tier = 1 },
+                          { char = "Sneaky", owner = "Steve", tier = 1 },
+                          { char = "Zed", owner = "Anna", tier = 2 },
+                      } },
+            expected = { "T1 Sneaky (Steve) #3 rank 1", "T1 Ash (Anna) #5 rank 2",
+                         "T2 Zed (Anna) #9 rank 1" },
         },
 
         ----------------------------------------------------------------------
