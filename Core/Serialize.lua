@@ -149,12 +149,17 @@ function Serialize.assemble(assembler, sender, msg, now)
 end
 
 --- Drop message sets older than the timeout.
+--
+-- The allowance scales with the set's own size: chunks leave the sender at
+-- C.SEND_RATE per second, so a long CSTATE legitimately takes longer to arrive than
+-- the flat timeout and dropping it would leave a client asking for it forever.
 -- @return array of dropped keys, so the caller can surface the loss
 function Serialize.pruneAssembler(assembler, now, timeout)
     timeout = timeout or C.REASSEMBLY_TIMEOUT
     local dropped = {}
     for key, set in pairs(assembler.pending) do
-        if now - set.started > timeout then
+        local allowed = math.max(timeout, (set.total or 1) / C.SEND_RATE * 2)
+        if now - set.started > allowed then
             dropped[#dropped + 1] = key
             assembler.pending[key] = nil
         end
@@ -183,7 +188,14 @@ end
 --- The ROSTER message body (spec 012 section 10): campaignId^name=class~...
 -- The plain list above stays the export format of spec 001 section 8, which
 -- carries no campaign.
+-- Refused rather than encoded, because decodeRosterMsg refuses it on the far
+-- side: an encoder that accepts what the decoder rejects turns one caller's bug
+-- into an unreadable-roster message in every raid member's chat, instead of one
+-- failure the sender can see.
 function Serialize.encodeRosterMsg(campaignId, order, chars)
+    if type(campaignId) ~= "string" or campaignId == "" then
+        return nil, "ROSTER has no campaign id"
+    end
     local body, err = Serialize.encodeRoster(order, chars)
     if not body then return nil, err end
     return Serialize.encodeFields({ campaignId, body })
@@ -491,11 +503,20 @@ function Serialize.decodeRolls(body)
 end
 
 --------------------------------------------------------------------------------
--- SKLIST: version^seed^name~name~...   (spec 010 section 8)
+-- SKLIST: campaignId^version^seed^name~name~...^event~event~...  (spec 010 s8)
 --
--- The authoritative priority list. Sent after OPEN under SK, after RESULT once the
--- suicides are applied, and on SYNC. A client whose copy differs replaces it whole.
+-- The authoritative priority list, plus the events that produced it since the
+-- previous version. A client one step behind applies those events and appends them
+-- to its own log, so every member holds a replayable history and a master-looter
+-- handover loses nothing. A client further behind cannot chain them; it takes the
+-- order as given and asks for a CSTATE to rebuild its log.
+--
+-- The events ride here rather than on an op of their own because they are only ever
+-- meaningful against the order in the same message.
 --------------------------------------------------------------------------------
+
+-- Defined with the campaign codec below; SKLIST needs them first.
+local encodeEvent, decodeEvent
 
 local function encodeNames(order)
     local names = {}
@@ -507,10 +528,19 @@ local function encodeNames(order)
     return Serialize.encodeList(names)
 end
 
-function Serialize.encodeSklist(campaignId, version, seed, order)
+--- @param events  the log entries from the receiver's version + 1 up to `version`,
+--                or nil for a plain restatement (OPEN, SYNC), which chains nothing
+function Serialize.encodeSklist(campaignId, version, seed, order, events)
     local names, err = encodeNames(order)
     if not names then return nil, err end
-    return Serialize.encodeFields({ campaignId, version, seed, names })
+    local encoded = {}
+    for i, e in ipairs(events or {}) do
+        local element, err2 = encodeEvent(e)
+        if not element then return nil, err2 end
+        encoded[i] = element
+    end
+    return Serialize.encodeFields({ campaignId, version, seed, names,
+        Serialize.encodeList(encoded) })
 end
 
 function Serialize.decodeSklist(body)
@@ -528,7 +558,35 @@ function Serialize.decodeSklist(body)
             order[#order + 1] = name
         end
     end
-    return { campaignId = campaignId, version = version, seed = seed, order = order }
+    local events = {}
+    for _, element in ipairs(Serialize.decodeList(fields[5])) do
+        local event = decodeEvent(element)
+        if not event then return nil, "SKLIST has an unreadable log event" end
+        events[#events + 1] = event
+    end
+    return { campaignId = campaignId, version = version, seed = seed, order = order,
+             events = events }
+end
+
+--------------------------------------------------------------------------------
+-- SYNC: roundId^campaignId^priorityVersion   (spec 010 section 8)
+--
+-- "Tell me what I missed." The round id resends an open round; the campaign id and
+-- the version let the host answer a priority list that has fallen behind with a
+-- CSTATE instead of guessing whether one is needed.
+--------------------------------------------------------------------------------
+
+function Serialize.encodeSync(roundId, campaignId, priorityVersion)
+    return Serialize.encodeFields({ roundId or "", campaignId or "", priorityVersion or 0 })
+end
+
+function Serialize.decodeSync(body)
+    local fields = Serialize.decodeFields(body)
+    return {
+        roundId = (fields[1] ~= "" and fields[1] or nil),
+        campaignId = (fields[2] ~= "" and fields[2] or nil),
+        priorityVersion = tonumber(fields[3]) or 0,
+    }
 end
 
 --------------------------------------------------------------------------------
@@ -574,7 +632,7 @@ end
 
 local EVENT_JOIN = "+"
 
-local function encodeEvent(e)
+function encodeEvent(e)
     local present, chars = {}, {}
     for i, v in ipairs(e.present or {}) do present[i] = tostring(v) end
     for i, v in ipairs(e.chars or {}) do chars[i] = tostring(v) end
@@ -583,7 +641,7 @@ local function encodeEvent(e)
         table.concat(present, EVENT_JOIN), table.concat(chars, EVENT_JOIN) })
 end
 
-local function decodeEvent(element)
+function decodeEvent(element)
     local sub = Serialize.decodeElement(element)
     local kind = sub[1]
     if not kind or kind == "" then return nil end
@@ -612,9 +670,13 @@ function Serialize.encodeCampaign(campaign)
     local host = campaign.host or {}
     local priority = campaign.priority or {}
 
+    -- Appended rather than inserted, so a build that predates spec 014 reads the
+    -- first four exactly as before and ignores the fifth.
     local hostElement, err = Serialize.encodeElement({ host.tierCount or 3,
         host.timerSeconds or 180, host.qualityThreshold or 4,
-        host.lootMode or C.LOOT_MODE.ROLL })
+        host.lootMode or C.LOOT_MODE.ROLL,
+        host.lockHierarchy == false and 0 or 1,
+        host.started and 1 or 0 })
     if not hostElement then return nil, err end
 
     local seedChars, err2 = encodeNames(priority.seedChars or {})
@@ -667,6 +729,11 @@ function Serialize.decodeCampaign(body)
             tierCount        = number(host[1], 3),
             timerSeconds     = number(host[2], 180),
             qualityThreshold = number(host[3], 4),
+            -- Absent means a sender from before spec 014, and the default is on.
+            lockHierarchy    = number(host[5], 1) ~= 0,
+            -- Whether the campaign has run a round, shared so every member agrees
+            -- the lock is in force (spec 014). Absent means a sender that predates it.
+            started          = number(host[6], 0) ~= 0,
             lootMode         = lootMode,
         },
         priority = {
@@ -680,7 +747,7 @@ function Serialize.decodeCampaign(body)
 end
 
 --------------------------------------------------------------------------------
--- ABORT: roundId^reasonCode        CFG: tierCount^timerSeconds^lootMode
+-- ABORT: roundId^reasonCode   CFG: tierCount^timerSeconds^lootMode^lockHierarchy^started
 --------------------------------------------------------------------------------
 
 function Serialize.encodeAbort(roundId, reason)
@@ -694,8 +761,10 @@ function Serialize.decodeAbort(body)
     return { roundId = fields[1], reason = fields[2] }
 end
 
-function Serialize.encodeConfig(campaignId, tierCount, timerSeconds, lootMode)
-    return Serialize.encodeFields({ campaignId, tierCount, timerSeconds, lootMode })
+function Serialize.encodeConfig(campaignId, tierCount, timerSeconds, lootMode, lockHierarchy,
+        started)
+    return Serialize.encodeFields({ campaignId, tierCount, timerSeconds, lootMode,
+        lockHierarchy == false and 0 or 1, started and 1 or 0 })
 end
 
 function Serialize.decodeConfig(body)
@@ -708,6 +777,10 @@ function Serialize.decodeConfig(body)
     end
     local lootMode = fields[4]
     if not lootMode or lootMode == "" then return nil, "CFG has no loot mode" end
+    -- A missing fifth field is a host from before spec 014; the default is on.
     return { campaignId = campaignId, tierCount = tierCount,
-             timerSeconds = timerSeconds, lootMode = lootMode }
+             timerSeconds = timerSeconds, lootMode = lootMode,
+             lockHierarchy = tonumber(fields[5] or 1) ~= 0,
+             -- A missing sixth field is a host from before the shared started flag.
+             started = (tonumber(fields[6]) or 0) ~= 0 }
 end

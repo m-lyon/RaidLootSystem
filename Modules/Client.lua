@@ -24,6 +24,7 @@ Client.config = nil          -- last CFG seen from the host
 local listeners = {}
 local frame
 local lastSync = 0
+local lastSyncAsk               -- { campaignId, version } of the last SYNC that went out
 local lastHost
 local expectedCount          -- entries in our last SUBMIT, for the section 5 check
 local lastSent = {}          -- the entries themselves, so a refused one can be named
@@ -52,9 +53,38 @@ end
 
 --- The tier count in force: the open round's frozen count, else the last CFG the host
 -- sent, else nil so callers fall back to their own default.
-function Client.TierCount()
-    if Client.IsOpen() then return Client.round.tierCount end
-    return Client.config and Client.config.tierCount or nil
+-- A CFG names the campaign it configures, so it stands in only for that one: a CFG
+-- for a second campaign you belong to must not reband a list it says nothing about.
+-- @param campaignId the campaign being drawn, active by default
+function Client.TierCount(campaignId)
+    campaignId = campaignId or ns.Campaign.ActiveId()
+    if Client.IsOpen() and Client.round.campaignId == campaignId then
+        return Client.round.tierCount
+    end
+    if Client.config and Client.config.campaignId == campaignId then
+        return Client.config.tierCount
+    end
+    return nil
+end
+
+--- The tier count to draw with, plus whether it is real rather than a guess.
+--
+-- Real means an open round's frozen count or a CFG this session actually saw
+-- from the host. Everything else -- a joined campaign's own stored `host`
+-- settings, or the schema default -- is a local guess, because a member's copy
+-- of `host.tierCount` is never synced to the host's value (only the ephemeral
+-- CFG mirror is). Every screen that draws tiers outside a round resolves it
+-- here, so they cannot disagree about what is synced.
+-- @return count, synced
+function Client.TierCountInForce(campaignId)
+    local count = Client.TierCount(campaignId)
+    if count then return count, true end
+    -- The named campaign's own stored setting, not the active one's: the hierarchy
+    -- editor draws a campaign that may not be active, and banding it by another
+    -- campaign's count is simply wrong.
+    local campaign = ns.Campaign.Get(campaignId or ns.Campaign.ActiveId())
+    local stored = campaign and ns.Campaign.Normalise(campaign).host.tierCount
+    return stored or ns.Database.DefaultTierCount(), false
 end
 
 --- The loot mode the round runs under, as far as this client knows. Spec 010's SKLIST
@@ -244,7 +274,9 @@ local function onResult(sender, body)
     round.results = msg.results
     round.state = C.ROUND_STATE.CLOSED
     round.closedAt = time()
-    if ns.Priority then ns.Priority.OnClientResult(round) end
+    -- The suicides are not replayed here. They arrive as logged events on the SKLIST
+    -- the host sends next, so a client's list and its history move together rather
+    -- than the list moving now and the history never (spec 010 section 8).
     if round.rolls and ns.History then ns.History.RecordClient(round) end
     fireChanged()
 end
@@ -311,6 +343,29 @@ local function onConfig(sender, body)
     -- Settings from a campaign you are not in are not your settings (section 10).
     if not ns.Campaign.AcceptsMessage(C.OPS.CFG, msg.campaignId, sender) then return end
     Client.config = msg
+
+    -- The campaign owns how the group plays it, so these land on the campaign record
+    -- and not only in a display field (spec 012 section 9). Without this the loot mode
+    -- stops at whoever happens to be master looter: the next one to hold it opens a
+    -- round under their own stale default, and a seeded Suicide Kings campaign
+    -- silently resolves by roll.
+    -- Never from yourself: the host already holds these, and under /rls simulate the
+    -- looped-back CFG carries the simulation's settings, not the campaign's.
+    local campaign = not ns.Comms.IsSelf(sender) and ns.Campaign.Get(msg.campaignId)
+    if campaign then
+        local host = ns.Campaign.Normalise(campaign).host
+        host.tierCount = msg.tierCount or host.tierCount
+        host.timerSeconds = msg.timerSeconds or host.timerSeconds
+        host.lootMode = msg.lootMode or host.lootMode
+        -- Always assigned, never `or`-defaulted: false is a real value here and the
+        -- idiom cannot carry one, so an unlock would never reach anybody.
+        if msg.lockHierarchy ~= nil then host.lockHierarchy = msg.lockHierarchy end
+        -- One-way: a campaign that has run a round never un-runs it, and a host who
+        -- joined late and has not seen one must not clear it for the group.
+        if msg.started then host.started = true end
+        -- The hierarchy editor and the viewers read these too, not only the roll window.
+        if ns.Campaign.FireChanged then ns.Campaign.FireChanged() end
+    end
     fireChanged()
 end
 
@@ -360,12 +415,27 @@ function Client.LastSent()
 end
 
 --- Ask the host to resend the round. At most once every C.SYNC_INTERVAL seconds.
-function Client.RequestSync()
+-- @param campaignId the campaign to ask about, active by default
+function Client.RequestSync(campaignId)
     local now = GetTime()
     if now - lastSync < C.SYNC_INTERVAL then return false end
-    lastSync = now
     local id = Client.round and Client.round.id or ""
-    return ns.Comms.Send(C.OPS.SYNC, Serialize.encodeFields({ id }))
+    -- The campaign and the list version ride along so the host can answer a history
+    -- that has fallen behind without being asked twice (spec 010 section 8).
+    campaignId = campaignId or ns.Campaign.ActiveId()
+    local version = ns.Priority and ns.Priority.HistoryVersion(campaignId) or 0
+    local ok, err = ns.Comms.Send(C.OPS.SYNC, Serialize.encodeSync(id, campaignId, version))
+    if not ok then return false, err end
+    lastSync = now
+    lastSyncAsk = { campaignId = campaignId, version = version }
+    return ok
+end
+
+--- True when a SYNC asking for this campaign's whole history (version 0) went out
+-- inside C.SYNC_INTERVAL, so the host is already answering it.
+function Client.HistoryRequested(campaignId)
+    return lastSyncAsk ~= nil and GetTime() - lastSync < C.SYNC_INTERVAL
+        and lastSyncAsk.campaignId == campaignId and lastSyncAsk.version == 0
 end
 
 --------------------------------------------------------------------------------

@@ -12,6 +12,7 @@ local Viewer = ns.PriorityViewer
 
 local C = ns.Constants
 local PriorityList = ns.PriorityList
+local TierRoster = ns.TierRoster
 local Widgets = ns.Widgets
 
 local ROW_H = 18
@@ -19,10 +20,12 @@ local LIST_WIDTH = 360
 local SCROLL_WIDTH = LIST_WIDTH - 30
 local ROW_INSET = 4
 local ROW_WIDTH = SCROLL_WIDTH - ROW_INSET - Widgets.SCROLLBAR_GUTTER
+local TIER_W = 30
+local BAND_H = 20
 local WINDOW_HEIGHT = 440
 local LIST_HEIGHT = 300
 
-local frame, content, rows
+local frame, content, rows, bands
 
 --------------------------------------------------------------------------------
 -- What the client knows
@@ -43,20 +46,34 @@ local function skInForce()
     return round.lootMode == C.LOOT_MODE.SK
 end
 
+--- The tier count to draw with, and whether it is real. The hierarchy editor
+-- resolves it the same way, through the same call, so the two screens cannot
+-- disagree about which tiers are a synced fact and which are a local guess.
+local function activeTierCount()
+    local client = ns.Client
+    if client and client.TierCountInForce then
+        return client.TierCountInForce(ns.Campaign.ActiveId())
+    end
+    return ns.Database.DefaultTierCount(), false
+end
+
 --- Resolve every WoW-facing lookup the row model needs, so PriorityList.viewRows
 -- stays arithmetic over plain tables (spec 011 section 4).
-local function context(order)
+local function context(order, tierCount)
     local claims = ns.Roster.claims
-    local owners, present, classes, contested = {}, {}, {}, {}
+    local tierOf = ns.Campaign.TierIndex(tierCount)
+    local owners, present, classes, contested, tiers = {}, {}, {}, {}, {}
     for _, name in ipairs(order) do
         local claim = claims[name:lower()]
-        owners[name] = claim and claim.owners[1] or nil
+        local owner = claim and claim.owners[1] or nil
+        owners[name] = owner
         present[name] = ns.Roster.IsPresent(name) and true or nil
         classes[name] = ns.Roster.ClassOfAny(name)
         contested[name] = (claim and claim.contested) and true or nil
+        tiers[name] = tierOf[name:lower()]
     end
     return { owners = owners, present = present, classes = classes,
-             contested = contested, me = UnitName("player") }
+             contested = contested, tiers = tiers, me = UnitName("player") }
 end
 
 --------------------------------------------------------------------------------
@@ -73,13 +90,43 @@ local function createRow(index)
     row.position:SetWidth(26)
     row.position:SetJustifyH("RIGHT")
 
+    -- The tier sits at the right edge with the name stopping short of it, rather
+    -- than after the name: a badge anchored to a variable-width name lands in a
+    -- different place on every row, and a centred one drifts under whatever is
+    -- beside it.
+    row.tier = Widgets.Label(row, "", "GameFontNormalSmall")
+    row.tier:SetPoint("RIGHT", row, "RIGHT", -2, 0)
+    row.tier:SetWidth(TIER_W)
+    row.tier:SetJustifyH("RIGHT")
+
     row.name = Widgets.Label(row, "", "GameFontHighlightSmall")
     row.name:SetPoint("LEFT", row.position, "RIGHT", 6, 0)
-    row.name:SetWidth(ROW_WIDTH - 32)
+    row.name:SetWidth(ROW_WIDTH - 32 - TIER_W - 6)
     row.name:SetJustifyH("LEFT")
 
     rows[index] = row
     return row
+end
+
+--- A tier heading. The list is grouped by tier (spec 013 section 6) because a tier
+-- is the first gate on every item: a lower tier is never consulted while a higher
+-- one can still supply a winner, so the top of the list is not the front of the
+-- queue -- the top of T1 is.
+local function createBand(index)
+    local band = CreateFrame("Frame", nil, content)
+    band:SetWidth(ROW_WIDTH)
+    band:SetHeight(BAND_H)
+
+    band.text = Widgets.Label(band, "", "GameFontNormalSmall")
+    band.text:SetPoint("BOTTOMLEFT", band, "BOTTOMLEFT", 0, 4)
+
+    band.line = band:CreateTexture(nil, "ARTWORK")
+    band.line:SetHeight(1)
+    band.line:SetPoint("BOTTOMLEFT", band, "BOTTOMLEFT", 0, 1)
+    band.line:SetPoint("BOTTOMRIGHT", band, "BOTTOMRIGHT", 0, 1)
+
+    bands[index] = band
+    return band
 end
 
 --------------------------------------------------------------------------------
@@ -100,6 +147,7 @@ function Viewer.Refresh()
         frame.mode:SetText("|cff888888Suicide Kings is unavailable until the master looter "
             .. "seeds it.|r")
         for _, row in ipairs(rows) do row:Hide() end
+        for _, band in ipairs(bands) do band:Hide() end
         content:SetHeight(1)
         return
     end
@@ -118,29 +166,67 @@ function Viewer.Refresh()
             .. "are not deciding it.|r")
     end
 
-    local view = PriorityList.viewRows(order, context(order))
-    for i, entry in ipairs(view) do
-        local row = rows[i] or createRow(i)
-        row:ClearAllPoints()
-        row:SetPoint("TOPLEFT", content, "TOPLEFT", ROW_INSET, -(i - 1) * ROW_H)
+    local tierCount, tierSynced = activeTierCount()
+    local view = PriorityList.viewRows(order, context(order, tierCount))
 
-        -- Above the median of who is actually here is the thing people want at a
-        -- glance, so it colours the number itself (spec 010 section 11).
-        row.position:SetText((entry.aboveMedian and "|cff66ff66#" or "|cffaaaaaa#")
-            .. entry.position .. "|r")
+    -- Grouped by tier, and inside a band still in list order -- which is exactly the
+    -- order a round awards in (spec 003 section 5). The position number stays on
+    -- every row: it is the number people came to read, and a suicide is announced
+    -- in terms of it.
+    local groups = TierRoster.groupRows(view, tierCount)
 
-        local label = Widgets.ColorName(entry.char, entry.class)
-            .. " |cff888888(" .. (entry.owner or "unclaimed") .. ")|r"
-        if entry.isSelf then label = label .. " |cffaaaaaa*|r" end
-        if entry.contested then label = label .. " |cffff4040contested|r" end
-        row.name:SetText(label)
+    local y, rowIndex, bandIndex = 0, 0, 0
+    for _, group in ipairs(groups) do
+        bandIndex = bandIndex + 1
+        local band = bands[bandIndex] or createBand(bandIndex)
+        band.text:SetText(string.format("|cffe6b422%s|r |cff888888(%d)|r",
+            group.label, #group.rows))
+        band.line:SetTexture(0.5, 0.4, 0.15, 0.7)
+        band:ClearAllPoints()
+        band:SetPoint("TOPLEFT", content, "TOPLEFT", ROW_INSET, -y)
+        band:Show()
+        y = y + BAND_H
 
-        row:SetAlpha(entry.present and 1 or 0.5)
-        row:Show()
+        for _, entry in ipairs(group.rows) do
+            rowIndex = rowIndex + 1
+            local row = rows[rowIndex] or createRow(rowIndex)
+            row:ClearAllPoints()
+            row:SetPoint("TOPLEFT", content, "TOPLEFT", ROW_INSET, -y)
+
+            -- The rank inside this tier, not the global list index: a tier is
+            -- walked to exhaustion before the next is consulted, so "third in T1" is
+            -- where this character actually stands in the queue for a T1 item.
+            --
+            -- The colour is still the global near-the-top signal (spec 010 section
+            -- 11), which is a fact about the whole list rather than about the band.
+            row.position:SetText((entry.aboveMedian and "|cff66ff66#" or "|cffaaaaaa#")
+                .. (entry.tierPosition or entry.position) .. "|r")
+
+            local label = Widgets.ColorName(entry.char, entry.class)
+                .. " |cff888888(" .. (entry.owner or "unclaimed") .. ")|r"
+            if entry.isSelf then label = label .. " |cffaaaaaa*|r" end
+            if entry.contested then label = label .. " |cffff4040contested|r" end
+            row.name:SetText(label)
+
+            -- Dimmed when the tier count behind it is this client's own default
+            -- rather than one the host announced, the same signal the hierarchy
+            -- editor gives. Blank when nobody has published the owner's ordering,
+            -- because there is no honest number to put there -- those rows are
+            -- gathered under their own band rather than shown as Rest.
+            row.tier:SetText(entry.tier
+                and ((tierSynced and "|cffaaaaaa" or "|cff666666")
+                     .. ns.Tiers.label(entry.tier, tierCount) .. "|r")
+                or "")
+
+            row:SetAlpha(entry.present and 1 or 0.5)
+            row:Show()
+            y = y + ROW_H
+        end
     end
-    for i = #view + 1, #rows do rows[i]:Hide() end
+    for i = rowIndex + 1, #rows do rows[i]:Hide() end
+    for i = bandIndex + 1, #bands do bands[i]:Hide() end
 
-    content:SetHeight(math.max(#view * ROW_H, 1))
+    content:SetHeight(math.max(y, 1))
 end
 
 --------------------------------------------------------------------------------
@@ -148,7 +234,7 @@ end
 --------------------------------------------------------------------------------
 
 local function build()
-    rows = {}
+    rows, bands = {}, {}
 
     frame = Widgets.Window("RaidLootSystemPriorityViewer", "sklist",
         "Raid Loot System - Priority list", LIST_WIDTH + 40, WINDOW_HEIGHT)

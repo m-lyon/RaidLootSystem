@@ -48,7 +48,7 @@ One row per character, in list order:
 
 | Element | Source | Notes |
 |---|---|---|
-| Position | list index | The number people came to read. |
+| Position | rank within the tier | **Superseded by 013 §6.** This specified the list index, from a time when the list was drawn flat; once it is grouped into tier bands the rank inside the band is the character's real place in the queue, and the list index answers a question nothing asks. The index is still what a suicide is announced in and what the log is written in. |
 | Name | `order` | Class-coloured, as the host panel's is. |
 | Owner | `Roster.claims` | `unclaimed` where nobody claims it. |
 | Own marker | viewer's name vs owner | `*`, matching 010 §10's host-panel marker. |
@@ -94,7 +94,10 @@ and should not drag the midpoint of a list of who is actually here.
   005 §3*. This is the discoverability path. The moment a player wants the whole list is the
   moment they are looking at their own position in the grid and wondering who is above them.
 - **No minimap change.** Left-click, shift-click and right-click are all taken (005 §6), and a
-  fourth chord on one button is worse than a button in the window already open.
+  fourth chord on one button is worse than a button in the window already open. This still holds:
+  ctrl-click was later spent on the host panel's displaced roll window (006 §3), which had no
+  other way in at all, and the viewer still reaches its audience from the window they are already
+  looking at.
 
 ## 6. Behaviour
 

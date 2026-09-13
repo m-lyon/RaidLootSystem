@@ -94,10 +94,84 @@ end
 function Campaign.Normalise(campaign)
     if type(campaign) ~= "table" then return nil end
     campaign.hierarchy = campaign.hierarchy or {}
+    -- Additive, so a campaign stored before spec 013 gains an empty members table
+    -- here rather than through a schema bump -- which would rebuild the saved
+    -- variables empty (section 3) and take the group's priority list with it.
+    campaign.members = campaign.members or {}
     campaign.host = Util.applyDefaults(campaign.host or {}, C.CAMPAIGN_DEFAULTS.host)
     campaign.priority = Util.applyDefaults(campaign.priority or {},
         C.CAMPAIGN_DEFAULTS.priority)
     return campaign
+end
+
+--------------------------------------------------------------------------------
+-- Pure: submitted hierarchies (spec 013 section 3)
+--
+-- What each member ranked, for the campaign they ranked it in. The stored copy is
+-- a cache of what that member broadcast and nothing else writes it: a hierarchy
+-- belongs to the member who submitted it (section 7), so CFG and CSTATE still
+-- leave these alone and no host screen edits them.
+--------------------------------------------------------------------------------
+
+--- Are a stored record and an incoming one the same player, logged in on two of
+-- their own characters?
+--
+-- The whole premise of the addon is that one player runs several characters, and
+-- the saved variables are per account, so all of them share one hierarchy. Keying a
+-- record by the character you happen to be logged in on therefore accumulates one
+-- record per alt, each holding the same ordering, and the roster draws every
+-- character once per alt that has ever logged in.
+--
+-- The test is mutual: each names the other. Two alts always do, because they share
+-- the one hierarchy that lists them both. A stranger who has wrongly put your main
+-- in *their* hierarchy does not, because yours does not list them back -- so a
+-- mistaken claim stays a contested character, which is loud, instead of silently
+-- deleting someone's record.
+function Campaign.SameMember(storedPlayer, storedOrder, player, order)
+    return Util.indexOf(order or {}, storedPlayer) ~= nil
+        and Util.indexOf(storedOrder or {}, player) ~= nil
+end
+
+--- Record one member's ordering on a campaign record. Replaces rather than merges:
+-- a resubmission is the whole of what that member now ranks, and merging would
+-- resurrect a character they had just removed.
+-- @return true, or nil plus a reason
+function Campaign.RecordMember(campaign, player, order, chars, at)
+    if type(campaign) ~= "table" then return nil, "no such campaign" end
+    if type(player) ~= "string" or player == "" then return nil, "a record needs a player" end
+    campaign.members = campaign.members or {}
+
+    -- One record per player, not one per character they log in on. Clearing on
+    -- write also repairs a campaign that already accumulated duplicates: the next
+    -- publish from any of the alts collapses them.
+    for stored, record in pairs(campaign.members) do
+        -- Mutual only: an ordering that merely extends a stored one is exactly what a
+        -- stranger ranking a one-character member first looks like. A new alt the
+        -- stored ordering does not list yet keeps a second record until any of the
+        -- player's characters publishes again, and then the mutual test collapses it.
+        if stored ~= player and Campaign.SameMember(stored, record.order, player, order) then
+            campaign.members[stored] = nil
+        end
+    end
+
+    campaign.members[player] = {
+        order = Util.copy(order or {}),
+        chars = Util.deepCopy(chars or {}),
+        at = at,
+    }
+    return true
+end
+
+--- The submitted hierarchies of a campaign, as TierRoster.bands takes them.
+-- Sorted by player so the roster is stable between reads.
+function Campaign.MemberList(campaign)
+    local out = {}
+    for player, record in pairs((campaign or {}).members or {}) do
+        out[#out + 1] = { player = player, order = record.order or {},
+                          chars = record.chars or {}, at = record.at }
+    end
+    table.sort(out, function(a, b) return a.player < b.player end)
+    return out
 end
 
 --------------------------------------------------------------------------------
@@ -216,19 +290,35 @@ end
 --------------------------------------------------------------------------------
 
 --- Why this campaign cannot be deleted, or nil.
--- @param ctx { activeId, count, pendingIds = { [campaignId] = true } }
+--
+-- Being the active one, or the only one, no longer blocks: a client with no
+-- campaign at all is a state the addon supports (section 5, revised), so
+-- deleting the last one leaves you in the template and nothing else. What is
+-- still refused is deleting a campaign with live state pointing into it.
+-- @param ctx { inGroup, pendingIds = { [campaignId] = true }, openRoundCampaignId }
 function Campaign.DeleteBlocker(campaignId, ctx)
     ctx = ctx or {}
+    if ctx.inGroup then
+        -- Deleting is local and silent: no op carries it, so the other members keep
+        -- the campaign, its priority list and its log, and find out only when the
+        -- next round opens somewhere they are not members and their roll window
+        -- comes up read-only. That is a raid night lost to a misclick, and the list
+        -- it costs is the one the group has been building for weeks. So deletion is
+        -- an out-of-group action. Nothing is given up by waiting: a campaign nobody
+        -- wants can simply be left unused, and a new one is one click away.
+        return "you are in a group. Leave the raid first -- deleting a campaign "
+            .. "other members are in strands them on it."
+    end
     if (ctx.pendingIds or {})[campaignId] then
         -- An in-flight item with a live clock whose failure path needs the very list
         -- it would restore into (section 14). Refused outright, not warned about.
         return "an undelivered item was won in it. Deliver or abandon it first."
     end
-    if campaignId == ctx.activeId then
-        return "it is the campaign you are in. Switch to another one first."
-    end
-    if (ctx.count or 0) <= 1 then
-        return "it is your only campaign. Make another one first."
+    if campaignId ~= nil and campaignId == ctx.openRoundCampaignId then
+        -- The round resolves against this campaign's list and its award restores
+        -- into it. Deleting it mid-round also takes the host settings every close
+        -- path reads out from under them.
+        return "a round is open in it. Close or cancel it first."
     end
     return nil
 end
@@ -326,6 +416,7 @@ local function fireChanged()
     if ns.HostPanel then ns.HostPanel.Refresh() end
     if ns.HierarchyEditor then ns.HierarchyEditor.Refresh() end
     if ns.PriorityViewer then ns.PriorityViewer.Refresh() end
+    if ns.TierViewer then ns.TierViewer.Refresh() end
     if ns.RollWindow then ns.RollWindow.Refresh() end
 end
 
@@ -498,11 +589,209 @@ local function pendingCampaigns()
     return out
 end
 
+--- The round whose campaign is off limits: the host's own, while it is still
+-- running. A closed or aborted round is left in `Round.current` for the panel to
+-- show, and blocks nothing.
+local function openRoundCampaign()
+    local round = ns.Round and ns.Round.current
+    if not round then return nil end
+    if round.state ~= C.ROUND_STATE.OPEN and round.state ~= C.ROUND_STATE.RESOLVING then
+        return nil
+    end
+    return round.campaignId
+end
+
+--- Being in a party or a raid at all, by the 3.3.5a pair of counts -- there is no
+-- IsInGroup on this client, and a raid reports zero party members.
+local function inGroup()
+    return GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0
+end
+
+--- Store one member's ordering against the campaign it names (spec 013 section 3).
+-- Called for our own publish and for every ROSTER we accept; the timestamp is what
+-- lets the roster say how old a band is.
+-- @return true, or nil plus a reason
+-- @param at  when this ordering was submitted; now by default. A refused change
+--            passes the stored timestamp through, because nothing was submitted.
+-- @param keepAt  take `at` as given, even nil, rather than defaulting it to now
+function Campaign.RecordHierarchy(campaignId, player, order, chars, at, keepAt)
+    local campaign = Campaign.Get(campaignId)
+    if not campaign then return nil, "no such campaign" end
+    if not keepAt then at = at or time() end
+    local ok, why = Campaign.RecordMember(campaign, player, order, chars, at)
+    if not ok then return nil, why end
+    -- Deliberately no fireChanged: this runs on every ROSTER, which the group
+    -- events fire often, and the roster path already tells its own listeners when
+    -- the active campaign's claims are rebuilt. Refreshing four windows per
+    -- received message would cost more than the one screen this feeds.
+    return true
+end
+
+--- Has this campaign run a round yet (spec 014)?
+--
+-- "Mid-campaign" has to mean something a client can answer on its own, and every
+-- member records a history entry for every round it saw, tagged with the campaign.
+-- So: a campaign with history has started. Before that it is being set up, and
+-- everyone arranges their characters freely -- a lock that engaged the moment a
+-- campaign was created would make an on-by-default setting unusable.
+--
+-- A member who joined late has no history for it and is free until their first
+-- raid in it, which is the same rule read from their side and the right answer.
+function Campaign.HasStarted(campaignId)
+    if not campaignId or campaignId == "" then return false end
+    for _, record in ipairs(ns.History and ns.History.Records() or {}) do
+        -- A simulated record must never outlive its simulation (spec 009): counting
+        -- one here would leave a never-raided campaign permanently locked once
+        -- /rls simulate had run in it, even after Simulate.finish() cleans up.
+        -- An aborted round ran nothing, so it does not begin a campaign either.
+        if record.campaignId == campaignId and not record.simulated
+            and record.outcome ~= "ABORTED" then return true end
+    end
+    return false
+end
+
+--- Is this campaign's hierarchy locked for its members right now? The host setting
+-- says whether the campaign locks at all; the history says whether it has begun.
+function Campaign.HierarchyLocked(campaignId)
+    campaignId = campaignId or Campaign.ActiveId()
+    local campaign = Campaign.Get(campaignId)
+    if not campaign or campaign.host.lockHierarchy == false then return false end
+    -- The host stamps `started` when the first round resolves and it rides on CFG and
+    -- CSTATE, so a member who joined mid-campaign -- including one who takes master
+    -- looter -- reads the same answer as everyone else. Own history still counts,
+    -- for a group whose host predates the flag.
+    if campaign.host.started then return true end
+    return Campaign.HasStarted(campaignId)
+end
+
+--- Mark a campaign as begun (spec 014). Called when a round resolves; the flag then
+-- travels with CFG and CSTATE.
+function Campaign.MarkStarted(campaignId)
+    local campaign = Campaign.Get(campaignId or Campaign.ActiveId())
+    if not campaign then return false end
+    Campaign.Normalise(campaign).host.started = true
+    return true
+end
+
+--- Drop one member's stored ordering. For the simulator, whose fake players publish
+-- into the real active campaign and must leave nothing behind in it (spec 009).
+function Campaign.ForgetMember(campaignId, player)
+    local campaign = Campaign.Get(campaignId)
+    if not campaign or not campaign.members then return end
+    campaign.members[player] = nil
+end
+
+--- The ordering one member last submitted to a campaign, or nil.
+--
+-- Records are keyed per player, not per character, so an incoming ordering matches
+-- its stored record under the same mutual-naming rule RecordMember collapses alts
+-- with: a member who published as one of their characters last week and from
+-- another this week still has one record, and the lock check has to find it.
+-- @param order the incoming ordering, when there is one
+function Campaign.StoredOrder(campaignId, player, order)
+    local campaign = Campaign.Get(campaignId)
+    local members = campaign and campaign.members
+    if not members then return nil end
+    local record = members[player]
+    if record then return record.order end
+    if not order then return nil end
+    for stored, other in pairs(members) do
+        if Campaign.SameMember(stored, other.order, player, order) then return other.order end
+    end
+    return nil
+end
+
+--- Stored records, other than the player's own, whose ordering shares any character
+-- with an incoming one that names the record's player. One-way on purpose, unlike
+-- SameMember: under a lock a member publishing from a character their stored ordering
+-- does not rank matches neither lookup StoredOrder makes, and would otherwise record a
+-- re-rank unchecked (spec 014). An ordering that does not name the record's player is
+-- someone else's, and a character both rank stays a contested claim, not a refusal.
+-- Sorted by player so a warning names the same record every time.
+function Campaign.OverlappingOrders(campaign, player, order)
+    local out = {}
+    for stored, record in pairs((campaign or {}).members or {}) do
+        if stored ~= player and Util.indexOf(order or {}, stored) then
+            for _, name in ipairs(order or {}) do
+                if Util.indexOf(record.order or {}, name) then
+                    out[#out + 1] = { player = stored, order = record.order }
+                    break
+                end
+            end
+        end
+    end
+    table.sort(out, function(a, b) return a.player < b.player end)
+    return out
+end
+
+--- When one member's stored ordering was recorded, under the same matching rule
+-- StoredOrder uses, or nil.
+function Campaign.StoredAt(campaignId, player, order)
+    local campaign = Campaign.Get(campaignId)
+    local members = campaign and campaign.members
+    if not members then return nil end
+    local record = members[player]
+    if record then return record.at end
+    if not order then return nil end
+    for stored, other in pairs(members) do
+        if Campaign.SameMember(stored, other.order, player, order) then return other.at end
+    end
+    return nil
+end
+
+--- One member's stored character table, under the same matching rule StoredOrder
+-- uses, or nil.
+function Campaign.StoredChars(campaignId, player, order)
+    local campaign = Campaign.Get(campaignId)
+    local members = campaign and campaign.members
+    if not members then return nil end
+    local record = members[player]
+    if record then return record.chars end
+    if not order then return nil end
+    for stored, other in pairs(members) do
+        if Campaign.SameMember(stored, other.order, player, order) then return other.chars end
+    end
+    return nil
+end
+
+--- The submitted hierarchies of one campaign, active by default.
+function Campaign.Members(campaignId)
+    return Campaign.MemberList(Campaign.Get(campaignId or Campaign.ActiveId()))
+end
+
+--- char -> tier, from what each member submitted for this campaign (spec 013
+-- section 3). Stored, so the bands are right after a reload rather than empty until
+-- somebody republishes. A character's tier comes from its position in its OWNER's
+-- hierarchy, never from a position on the priority list (spec 010 section 3), and an
+-- owner who has submitted nothing leaves their characters without one. The two
+-- priority-list surfaces share this so they cannot band the same list differently.
+function Campaign.TierIndex(tierCount, campaignId)
+    -- A character two members both rank is contested: it gets no tier rather than
+    -- whichever member happens to sort last.
+    local out, contested = {}, {}
+    for _, member in ipairs(Campaign.Members(campaignId)) do
+        local seen = {}
+        for position, char in ipairs(member.order) do
+            local key = char:lower()
+            if not seen[key] then
+                seen[key] = true
+                if out[key] ~= nil or contested[key] then
+                    contested[key] = true
+                    out[key] = nil
+                else
+                    out[key] = ns.Tiers.forPosition(position, tierCount)
+                end
+            end
+        end
+    end
+    return out
+end
+
 function Campaign.DeleteRefusal(campaignId)
     return Campaign.DeleteBlocker(campaignId, {
-        activeId = Campaign.ActiveId(),
-        count = #Campaign.List(),
+        inGroup = inGroup(),
         pendingIds = pendingCampaigns(),
+        openRoundCampaignId = openRoundCampaign(),
     })
 end
 
@@ -514,9 +803,29 @@ function Campaign.Delete(campaignId)
     local blocker = Campaign.DeleteRefusal(campaignId)
     if blocker then return false, "that campaign cannot be deleted: " .. blocker end
     labelCache[campaignId] = campaign.label
-    DB().campaigns[campaignId] = nil
+    local db = DB()
+    local wasActive = db.activeCampaign == campaignId
+    db.campaigns[campaignId] = nil
     ns.Print(string.format("campaign \"%s\" deleted. Its history records are kept.",
         campaign.label or campaignId))
+
+    -- Deleting the one you were in lands you in whatever is left, or in none at
+    -- all. Written here rather than left to Campaign.Active's self-heal because
+    -- ActiveId is a raw read: a stale id would name a campaign that is gone.
+    -- Claims are per campaign (section 8), so the index the deleted one built
+    -- says nothing about where you land.
+    if wasActive then
+        local remaining = Campaign.List()[1]
+        db.activeCampaign = remaining and remaining.id or ""
+        ns.Roster.ResetPublished()
+        if remaining then
+            ns.Print(string.format("campaign: %s.", remaining.label or remaining.id))
+            ns.Roster.Publish()
+            ns.Roster.RequestAll()
+        else
+            ns.Print("you are in no campaign now. /rls campaign new <label> makes one.")
+        end
+    end
     fireChanged()
     return true
 end
@@ -644,7 +953,8 @@ function Campaign.PrintList()
     local active = Campaign.ActiveId()
     ns.Print("campaigns:")
     for i, campaign in ipairs(Campaign.List()) do
-        ns.Print(string.format("  %d. %s%s  |cff888888(%d on the list, %d in your hierarchy)|r",
+        ns.Print(string.format(
+            "  %d. %s%s  |cff888888(%d on the list, %d of your characters)|r",
             i, campaign.label or campaign.id,
             campaign.id == active and "  |cff66ff66[active]|r" or "",
             #((campaign.priority or {}).order or {}), #(campaign.hierarchy or {})))

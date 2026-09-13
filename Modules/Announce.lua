@@ -38,6 +38,7 @@ Announce.KIND_LEVEL = {
     TIER_COUNT = 1,
     TIMER      = 1,
     LOOT_MODE  = 1,
+    HIERARCHY_LOCK = 1,    -- it changes what members may do; never silent
     PRIORITY   = 1,        -- priority-list edits (spec 010 section 10) are never silent
     ROLL       = 2,
     TIE        = 2,
@@ -55,6 +56,22 @@ end
 --------------------------------------------------------------------------------
 -- Pure: formats (section 4)
 --------------------------------------------------------------------------------
+
+--- An item link reduced to the name inside it: "[Warglaive]" out of the full
+-- |cff...|Hitem:...|h[Warglaive]|h|r. Anything that is not a link is returned
+-- unchanged, so a line that was already plain text survives untouched.
+--
+-- This exists because chat is not inert on this server. Bots read their master's
+-- party and raid chat, and an item link in it is something they act on rather than
+-- something they ignore (spec 015).
+function Announce.PlainNames(text)
+    if type(text) ~= "string" then return text end
+    -- The colour codes wrap the link, so they go with it; a stray |r left behind
+    -- would recolour the rest of the line.
+    local out = text:gsub("|c%x%x%x%x%x%x%x%x|Hitem:.-|h(%[.-%])|h|r", "%1")
+    out = out:gsub("|Hitem:.-|h(%[.-%])|h", "%1")
+    return out
+end
 
 local function clock(seconds)
     seconds = math.max(0, math.floor((seconds or 0) + 0.5))
@@ -76,10 +93,28 @@ local function tierList(tierCount)
     return table.concat(parts, ", ")
 end
 
+--- "SK" or "Roll", from a round's or a setting's loot mode. One definition, so the
+-- open line and the mode-change line cannot name the same mode two different ways.
+--
+-- Abbreviated because it is chat: the group says SK, and every line here competes
+-- with combat spam for a raider's attention inside a 255-byte cap. The panel and the
+-- dialogs still spell it out, where there is room to teach the term.
+local function modeName(lootMode)
+    return lootMode == C.LOOT_MODE.SK and "SK" or "Roll"
+end
+
 local FORMATS = {
-    -- Rolling: [Item A] [Item B] [Item C] - 3:00
+    -- Rolling: [Item A] [Item B] [Item C] - 3:00       (ROLL)
+    -- SK: [Item A] [Item B] [Item C] - 3:00             (SK)
+    --
+    -- The mode leads the line rather than trailing it. A host who has seeded a list
+    -- and left the mode on ROLL reads the first word of their own announcement and
+    -- sees it, which is the raid-night failure this carries (spec 006 section 4).
+    -- ROLL reads as "Rolling" here and "Roll" as a setting: one is the thing about to
+    -- happen, the other is the name of a mode.
     OPEN = function(a)
-        return "Rolling: " .. table.concat(a.labels or {}, " ") .. " - " .. clock(a.seconds)
+        local lead = a.lootMode == C.LOOT_MODE.SK and modeName(a.lootMode) or "Rolling"
+        return lead .. ": " .. table.concat(a.labels or {}, " ") .. " - " .. clock(a.seconds)
     end,
 
     -- Botty [T2, 83] wins [Item A]          (ROLL)
@@ -147,8 +182,15 @@ local FORMATS = {
     end,
 
     LOOT_MODE = function(a)
-        local name = a.lootMode == C.LOOT_MODE.SK and "Suicide Kings" or "Roll"
-        return "Loot mode is now " .. name
+        return "Loot mode is now " .. modeName(a.lootMode)
+    end,
+
+    -- Hierarchies are locked - tier rankings are fixed for this campaign
+    HIERARCHY_LOCK = function(a)
+        if a.locked then
+            return "Hierarchies are locked - tier rankings are fixed for this campaign"
+        end
+        return "Hierarchies are unlocked - you may re-rank your characters"
     end,
 
     PRIORITY = function(a)
@@ -258,6 +300,17 @@ function Announce.transport(text, channel, target)
 end
 
 local function enqueue(text, channel, target)
+    -- The one chokepoint every group line leaves through, so the setting cannot be
+    -- defeated by a format added later.
+    --
+    -- Whispers are exempt, and that is the whole distinction: a link in party or
+    -- raid chat is read by every bot in the group as something to act on, which is
+    -- what this setting exists to stop. A whisper is a command addressed to one bot,
+    -- and `equip <link>` is the form the command wants (spec 007 section 7) --
+    -- stripping it there would quietly break auto-equip rather than fix anything.
+    if channel ~= "WHISPER" and ns.Database.Settings().plainItemNames then
+        text = Announce.PlainNames(text)
+    end
     queue[#queue + 1] = { text = text, channel = channel, target = target }
     if frame then frame:Show() end
 end

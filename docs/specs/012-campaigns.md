@@ -139,19 +139,30 @@ The **host's label is authoritative**. It travels on `CINV`, `OPEN` and `HI`, an
 it on receipt. There is no local override: five people privately renaming the same campaign is a
 support conversation nobody should have to have.
 
-### The default campaign
+### No default campaign
 
-A fresh install creates one campaign, labelled **"Main"**, with an ordinary
-`<playerName>-<timestamp>` id.
+**A fresh install has no campaign at all.** The only thing that exists is the hierarchy template
+(§7). The first campaign is whatever the player creates (`/rls campaign new`) or is invited into;
+nothing is provisioned for them.
 
-> **Not a constant id.** A well-known id like `main` would be shared by every unrelated group's
-> default campaign, so guesting with strangers would put you nominally inside *their* `main` and
-> their `SKLIST` would overwrite yours — reintroducing the exact clobber this spec removes. The
-> one-time cost of a unique id is the host pressing **Invite** once on your group's first raid,
-> which is a flow that now exists anyway.
+> **Revised.** This spec originally had a fresh install create one campaign labelled "Main". That
+> gave every player a campaign they never asked for, cluttering the picker and implying a raid
+> context that did not exist — and its host settings were a local default that looked
+> indistinguishable from a real one synced from a host. The template alone is the honest starting
+> state: it is the place you set up your roster and ordering before anyone invites you anywhere,
+> and it seeds the hierarchy you take into real campaigns (§7).
 
-Your local Main earns its keep as the place you set up your roster and hierarchy before anyone
-invites you anywhere; that hierarchy seeds the ones you take into real campaigns (§7).
+**No campaign is a first-class state, not an error.** `Campaign.Active()` returns nil, and every
+accessor over it — `Database.Host`, `Priority`, `Hierarchy`, `DefaultTierCount` — is nil-safe.
+Screens degrade to an empty or preview state rather than failing: the hierarchy editor points at
+the template, the host panel offers **New**, the priority viewer reads as unseeded. The actions
+that genuinely need one — opening a round, changing a host setting, simulating — refuse with
+*"create or join a campaign first"* rather than half-working.
+
+> **Ids stay unique when one is finally made.** A well-known id like `main` would be shared by every
+> unrelated group's campaign, so guesting with strangers would put you nominally inside *their*
+> `main` and their `SKLIST` would overwrite yours — reintroducing the exact clobber this spec
+> removes. Every campaign gets an ordinary `<playerName>-<timestamp>` id.
 
 ## 6. Joining: invitation only
 
@@ -294,10 +305,30 @@ RaidLootSystemDB = {
 `Campaign.Active()`, and `Database.lua` keeps owning that accessor so a future scoping change stays
 a single-file problem, exactly as 000 §4 requires.
 
+**The campaign is the source of truth for how the group plays it.** `host` is not one player's
+preferences that happen to be filed under a campaign; a loot mode with no campaign means nothing.
+So `CFG` and `CSTATE` both *write* to `campaign.host` on every member, and whoever holds master
+loot next opens their first round under the settings the group was already playing by.
+
+Without that the mode stopped at whoever happened to hold the Blizzard loot setting. A campaign
+joined by invitation is created with no `host` block at all, so the defaults filled it in and the
+default is `ROLL`: hand master loot to a new person in a seeded Suicide Kings campaign and their
+first round resolved by roll, with the list sitting right there and nothing saying a word.
+
+`hierarchy` belongs to the campaign for the same reason `host` does. A hierarchy outside a
+campaign means nothing: `roster.defaultHierarchy` is a template that seeds new campaigns and
+resolves nothing (§7), and the ordering that decides a tier is always the one on the campaign.
+
+The two differ in *who* a campaign-scoped value belongs to, not in whether it is campaign-scoped.
+`host` is one value the whole group plays by, so it comes from whoever holds master loot and
+`CFG`/`CSTATE` carry it. `hierarchy` is one value **per member**: it orders that member's own
+characters, which nobody else has. So the host has no copy of yours to send, and `CSTATE` leaves
+it alone — not because it is loose personal state, but because the host is not its author.
+
 ### Migration
 
-**There is none.** `schema ~= 3` rebuilds defaults from scratch: `roster`, `campaigns` with a
-single fresh "Main", `history` and `pending` cleared.
+**There is none.** `schema ~= 3` rebuilds defaults from scratch: `roster`, an empty `campaigns`
+(§5), `history` and `pending` cleared.
 
 > No installed base exists beyond the author's own test data, which is expendable. A migration path
 > that exists but has never run against real data is worse than no migration path, because it looks
@@ -381,12 +412,21 @@ host-visible change (010 §10).
 Confirmed with a dialog **naming what is lost** — *"Delete 'Alt Run'? Its priority list of 23
 characters and 140 logged changes cannot be recovered."*
 
+Reached from `/rls campaign delete <n>` only. **The host panel carries no Delete control**, because
+the host panel is the screen that is open in front of a raid.
+
 | Rule | Reason |
 |---|---|
+| Refused while you are in a party or a raid | Deletion is local and silent — no op carries it, so the other members keep the campaign, its list and its log, and find out when the next round opens somewhere they are not members and their roll window comes up read-only. That is a raid night lost to a misclick, for the list the group has been building for weeks. Waiting costs nothing: a campaign nobody wants can be left unused, and a new one is one click away. |
 | Refused while any `pending` record names it | An in-flight item with a live clock whose failure path needs the very list it would restore into (§14). Refused outright, not warned about. |
-| Cannot delete the active campaign | Switch away first; a UI that deletes what you are looking at is a UI that deletes things by accident. |
-| Cannot delete your last campaign | The hierarchy editor and host panel need one to operate on. |
+| Refused while a round is open in it | The round resolves against this campaign's list and its award restores into it, and every close path reads its host settings. A round already closed or aborted blocks nothing. |
+| The active campaign **may** be deleted | You land in whatever campaign remains, or in none at all (§5). The confirmation already names what is lost, so a second "switch away first" step bought nothing but friction. |
+| Your last campaign **may** be deleted | No campaign is a supported state, not a broken one; the editor falls back to the template and the host panel offers **New**. |
 | **History survives untouched** | A deleted campaign does not un-happen the awards it made. Records keep their `campaignId` and their `campaignLabel`, and the browser shows the campaign with a `deleted` marker. |
+
+Deleting the campaign you are in repoints `activeCampaign` to the oldest remaining campaign, or to
+none, and resets the published-claim index — claims are per campaign (§8), so the index the deleted
+one built says nothing about where you land.
 
 ## 12. Export and import
 
@@ -414,7 +454,7 @@ anyone's `hierarchy`, which is personal and per client.
 
 | Surface | Change |
 |---|---|
-| **Host panel** | A **Campaign** section: active campaign and label, a switcher, `N/M joined` with the names of non-members, and **Invite raid to campaign**, **New**, **Rename**, **Delete**, **Export**, **Import**. Every existing host setting in the panel now reads and writes the active campaign's `host` table. |
+| **Host panel** | A **Campaign** section: active campaign and label, a switcher, `N/M joined` with the names of non-members, and **Invite raid to campaign**, **New**, **Rename**, **Export**, **Import**. No **Delete**: §11. Every existing host setting in the panel now reads and writes the active campaign's `host` table. |
 | **Hierarchy editor** | A campaign picker in the header, listing every campaign plus **Default** (the §7 template, marked as such). The picker is **prominent, not decorative** — editing the wrong campaign's hierarchy is a silent no-op you would discover next Tuesday. Rows gain the §7 inclusion checkbox. |
 | **Roll window** | The campaign label in the title. The read-only non-member banner of §6. |
 | **History browser** | Defaults to filtering by active campaign, with an **All campaigns** toggle and a `deleted` marker on records whose campaign is gone. |
@@ -498,6 +538,8 @@ pure.
   campaign's values, and the hierarchy editor to that campaign's hierarchy.
 - Deleting a campaign with a pending delivery is refused; the same delete succeeds once the
   delivery resolves, and history keeps both records.
+- Deleting any campaign is refused while in a party or a raid, whoever else is in it, and the same
+  delete succeeds once out of the group.
 - A pending delivery that fails terminally after a campaign switch restores the winner's index in
   the campaign the award was made in, not the active one.
 

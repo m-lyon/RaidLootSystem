@@ -135,6 +135,9 @@ you'll get an error message back if you're not.
 | `/rls roll <link>` | Open a round for one specific item — for something `/rls loot` didn't pick up, or a non-corpse award. Example: `/rls roll [Shadowmourne]`. |
 | `/rls close` | Resolve the open round right now, instead of waiting for the entry timer. |
 | `/rls cancel` | Cancel the open round outright — nothing is awarded. |
+| `/rls links` | Whether raid announcements carry item links. **Off by default**, because a link in raid chat makes your bots open a trade with you. `/rls links on` restores hoverable links if your bots do not do that. Also a tick box in the host panel. |
+| Lock tier hierarchies | A host-panel setting, on by default. Once a campaign has run a round, members can no longer re-rank or remove characters — only add a new one, which joins at the bottom. The master looter unticks it to let people fix a ranking. Announced to the raid either way. |
+| `/rls tiers` | Open the campaign tier roster — who composes T1, T2 and the rest, built from the hierarchies every member of the campaign submitted. Anyone can open this at any time, in or out of a raid. |
 | `/rls tiers <0-5>` | Set how many priority tiers count for the raid; everything below shares an equal-chance "Rest" tier. Takes effect on the next round, not the current one. See [DESIGN §2](docs/DESIGN.md#2-core-concepts). |
 | `/rls quality <3\|4>` | Set the quality bar the corpse scan applies — `3` for rare and up, `4` for epic only. |
 
@@ -166,8 +169,8 @@ touch.
 ## Campaigns
 
 > [Spec 012](docs/specs/012-campaigns.md) is the full design; [DESIGN §2](docs/DESIGN.md#2-core-concepts)
-> is the player-facing version. A fresh install gets one campaign called "Main", so a group that
-> only ever needs one never has to think about this.
+> is the player-facing version. A fresh install has no campaign — make one with
+> `/rls campaign new <label>`, or wait for your raid leader to invite you into theirs.
 
 A **campaign** is a named group you raid with. It owns the priority list, the raid leader's
 settings, and each person's ordering — and none of that is visible to any other campaign.
@@ -198,7 +201,7 @@ Commands:
 | `/rls campaign new <label>` | Create one, then pick which characters you're bringing. |
 | `/rls campaign switch <n>` | Change the active campaign. |
 | `/rls campaign rename <label>` | Rename the active campaign. |
-| `/rls campaign delete <n>` | Delete one, after a confirmation. |
+| `/rls campaign delete <n>` | Delete one, after a confirmation. Refused while you are in a group: other members keep a campaign you delete, so it is an out-of-raid action. |
 | `/rls campaign invite` | Master looter only — invite the raid to join this campaign. |
 | `/rls campaign export` / `import <string>` | Move a whole campaign between clients. |
 

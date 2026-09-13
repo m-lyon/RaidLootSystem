@@ -96,6 +96,66 @@ local function run(input, ns)
         end
         return { rows = out, hierarchy = Campaign.HierarchyOf(rows) }
 
+    elseif input.op == "members" then
+        -- Storage of what each member submitted (spec 013 section 3). Starts from a
+        -- campaign with no `members` at all, as every campaign stored before that
+        -- spec does, so Normalise carries the additive default.
+        local campaign = newCampaign("Steve-1", "Tuesday 25", { "Ann", "Bob" })
+        campaign.priority.version, campaign.priority.log = 7, { "an event" }
+        campaign.members = nil
+        Campaign.Normalise(campaign)
+        local filled = campaign.members ~= nil and next(campaign.members) == nil
+
+        for _, record in ipairs(input.records or {}) do
+            Campaign.RecordMember(campaign, record.player, record.order, record.chars,
+                record.at)
+        end
+
+        -- A publish under a lock from a player no record matches (spec 014): each
+        -- stored record sharing a character, and whether the lock allows it.
+        if input.publish then
+            local publish = input.publish
+            local checked, refused = {}, {}
+            for i, other in ipairs(Campaign.OverlappingOrders(campaign, publish.player,
+                    publish.order)) do
+                local ok = ns.Roster.LockedChangeAllowed(other.order, publish.order,
+                    publish.tierCount)
+                checked[i] = other.player .. (ok and "=allowed" or "=refused")
+                if not ok then refused[#refused + 1] = other.player end
+            end
+            if not publish.record then return { checked = checked } end
+
+            -- What onRoster does with it: the publish is recorded under its sender, and
+            -- each refused overlap's stored ordering sits beside it in the claim index.
+            Campaign.RecordMember(campaign, publish.player, publish.order, nil, publish.at)
+            local published = { [publish.player] = { order = publish.order } }
+            for _, player in ipairs(refused) do
+                published[player] = { order = campaign.members[player].order }
+            end
+            local contested = {}
+            for _, claim in pairs(ns.Roster.BuildClaims(published)) do
+                if claim.contested then contested[#contested + 1] = claim.name end
+            end
+            table.sort(contested)
+            local out = {}
+            for i, member in ipairs(Campaign.MemberList(campaign)) do
+                out[i] = member.player .. "=" .. table.concat(member.order, ",")
+            end
+            return { checked = checked, contested = contested, members = out }
+        end
+
+        local out = {}
+        for i, member in ipairs(Campaign.MemberList(campaign)) do
+            out[i] = string.format("%s=%s@%s", member.player,
+                table.concat(member.order, ","), tostring(member.at))
+        end
+        return { filled = filled, members = out,
+                 -- The list, its log and the host settings are untouched by any of
+                 -- this: a display feature must not disturb the record it reads.
+                 listed = #campaign.priority.order, logged = #campaign.priority.log,
+                 version = campaign.priority.version,
+                 tierCount = campaign.host.tierCount }
+
     elseif input.op == "delete" then
         return Campaign.DeleteBlocker(input.campaignId, input.ctx) or ""
 
@@ -284,7 +344,7 @@ return {
                 createdAt = 1757155200, createdBy = "Steve",
                 hierarchy = { "Steve", "Sneaky" },
                 host = { tierCount = 3, timerSeconds = 180, qualityThreshold = 4,
-                         lootMode = "ROLL", autoClose = true },
+                         lootMode = "ROLL", autoClose = true, lockHierarchy = true, started = false },
                 listed = 0, logged = 0, version = 0,
             },
         },
@@ -296,7 +356,7 @@ return {
                 ok = true, id = "Steve-100", label = "Alt Run",
                 createdAt = 100, createdBy = "Steve", hierarchy = {},
                 host = { tierCount = 5, timerSeconds = 15, qualityThreshold = 3,
-                         lootMode = "ROLL", autoClose = true },
+                         lootMode = "ROLL", autoClose = true, lockHierarchy = true, started = false },
                 listed = 0, logged = 0, version = 0,
             },
         },
@@ -310,7 +370,7 @@ return {
                 ok = true, id = "Steve-100", label = "Manual",
                 createdAt = 100, createdBy = "Steve", hierarchy = {},
                 host = { tierCount = 3, timerSeconds = 180, qualityThreshold = 4,
-                         lootMode = "ROLL", autoClose = false },
+                         lootMode = "ROLL", autoClose = false, lockHierarchy = true, started = false },
                 listed = 0, logged = 0, version = 0,
             },
         },
@@ -324,7 +384,7 @@ return {
                 ok = true, id = "Steve-100", label = "SK please",
                 createdAt = 100, createdBy = "Steve", hierarchy = {},
                 host = { tierCount = 3, timerSeconds = 180, qualityThreshold = 4,
-                         lootMode = "ROLL", autoClose = true },
+                         lootMode = "ROLL", autoClose = true, lockHierarchy = true, started = false },
                 listed = 0, logged = 0, version = 0,
             },
         },
@@ -430,30 +490,210 @@ return {
         -- Lifecycle (section 11)
         ------------------------------------------------------------------
         {
+            -- Deletion is out-of-group only: it is local and silent, so a campaign
+            -- deleted while the raid is still in it strands every other member on a
+            -- list their host no longer has.
+            name = "no campaign can be deleted while in a group",
+            input = { op = "delete", campaignId = "Steve-1",
+                      ctx = { inGroup = true, pendingIds = {} } },
+            expected = "you are in a group. Leave the raid first -- deleting a campaign "
+                .. "other members are in strands them on it.",
+        },
+        {
+            -- The group check leads, so an idle campaign in a raid still refuses.
+            name = "being in a group outranks every other delete rule",
+            input = { op = "delete", campaignId = "Steve-1",
+                      ctx = { inGroup = true, pendingIds = { ["Steve-1"] = true },
+                              openRoundCampaignId = "Steve-1" } },
+            expected = "you are in a group. Leave the raid first -- deleting a campaign "
+                .. "other members are in strands them on it.",
+        },
+        {
+            name = "the same campaign deletes once out of the group",
+            input = { op = "delete", campaignId = "Steve-1",
+                      ctx = { inGroup = false, pendingIds = {} } },
+            expected = "",
+        },
+        {
             name = "a campaign holding an undelivered item cannot be deleted",
             input = { op = "delete", campaignId = "Steve-1",
-                      ctx = { activeId = "Steve-2", count = 3,
-                              pendingIds = { ["Steve-1"] = true } } },
+                      ctx = { pendingIds = { ["Steve-1"] = true } } },
             expected = "an undelivered item was won in it. Deliver or abandon it first.",
         },
         {
-            name = "the active campaign cannot be deleted",
+            name = "a campaign with a round open in it cannot be deleted",
             input = { op = "delete", campaignId = "Steve-1",
-                      ctx = { activeId = "Steve-1", count = 3, pendingIds = {} } },
-            expected = "it is the campaign you are in. Switch to another one first.",
+                      ctx = { pendingIds = {}, openRoundCampaignId = "Steve-1" } },
+            expected = "a round is open in it. Close or cancel it first.",
         },
         {
-            name = "your last campaign cannot be deleted",
+            -- The round belongs to another campaign, so this one is idle.
+            name = "a round open elsewhere does not block a delete",
             input = { op = "delete", campaignId = "Steve-1",
-                      ctx = { activeId = "Steve-2", count = 1, pendingIds = {} } },
-            expected = "it is your only campaign. Make another one first.",
-        },
-        {
-            -- The same delete succeeds once the delivery resolves.
-            name = "an idle non-active campaign deletes",
-            input = { op = "delete", campaignId = "Steve-1",
-                      ctx = { activeId = "Steve-2", count = 2, pendingIds = {} } },
+                      ctx = { pendingIds = {}, openRoundCampaignId = "Steve-2" } },
             expected = "",
+        },
+        {
+            -- No campaign at all is a supported state (section 5, revised), so
+            -- neither of these is a blocker any more.
+            name = "the active campaign deletes",
+            input = { op = "delete", campaignId = "Steve-1",
+                      ctx = { pendingIds = {} } },
+            expected = "",
+        },
+        {
+            name = "your last campaign deletes",
+            input = { op = "delete", campaignId = "Steve-1",
+                      ctx = { pendingIds = {} } },
+            expected = "",
+        },
+        {
+            -- A round that has already closed is left in Round.current for the
+            -- panel to show; the caller passes no id for it.
+            name = "an idle campaign deletes",
+            input = { op = "delete", campaignId = "Steve-1",
+                      ctx = { pendingIds = {}, openRoundCampaignId = nil } },
+            expected = "",
+        },
+
+        ------------------------------------------------------------------
+        -- Submitted hierarchies (spec 013 section 3)
+        ------------------------------------------------------------------
+        {
+            name = "a campaign stored before spec 013 gains an empty members table",
+            input = { op = "members", records = {} },
+            expected = { filled = true, members = {}, listed = 2, logged = 1,
+                         version = 7, tierCount = 3 },
+        },
+        {
+            name = "recording stores each member's order against the campaign",
+            input = { op = "members", records = {
+                { player = "Stewart", order = { "Stew", "Stewalt" }, at = 300 },
+                { player = "Matt", order = { "Matt" }, at = 200 },
+            } },
+            expected = { filled = true, listed = 2, logged = 1, version = 7,
+                         tierCount = 3,
+                         members = { "Matt=Matt@200", "Stewart=Stew,Stewalt@300" } },
+        },
+        {
+            -- The saved variables are per account and one player runs several
+            -- characters, so logging in on each alt in turn used to leave one record
+            -- per alt, all holding the same ordering -- and the roster drew every
+            -- character once per alt.
+            name = "logging in on three alts leaves one record, not three",
+            input = { op = "members", records = {
+                { player = "Mattehh",  order = { "Mattehh", "Maattehh", "Matteehh" }, at = 1 },
+                { player = "Matteehh", order = { "Mattehh", "Maattehh", "Matteehh" }, at = 2 },
+                { player = "Maattehh", order = { "Mattehh", "Maattehh", "Matteehh" }, at = 3 },
+            } },
+            expected = { filled = true, listed = 2, logged = 1, version = 7,
+                         tierCount = 3,
+                         members = { "Maattehh=Mattehh,Maattehh,Matteehh@3" } },
+        },
+        {
+            -- Mutual naming is the test. Steve has wrongly put Dave's main in his
+            -- own hierarchy, but Dave's does not list Steve back, so Steve keeps his
+            -- record and the character stays contested -- which is loud -- rather
+            -- than Dave's record silently disappearing.
+            name = "a one-way claim on someone else's character keeps both records",
+            input = { op = "members", records = {
+                { player = "Steve", order = { "Steve", "Sneaky", "Dave" }, at = 1 },
+                { player = "Dave", order = { "Dave", "Davebot" }, at = 2 },
+            } },
+            expected = { filled = true, listed = 2, logged = 1, version = 7,
+                         tierCount = 3,
+                         members = { "Dave=Dave,Davebot@2", "Steve=Steve,Sneaky,Dave@1" } },
+        },
+        {
+            -- A stranger ranking a one-character member first extends that member's
+            -- ordering exactly as a new alt would. Nothing but mutual naming says
+            -- they are the same player, so Alice keeps her record.
+            name = "a stranger's ordering extending a one-character member keeps both records",
+            input = { op = "members", records = {
+                { player = "Alice", order = { "Alice" }, at = 1 },
+                { player = "Bob", order = { "Alice", "Bob" }, at = 2 },
+            } },
+            expected = { filled = true, listed = 2, logged = 1, version = 7,
+                         tierCount = 3, members = { "Alice=Alice@1", "Bob=Alice,Bob@2" } },
+        },
+        {
+            -- Carol is a new alt Alice's stored ordering does not list yet: two
+            -- records until one of the player's characters publishes again, and the
+            -- shared hierarchy then names both, so the mutual test collapses them.
+            name = "a new alt's record collapses into the old one on the next publish",
+            input = { op = "members", records = {
+                { player = "Alice", order = { "Alice", "Bot1" }, at = 1 },
+                { player = "Carol", order = { "Alice", "Bot1", "Carol" }, at = 2 },
+                { player = "Alice", order = { "Alice", "Bot1", "Carol" }, at = 3 },
+            } },
+            expected = { filled = true, listed = 2, logged = 1, version = 7,
+                         tierCount = 3, members = { "Alice=Alice,Bot1,Carol@3" } },
+        },
+        {
+            name = "two unrelated players keep a record each",
+            input = { op = "members", records = {
+                { player = "Matt", order = { "Matt", "Mattbot" }, at = 1 },
+                { player = "Craig", order = { "Craigmain" }, at = 2 },
+            } },
+            expected = { filled = true, listed = 2, logged = 1, version = 7,
+                         tierCount = 3,
+                         members = { "Craig=Craigmain@2", "Matt=Matt,Mattbot@1" } },
+        },
+        {
+            -- Replaced, not merged: a resubmission is the whole of what that member
+            -- now ranks, and merging would resurrect a character they just removed.
+            name = "recording again replaces that member's order rather than merging",
+            input = { op = "members", records = {
+                { player = "Matt", order = { "Matt", "Mattbot", "Mattpal" }, at = 100 },
+                { player = "Matt", order = { "Mattpal" }, at = 400 },
+            } },
+            expected = { filled = true, listed = 2, logged = 1, version = 7,
+                         tierCount = 3, members = { "Matt=Mattpal@400" } },
+        },
+
+        {
+            -- Alice's record does not name Carol, so neither StoredOrder lookup finds
+            -- it; the overlap still does, and the re-rank is refused.
+            name = "under a lock, a re-rank from an unranked alt is reported and contests the shared characters",
+            input = { op = "members", records = {
+                { player = "Alice", order = { "Alice", "Bot1", "Bot2" }, at = 1 },
+                { player = "Dave", order = { "Dave" }, at = 2 },
+            }, publish = { player = "Carol", order = { "Bot2", "Bot1", "Alice" },
+                           tierCount = 2, record = true, at = 3 } },
+            expected = { checked = { "Alice=refused" },
+                         contested = { "Alice", "Bot1", "Bot2" },
+                         members = { "Alice=Alice,Bot1,Bot2", "Carol=Bot2,Bot1,Alice",
+                                     "Dave=Dave" } },
+        },
+        {
+            name = "under a lock, an unranked alt's append that would land above Rest is refused",
+            input = { op = "members", records = {
+                { player = "Alice", order = { "Alice" }, at = 1 },
+            }, publish = { player = "Carol", order = { "Alice", "Carol" }, tierCount = 3 } },
+            expected = { checked = { "Alice=refused" } },
+        },
+        {
+            name = "under a lock, an unranked alt appending to the stored order is allowed",
+            input = { op = "members", records = {
+                { player = "Alice", order = { "Alice", "Bot1" }, at = 1 },
+            }, publish = { player = "Carol", order = { "Alice", "Bot1", "Carol" }, tierCount = 2 } },
+            expected = { checked = { "Alice=allowed" } },
+        },
+        {
+            -- Dave wrongly ranks Carol's bot. Carol's ordering does not name Dave, so
+            -- Dave's record is not hers: she is recorded and the claim stays contested.
+            name = "under a lock, a late joiner sharing a character with a stranger is not refused",
+            input = { op = "members", records = {
+                { player = "Dave", order = { "Dave", "Carolbot" }, at = 1 },
+            }, publish = { player = "Carol", order = { "Carolbot", "Carol" } } },
+            expected = { checked = {} },
+        },
+        {
+            name = "a publish sharing no character with any record checks nothing",
+            input = { op = "members", records = {
+                { player = "Alice", order = { "Alice", "Bot1" }, at = 1 },
+            }, publish = { player = "Craig", order = { "Craig" } } },
+            expected = { checked = {} },
         },
 
         ------------------------------------------------------------------
@@ -485,7 +725,7 @@ return {
                 ok = true, prefixed = true,
                 id = "Steve-1757155200", label = "Tuesday 25", createdBy = "Steve",
                 host = { tierCount = 2, timerSeconds = 180, qualityThreshold = 4,
-                         lootMode = "SK", autoClose = true },
+                         lootMode = "SK", autoClose = true, lockHierarchy = true, started = false },
                 version = 200, seed = 1757155200, order = true,
                 seedChars = "Ann,Bob,Cat,Dan,Eve",
                 events = 200, sameLog = true,

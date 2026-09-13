@@ -111,6 +111,24 @@ Persistent while any corpse-path round has unresolved or unawarded items (DESIGN
 Lists the items and where they are. It exists because a 3-minute window is long enough to walk
 away and forget, and a despawned corpse takes the loot with it.
 
+### Opening it
+
+`/rls host`, and the **minimap button's left-click while you are master looter**.
+
+The panel had only the slash command for a long time, which is no way in at all for anyone who
+has not read `/rls help`. The button gives you the window your role wants rather than one fixed
+window: master looter opens the host panel, everyone else opens the roll window during a round
+and their hierarchy outside one.
+
+A bare **`/rls`** makes the same decision from the same function. The button and a bare `/rls`
+have always opened the same window, and two copies of the rule would drift the first time one of
+them changed.
+
+A host does not lose the roll window. It opens itself on `OPEN` and again on the results (005 §2),
+and **ctrl-click** reaches it whenever it has something to show. Shift-click is still the
+hierarchy and right-click is still a republish. The tooltip names the action the next click will
+actually perform, because the primary one now depends on who you are.
+
 ## 4. Announcements — `Modules/Announce.lua`
 
 Only the host announces. Clients never write to raid chat; five copies of every line is how
@@ -128,11 +146,22 @@ Formats:
 
 ```
 [RLS] Rolling: [Item A] [Item B] [Item C] — 3:00
+[RLS] SK: [Item A] [Item B] [Item C] — 3:00
 [RLS] Botty [T2, 83] wins [Item A]
 [RLS] [Item B] — no entries, master looter's choice
 [RLS] Botty and Sneaky tied on 83 — rerolling
 [RLS] Tier count is now 2 (T1, T2, Rest)
 ```
+
+**The open line leads with the loot mode**, not the word "Rolling" under both. The mode is the
+rule the raid is about to play by, the host reads their own announcement, and a mode that is only
+visible in a dropdown on one screen is a mode nobody checks. One helper names it, shared with the
+`Loot mode is now ...` line, so the two cannot disagree (spec 010 §2).
+
+Chat abbreviates it to `SK`, which is what the group calls it, and what fits beside a row of item
+links inside 255 bytes. The host panel, the create dialog and the seed confirmation still spell
+out "Suicide Kings": those have room, and they are where someone meets the term for the first
+time.
 
 All output goes through one formatter so the prefix and item-link handling are consistent. Chat
 messages are subject to the same throttle discipline as addon messages — a verbose round of six

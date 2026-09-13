@@ -170,32 +170,17 @@ local function campaignOptions()
     return options
 end
 
---- Delete needs its own picker: the switcher above cannot serve double duty, because
--- selecting in it *is* switching, and section 11 refuses to delete the campaign you
--- are in. Undeletable campaigns are listed and greyed with the reason on the tooltip
--- rather than hidden -- "why is mine not in the list" is a worse question than being
--- told why not.
-local function deletableOptions()
-    local options = { { value = "", text = "Delete which?" } }
-    for _, c in ipairs(ns.Campaign.List()) do
-        local blocker = ns.Campaign.DeleteRefusal(c.id)
-        options[#options + 1] = {
-            value = c.id,
-            text = c.label or c.id,
-            disabled = blocker ~= nil,
-            tooltipTitle = blocker and (c.label or c.id) or nil,
-            tooltip = blocker,
-        }
-    end
-    return options
-end
-
--- Where the note starts, measured from the panel's top: title, picker, the button
--- row, then the delete picker. The note wraps to an unpredictable number of lines,
--- so the section's own height is computed from it in refreshCampaign rather than
--- guessed here -- layoutSections stacks panels by GetHeight, so a section that
--- under-reports overlaps the one below it.
-local NOTE_TOP = 122
+-- Where the note starts, measured from the panel's top: title, picker, then the two
+-- button rows. The note wraps to an unpredictable number of lines, so the section's
+-- own height is computed from it in refreshCampaign rather than guessed here --
+-- layoutSections stacks panels by GetHeight, so a section that under-reports
+-- overlaps the one below it.
+--
+-- There is deliberately no Delete control here. Deleting is local and silent, the
+-- host panel is open in front of a raid, and a campaign deleted out from under the
+-- members still in it costs them the list without telling them. It lives on
+-- `/rls campaign delete <n>`, which refuses while you are in a group at all.
+local NOTE_TOP = 116
 
 local function buildCampaign(parent)
     local panel = section(parent, "Campaign", NOTE_TOP + 30)
@@ -244,21 +229,17 @@ local function buildCampaign(parent)
             ns.Campaigns.ShowImport()
         end, panel.export)
 
-    panel.deleteLabel = Widgets.Label(panel, "Delete", "GameFontNormalSmall")
-    panel.deleteLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -88)
-
-    panel.delete = Widgets.Dropdown(panel, "RaidLootSystemHostCampaignDelete", 150,
-        deletableOptions(), function(value)
-            -- SetValue has already run with the chosen id, so put the prompt back
-            -- before the confirmation opens: this control picks a target, it is not
-            -- a selection that persists.
-            panel.delete:SetValue("")
-            if value ~= "" then ns.Campaigns.PromptDelete(value) end
-        end)
-    -- No frame-level tooltip: a UIDropDownMenuTemplate frame has no mouse enabled, so
-    -- Widgets.Tooltip would never fire on it. The per-option tooltips carry the reason
-    -- a given campaign cannot be deleted, which is the part worth reading anyway.
-    panel.delete:SetPoint("TOPLEFT", panel, "TOPLEFT", 50, -84)
+    -- On a row of its own, and not only because the lifecycle row is full at this
+    -- width: this opens a view, where the four beside Invite each change the
+    -- campaign. Grouping a read with four writes invites the wrong click.
+    panel.tiers = Widgets.Button(panel, "Tiers", 90, 20, function()
+        ns.TierViewer.SetTarget(ns.Campaign.ActiveId())
+        ns.TierViewer.Show()
+    end)
+    panel.tiers:SetPoint("TOPLEFT", panel.invite, "BOTTOMLEFT", 0, -4)
+    Widgets.Tooltip(panel.tiers, "Campaign tiers",
+        "Who composes each tier, from the hierarchies this campaign's members submitted. "
+        .. "A tier decides who competes for an item before any roll or list position does.")
 
     panel.note = Widgets.Label(panel, "", "GameFontDisableSmall")
     panel.note:SetPoint("TOPLEFT", panel, "TOPLEFT", 10, -NOTE_TOP)
@@ -274,8 +255,6 @@ local function refreshCampaign()
 
     if not active then
         campaign.joined:SetText("")
-        campaign.delete:SetOptions(deletableOptions())
-        campaign.delete:SetValue("")
         campaign.note:SetText("|cffffcc00No campaign yet -- click New to create one.|r")
         campaign:SetHeight(NOTE_TOP + math.max(campaign.note:GetHeight(), 12) + 10)
         return
@@ -291,9 +270,6 @@ local function refreshCampaign()
         campaign.joined:SetText(string.format("|cffffaa00%d/%d joined|r |cff888888- not in it: %s|r",
             joined.joined, joined.total, table.concat(joined.missing, ", ")))
     end
-
-    campaign.delete:SetOptions(deletableOptions())
-    campaign.delete:SetValue("")
 
     campaign.note:SetText(string.format(
         "Tier count, timer, quality and loot mode below belong to \"%s\". "
@@ -316,7 +292,7 @@ local function change(key, value)
 end
 
 local function buildSettings(parent)
-    local panel = section(parent, "Raid settings", 214)
+    local panel = section(parent, "Raid settings", 280)
 
     panel.tier = Widgets.Slider(panel, "RaidLootSystemHostTierSlider", "Tier count",
         C.MIN_TIER_COUNT, C.MAX_TIER_COUNT, 1,
@@ -361,6 +337,30 @@ local function buildSettings(parent)
         "Auto-close when everyone is in", function(checked) change("autoClose", checked) end)
     panel.autoClose:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -170)
 
+    -- Not frozen mid-round like the other shared settings: unlocking is the escape
+    -- hatch for a member who ranked their characters wrong, and a host who needs it
+    -- needs it now rather than after the boss.
+    panel.lockHierarchy = Widgets.CheckBox(panel, "RaidLootSystemHostLockHierarchy",
+        "Lock tier hierarchies once the campaign starts",
+        function(checked) change("lockHierarchy", checked) end)
+    panel.lockHierarchy:SetPoint("TOPLEFT", panel.autoClose, "BOTTOMLEFT", 0, -2)
+    Widgets.Tooltip(panel.lockHierarchy, "Lock tier hierarchies",
+        "Takes effect when this campaign runs its first round; until then everyone "
+        .. "arranges their characters freely. Once it is in force members can still add "
+        .. "a new character, which joins at the bottom of their own ranking.")
+
+    -- A client setting, not a campaign rule: it changes what this client says, not
+    -- how the group plays. On by default, because a link in raid chat is answered by
+    -- every bot in the group opening a trade (spec 015).
+    panel.plainNames = Widgets.CheckBox(panel, "RaidLootSystemHostPlainNames",
+        "Announce items by name, not by link",
+        function(checked) change("plainItemNames", checked) end)
+    panel.plainNames:SetPoint("TOPLEFT", panel.lockHierarchy, "BOTTOMLEFT", 0, -2)
+    Widgets.Tooltip(panel.plainNames, "Plain item names",
+        "Raid announcements name items instead of linking them. Raiders lose the "
+        .. "hoverable link, and your bots stop reading one in party chat and opening a "
+        .. "trade with you. Whispers to your own bots keep their links.")
+
     panel.frozen = Widgets.Label(panel, "", "GameFontHighlightSmall")
     panel.frozen:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 12, 6)
     panel.frozen:SetWidth(INNER - 24)
@@ -392,6 +392,9 @@ local function refreshSettings()
         HostPanel.LootModeOptions(#((DB().Priority() or {}).order or {}) > 0))
     settings.lootMode:SetValue(host.lootMode or C.LOOT_MODE.ROLL)
     settings.autoClose:SetChecked(host.autoClose and true or false)
+    settings.lockHierarchy:SetChecked(host.lockHierarchy ~= false)
+    if ns.Round.IsHost() then settings.lockHierarchy:Enable() else settings.lockHierarchy:Disable() end
+    settings.plainNames:SetChecked(DB().Settings().plainItemNames and true or false)
 
     -- 3.3.5a: sliders and dropdowns are enabled or disabled by their own calls.
     if frozen then

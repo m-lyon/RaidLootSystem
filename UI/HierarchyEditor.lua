@@ -85,11 +85,19 @@ end
 
 local function activeTierCount()
     local client = ns.Client
-    if client and client.TierCount then
-        local count = client.TierCount()
-        if count then return count, true end
-    end
+    local campaignId = not editingDefault() and target or nil
+    if client and client.TierCountInForce then return client.TierCountInForce(campaignId) end
     return ns.Database.DefaultTierCount(), false
+end
+
+--- The row badge's label. Unlike Tiers.label this numbers the Rest bucket -- "T4"
+-- under a count of 3 -- rather than naming it, so the column reads as one scale
+-- from top to bottom. The cut-off is still called out, by the band across the
+-- rows. Tiers.label itself is untouched: raid chat, the roll window and history
+-- all say "Rest", which is the word people use out loud.
+local function badgeLabel(tier, tierCount)
+    if tierCount == nil or tierCount <= 0 then return "Flat" end
+    return "T" .. tostring(tier)
 end
 
 local function roundIsOpen()
@@ -239,9 +247,25 @@ function Editor.Refresh()
         or string.format("|cff888888Ranking for \"%s\".|r",
             ns.Campaign.LabelFor(target)))
 
-    frame.warning:SetText((not editingDefault() and roundIsOpen())
-        and "|cffffcc00A roll is open. Entries you already submitted keep the tiers they had at submit time.|r"
-        or "")
+    -- The lock outranks the roll-open note: one says a change you make now lands
+    -- late, the other says you cannot make it at all, and a reader who tries and is
+    -- refused learned the second one the hard way (spec 014 section 6).
+    local locked = not editingDefault() and ns.Campaign.HierarchyLocked(target)
+    if locked then
+        -- Only promise an add that SetIncludedIn would accept: an append above Rest is
+        -- refused too.
+        local campaign = ns.Campaign.Get(target)
+        local canAppend = ns.Roster.LockedAppendAllowed(order, "?",
+            campaign and campaign.host.tierCount)
+        frame.warning:SetText("|cffffcc00This campaign has started and its hierarchies are "
+            .. "locked. " .. (canAppend and "You can still add a character; it joins your "
+            .. "Rest tier. " or "") .. "The master looter can unlock them.|r")
+    elseif not editingDefault() and roundIsOpen() then
+        frame.warning:SetText("|cffffcc00A roll is open. Entries you already submitted keep "
+            .. "the tiers they had at submit time.|r")
+    else
+        frame.warning:SetText("")
+    end
 
     for _, band in ipairs(bands) do band:Hide() end
     for _, row in ipairs(rows) do row:Hide() end
@@ -250,6 +274,7 @@ function Editor.Refresh()
     -- ticked rows only (spec 012 section 7).
     local model = ns.Campaign.HierarchyRows(chars, order)
 
+    local lockMemo = {}
     local y, bandIndex = 0, 0
     for i = 1, #model do
         local entryRow = model[i]
@@ -275,7 +300,7 @@ function Editor.Refresh()
 
         local tier = entryRow.position and Tiers.forPosition(entryRow.position, tierCount) or nil
         row.badge:SetText(tier
-            and ((tierSynced and "|cffaaaaaa" or "|cff666666") .. Tiers.label(tier, tierCount) .. "|r")
+            and ((tierSynced and "|cffaaaaaa" or "|cff666666") .. badgeLabel(tier, tierCount) .. "|r")
             or "|cff666666out|r")
 
         local present = Roster().IsPresent(name)
@@ -288,10 +313,16 @@ function Editor.Refresh()
             and "Not in this campaign. Tick the box to bring it in."
             or (enterable and (present and "In the raid and enterable." or "Enterable.") or reason))
 
-        -- 3.3.5a has no Button:SetEnabled. Only ticked rows have a rank to move.
-        if entryRow.position and entryRow.position > 1 then row.up:Enable() else row.up:Disable() end
-        if entryRow.position and entryRow.position < #order then row.down:Enable()
+        -- 3.3.5a has no Button:SetEnabled. Only ticked rows have a rank to move,
+        -- and a locked campaign has none that can be moved at all.
+        if not locked and entryRow.position and entryRow.position > 1 then row.up:Enable()
+        else row.up:Disable() end
+        if not locked and entryRow.position and entryRow.position < #order then row.down:Enable()
         else row.down:Disable() end
+        -- A removal promotes everything below it, so it is a re-rank too and the
+        -- lock refuses it (spec 014) -- for a character ranked in a locked campaign,
+        -- exactly as Roster.Remove does, so a mistaken unticked add can still go.
+        if Roster().LockedRankingOf(name, lockMemo) then row.remove:Disable() else row.remove:Enable() end
         row:SetAlpha(entryRow.included and 1 or 0.6)
         row:Show()
 
@@ -345,7 +376,7 @@ end
 -- the list wraps to a second line and pushes everything down.
 --------------------------------------------------------------------------------
 
-function layoutPanels()
+local function measurePanels()
     if not frame or not listPanel or not frame.exportButton then return end
 
     local anchor = listPanel
@@ -360,6 +391,21 @@ function layoutPanels()
     if top and bottom then
         frame:SetHeight(top - bottom + BOTTOM_MARGIN)
     end
+end
+
+--- Size the window, then size it again on the next frame.
+--
+-- The scope line and the roll-open warning are wrapping font strings, and a
+-- wrapping string still measures at its old height until the text has been laid
+-- out for drawing. On the first Refresh after a Show the two lines above the
+-- list therefore measure short, the window comes out a few pixels shy, and the
+-- Export and Import buttons sit under the bottom border -- until any later
+-- Refresh, such as picking a campaign, measures them at their real height. The
+-- second pass measures once they have settled; it is a no-op whenever the first
+-- pass already had the right numbers.
+function layoutPanels()
+    measurePanels()
+    Widgets.NextFrame(measurePanels)
 end
 
 --- Only one panel occupies the slot below the list, so they resize the window

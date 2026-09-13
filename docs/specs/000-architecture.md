@@ -67,7 +67,7 @@ RaidLootSystem/
     Award.lua                 -- GiveMasterLoot, failures, trade fallback, auto-equip
     Pending.lua               -- undelivered items and their 2h countdown
     History.lua               -- record, retain, export
-    PriorityList.lua          -- list storage, sync, SKLIST broadcast, verify   [010]
+    PriorityList.lua          -- list storage, log replication, SKLIST/CSTATE, verify [010]
     Announce.lua              -- chat output, verbosity levels
     Simulate.lua              -- /rls simulate harness
   UI/
@@ -187,8 +187,10 @@ Every message is:
 <proto>^<op>^<msgId>^<seq>^<total>^<body>
 ```
 
-`proto` is an integer (currently **1**). `msgId`/`seq`/`total` implement chunking; single-chunk
-messages use `seq=1,total=1`. `Comms.lua` reassembles before dispatch and discards incomplete
+`proto` is an integer (currently **2**; raised from 1 when `SKLIST` gained its event list and
+`SYNC` its campaign fields, 010 §8). A message whose `proto` differs is ignored, once per sender
+with a printed warning, so a mixed-version raid says so rather than half-working.
+`msgId`/`seq`/`total` implement chunking; single-chunk messages use `seq=1,total=1`. `Comms.lua` reassembles before dispatch and discards incomplete
 message sets after 10 seconds.
 
 Payload budget: **180 bytes** per chunk body. Outgoing messages sit in a queue drained on
@@ -207,9 +209,10 @@ Payload budget: **180 bytes** per chunk body. Outgoing messages sit in a queue d
 | `RESULT` | host → all | `roundId^result~result…` where result is `itemIdx=winner=tier=roll=outcome` | Resolved round |
 | `ROLLS` | host → all | `roundId^roll~roll…` where roll is `itemIdx=charName=tier=roll=listIdx=status=rerolls` | Full roll record for the results table; `roll` is 0 under SK, `listIdx` is 0 under ROLL. `status` is empty for a rolled entry, `NC` not consulted, `WD` withdrawn (010 §7); `rerolls` is the tie re-roll list joined with `+`. Both exist so the results table can show a not-consulted entry as such and a re-roll inline (005 §5) — neither is derivable from the roll value |
 | `ABORT` | host → all | `roundId^reasonCode` | Round cancelled |
-| `CFG` | host → all | `tierCount^timerSeconds^lootMode` | Settings changed between rounds |
-| `SKLIST` | host → all | `version^seed^name~name…` | The authoritative priority list, sent after `OPEN` under SK, after `RESULT` once the suicides are applied, and on `SYNC` (010 §8) |
-| `SYNC` | client → host | `roundId` | Request a resend of `OPEN` + `STATE` |
+| `CFG` | host → all | `tierCount^timerSeconds^lootMode^lockHierarchy^started` | Settings changed between rounds. Applied to the **campaign record**, not a display field: the campaign owns how the group plays it, so the next master looter inherits it (012 §9) |
+| `SKLIST` | host → all | `campaignId^version^seed^name~name…^event~event…` | The authoritative priority list plus the log events that produced it since the previous version, so every member holds the host's history. Sent after `OPEN` under SK, after `RESULT` once the suicides are applied, and on `SYNC` (010 §8) |
+| `CSTATE` | host → all | the campaign codec (012 §12) | The whole campaign: host settings, seed, seed characters, order and the complete event log. Sent on a seed or reseed, and in reply to a `SYNC` whose history has fallen behind. What makes a master-looter handover lossless (010 §8) |
+| `SYNC` | client → host | `roundId^campaignId^priorityVersion` | Request a resend of `OPEN` + `STATE`, and of the priority history when it has fallen behind. The version is the one the client can **replay** to, zero when its log is incomplete (010 §8) |
 
 **`secondsLeft`, not `endsAt`.** The host's `endsAt` is built on the client clock, which
 counts from that client's own start, so an absolute deadline means nothing on another machine.

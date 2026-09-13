@@ -146,6 +146,53 @@ function Roster.BuildClaims(published)
     return claims
 end
 
+--------------------------------------------------------------------------------
+-- Pure: the hierarchy lock (spec 014)
+--------------------------------------------------------------------------------
+
+--- Is this change to an already-submitted hierarchy allowed while locked?
+--
+-- A tier is the first gate on every item, so re-ranking between raid nights is the
+-- cheapest way to take one: move your main to T1 the evening before the boss that
+-- drops what you want. The lock exists to stop that, not to freeze a roster.
+--
+-- What survives the lock is appending. A character added at the end of your own
+-- ordering lands in Rest, below everyone you had already ranked, so it can jump
+-- nobody -- and without this a bot rolled mid-campaign could never be brought in at
+-- all. Everything else is refused: a reorder is the whole point of the lock, and a
+-- removal is a reorder wearing a disguise, because taking out your T1 promotes
+-- every character below it by one.
+-- @return true, or nil plus a reason
+function Roster.LockedChangeAllowed(storedOrder, incomingOrder, tierCount)
+    storedOrder, incomingOrder = storedOrder or {}, incomingOrder or {}
+    -- Nothing submitted yet: there is no ranking to protect (spec 014 section 7).
+    if #storedOrder == 0 then return true end
+    for i = 1, #storedOrder do
+        local was, now = storedOrder[i], incomingOrder[i]
+        if now == nil then
+            return nil, "characters cannot be removed from a locked hierarchy"
+        end
+        if tostring(was):lower() ~= tostring(now):lower() then
+            return nil, "characters cannot be re-ranked in a locked hierarchy"
+        end
+    end
+    -- An append that would sit above Rest (a member who ranked fewer characters than
+    -- there are tiers) jumps every other member's Rest characters.
+    if #incomingOrder > #storedOrder and (tierCount or 0) > 0
+        and not Tiers.isRest(Tiers.forPosition(#storedOrder + 1, tierCount), tierCount) then
+        return nil, "a character added to a locked hierarchy must land in Rest"
+    end
+    return true
+end
+
+--- May this character be appended to a locked ordering? The incoming order is the
+-- stored one plus the name, built explicitly.
+function Roster.LockedAppendAllowed(storedOrder, name, tierCount)
+    local incoming = Util.copy(storedOrder or {})
+    incoming[#incoming + 1] = name
+    return Roster.LockedChangeAllowed(storedOrder, incoming, tierCount)
+end
+
 --- "contested - Steve and Dave both claim Sneaky" (section 5).
 function Roster.ContestReason(claim)
     local owners = claim.owners
@@ -271,6 +318,7 @@ Roster.published = {}        -- player -> { order, chars }
 Roster.claims = {}           -- from BuildClaims
 local presence = {}          -- lowercased character name -> true
 local listeners = {}
+local warnedLocked = {}      -- sender -> true, once per login session
 local frame
 
 --- The active campaign's hierarchy plus the global character table, in the shape
@@ -408,6 +456,24 @@ local function pruneHierarchies(chars)
     Roster.PruneToChars(ns.Database.DefaultHierarchy(), chars)
 end
 
+--- The id of a locked campaign that ranks this character, or nil.
+-- @param memo optional table, campaignId -> locked, shared across calls so a caller
+--        checking every row reads each campaign's lock (and its history) once
+function Roster.LockedRankingOf(name, memo)
+    local stored = Roster.Resolve(name) or name
+    for campaignId, campaign in pairs(ns.Database.Campaigns()) do
+        if Util.indexOf(campaign.hierarchy or {}, stored) then
+            local locked = memo and memo[campaignId]
+            if locked == nil then
+                locked = ns.Campaign.HierarchyLocked(campaignId) and true or false
+                if memo then memo[campaignId] = locked end
+            end
+            if locked then return campaignId end
+        end
+    end
+    return nil
+end
+
 --- Take a character out of your roster entirely: it is global, so it leaves every
 -- campaign's hierarchy and the template with it. Leaving a dangling name behind
 -- would make the campaigns you are not looking at fail validation.
@@ -415,6 +481,17 @@ function Roster.Remove(name)
     local stored = Roster.Resolve(name) or name
     local chars = Util.deepCopy(DB().chars)
     if chars[stored] == nil then return nil, "not in your roster" end
+
+    -- A removal is a re-rank: everything below it moves up a place. So it is
+    -- refused exactly like the untick beside it while any campaign that ranks this
+    -- character is locked (spec 014).
+    local campaignId = Roster.LockedRankingOf(stored)
+    if campaignId then
+        return nil, string.format("\"%s\" has started and its hierarchies are locked, and "
+            .. "%s is ranked in it. The master looter can unlock them in the host panel.",
+            ns.Campaign.LabelFor(campaignId), stored)
+    end
+
     chars[stored] = nil
 
     pruneHierarchies(chars)
@@ -449,22 +526,49 @@ function Roster.HierarchyList(target)
     return ns.Database.Hierarchy(target)
 end
 
+--- After any edit to one campaign's hierarchy.
+--
+-- The edit is recorded against that campaign whether or not it is the active one.
+-- Publishing only covers the active campaign, so without this an edit to a campaign
+-- you are not currently in would leave your own row in its tier roster showing the
+-- ordering you last broadcast rather than the one you just made -- two answers to
+-- "what did Matt rank", with the wrong one on screen (spec 013 section 3).
+--
+-- The template resolves nothing and is broadcast to nobody, so it records nothing.
 local function afterEdit(target)
     if target == Roster.DEFAULT_TARGET then
         fireChanged()
         return true
     end
-    if target == nil or target == ns.Campaign.ActiveId() then
+    local campaignId = target or ns.Campaign.ActiveId()
+    local me = UnitName("player")
+    if me and campaignId then
+        ns.Campaign.RecordHierarchy(campaignId, me, Roster.HierarchyList(campaignId),
+            ns.Database.Roster().chars)
+    end
+    if campaignId == ns.Campaign.ActiveId() then
         Roster.Publish()
     end
     fireChanged()
     return true
 end
 
+--- Why this campaign's hierarchy cannot be edited right now, or nil. The template
+-- is never locked: it resolves nothing and seeds campaigns that have not begun.
+local function lockedReason(target)
+    if target == Roster.DEFAULT_TARGET then return nil end
+    local campaignId = target or ns.Campaign.ActiveId()
+    if not ns.Campaign.HierarchyLocked(campaignId) then return nil end
+    return string.format("\"%s\" has started and its hierarchies are locked. The master "
+        .. "looter can unlock them in the host panel.", ns.Campaign.LabelFor(campaignId))
+end
+
 --- Reorder inside one hierarchy.
 function Roster.MoveIn(target, from, to)
     local list = Roster.HierarchyList(target)
     if not list then return nil, "no such campaign" end
+    local locked = lockedReason(target)
+    if locked then return nil, locked end
     if not Util.move(list, from, to) then return nil, "position out of range" end
     return afterEdit(target)
 end
@@ -484,8 +588,20 @@ function Roster.SetIncludedIn(target, name, included)
 
     local at = Util.indexOf(list, stored)
     if included and not at then
+        -- Allowed even while locked: it appends, so it lands in Rest and jumps
+        -- nobody (spec 014). Without it a character rolled mid-campaign could
+        -- never be brought in at all. Only into Rest, though: a member ranked short
+        -- of the tier count would otherwise add straight into a real tier.
+        if lockedReason(target) then
+            local campaign = ns.Campaign.Get(target or ns.Campaign.ActiveId())
+            local ok, why = Roster.LockedAppendAllowed(list, stored,
+                campaign and campaign.host.tierCount)
+            if not ok then return nil, why end
+        end
         list[#list + 1] = stored
     elseif not included and at then
+        local locked = lockedReason(target)
+        if locked then return nil, locked end
         table.remove(list, at)
     else
         return true
@@ -740,9 +856,17 @@ end
 --- Broadcast this player's ordered roster for the active campaign. ROSTER carries
 -- the campaign id (spec 012 section 10), which is what makes the claim index of
 -- spec 001 section 5 per campaign as a consequence.
+--
+-- With no active campaign there is nothing to publish: the message would name no
+-- campaign, every receiver would reject it as unreadable in chat, and the roster
+-- events this hangs off fire often enough to do that repeatedly. Nothing is sent
+-- until the player is in a campaign.
 function Roster.Publish()
+    local campaign = ns.Campaign.Active()
+    if not campaign then return end
+
     local roster = DB()
-    local body, err = Serialize.encodeRosterMsg(ns.Campaign.ActiveId(), roster.order, roster.chars)
+    local body, err = Serialize.encodeRosterMsg(campaign.id, roster.order, roster.chars)
     if not body then
         ns.Print("could not publish your roster: " .. tostring(err))
         return
@@ -753,6 +877,10 @@ function Roster.Publish()
     if me then
         Roster.published[me] = { order = Util.copy(roster.order),
                                  chars = Util.deepCopy(roster.chars) }
+        -- And our own submission onto the campaign, by the same rule that stores
+        -- everyone else's (spec 013 section 3): the roster must name us whether or
+        -- not anyone was online to hear the broadcast.
+        ns.Campaign.RecordHierarchy(campaign.id, me, roster.order, roster.chars)
         rebuildClaims()
     end
 
@@ -774,15 +902,104 @@ local function onRoster(sender, body)
             tostring(sender), tostring(why)))
         return
     end
-    -- The claim index is rebuilt for the ACTIVE campaign only (spec 012 section 8):
-    -- you never need claims for a campaign you are not raiding in, and letting one
-    -- in would make two players claiming a character in unrelated groups a conflict.
-    if msg.campaignId ~= ns.Campaign.ActiveId() then
-        ns.Debug(string.format("dropped ROSTER from %s: it names campaign %s, not the one "
-            .. "you are in", tostring(sender), tostring(msg.campaignId)))
+    -- Recording and claiming are separate steps (spec 013 section 3).
+    --
+    -- The ordering is stored against whichever campaign it names, provided we are a
+    -- member of it, because the tier assignment is a property of that campaign and
+    -- has to survive a reload, a switch and the raid ending. A ROSTER for a campaign
+    -- we are not in is still dropped and logged (spec 012 section 10).
+    if not ns.Campaign.IsMemberOf(msg.campaignId) then
+        ns.Debug(string.format("dropped ROSTER from %s: it names campaign %s, which you "
+            .. "are not in", tostring(sender), tostring(msg.campaignId)))
         return
     end
+    -- The lock is enforced here as well as in the sender's own editor (spec 014).
+    -- A member running a build that predates the lock, or one who has edited the
+    -- saved variables directly, would otherwise walk straight past it -- and this is
+    -- the copy the host stamps entry tiers from, so this is where it has to hold.
+    -- The stored ordering stands, the change is refused, and it is said out loud
+    -- rather than dropped quietly.
+    local stored = ns.Campaign.StoredOrder(msg.campaignId, sender, msg.order)
+    local refused = false
+    local lockedOverlaps = {}
+    if not stored and ns.Campaign.HierarchyLocked(msg.campaignId) then
+        -- No record matches the sender, but one may still rank these characters. That
+        -- is either a member publishing from an alt their stored ordering does not name
+        -- or a stranger wrongly ranking someone's characters, and nothing here can tell
+        -- the two apart. So the publish is not refused: it is recorded, and the stored
+        -- ordering is kept in the claim index beside it, so every shared character reads
+        -- as contested -- loud for either case, instead of silently dropping a roster.
+        local overlaps = ns.Campaign.OverlappingOrders(ns.Campaign.Get(msg.campaignId),
+            sender, msg.order)
+        for _, other in ipairs(overlaps) do
+            local ok, why = Roster.LockedChangeAllowed(other.order, msg.order,
+                ns.Campaign.Get(msg.campaignId).host.tierCount)
+            if not ok then
+                lockedOverlaps[#lockedOverlaps + 1] = other.player
+                local line = string.format("%s published a hierarchy that ranks %s's "
+                    .. 'characters, but "%s" is locked (%s); the characters they share '
+                    .. "are contested.", tostring(sender), other.player,
+                    ns.Campaign.LabelFor(msg.campaignId), tostring(why))
+                if warnedLocked[sender] then ns.Debug(line) else
+                    warnedLocked[sender] = true
+                    ns.Print(line)
+                end
+            end
+        end
+    end
+    if stored and ns.Campaign.HierarchyLocked(msg.campaignId) then
+        local ok, why = Roster.LockedChangeAllowed(stored, msg.order,
+            ns.Campaign.Get(msg.campaignId).host.tierCount)
+        if not ok then
+            -- Once per sender per login session: a diverged client republishes on
+            -- every roster event, and an unbounded repeat buries the raid's chat
+            -- (the same rule spec 002 section 11 uses).
+            local line = string.format("%s changed their hierarchy but \"%s\" is locked (%s); "
+                .. "their ranking is unchanged.", tostring(sender),
+                ns.Campaign.LabelFor(msg.campaignId), tostring(why))
+            if warnedLocked[sender] then ns.Debug(line) else
+                warnedLocked[sender] = true
+                ns.Print(line)
+            end
+            msg.order = Util.copy(stored)
+            -- The stored ordering names characters the sender's new table may no longer
+            -- describe, and a row with no entry loses its class colour. Keep the stored
+            -- entries for exactly those names.
+            local previous = ns.Campaign.StoredChars(msg.campaignId, sender, stored) or {}
+            msg.chars = Util.copy(msg.chars or {})
+            for _, name in ipairs(msg.order) do
+                if msg.chars[name] == nil and previous[name] then
+                    msg.chars[name] = Util.copy(previous[name])
+                end
+            end
+            refused = true
+        end
+    end
+
+    -- A refused change is not a submission, so the record keeps the timestamp of the
+    -- ordering actually in force rather than reading as submitted just now (spec 013
+    -- section 3).
+    if refused then
+        ns.Campaign.RecordHierarchy(msg.campaignId, sender, msg.order, msg.chars,
+            ns.Campaign.StoredAt(msg.campaignId, sender, msg.order), true)
+    else
+        ns.Campaign.RecordHierarchy(msg.campaignId, sender, msg.order, msg.chars)
+    end
+
+    -- The claim index, though, is rebuilt for the ACTIVE campaign only (spec 012
+    -- section 8): you never need claims for a campaign you are not raiding in, and
+    -- letting one in would make two players claiming a character in unrelated
+    -- groups read as a conflict.
+    if msg.campaignId ~= ns.Campaign.ActiveId() then return end
     Roster.published[sender] = { order = msg.order, chars = msg.chars }
+    local campaign = ns.Campaign.Get(msg.campaignId)
+    for _, player in ipairs(lockedOverlaps) do
+        local record = campaign.members and campaign.members[player]
+        if record and not Roster.published[player] then
+            Roster.published[player] = { order = Util.copy(record.order or {}),
+                                         chars = Util.deepCopy(record.chars or {}) }
+        end
+    end
     rebuildClaims()
 end
 
@@ -811,6 +1028,39 @@ function Roster.ApplyImport(order, chars)
     -- campaigns exactly as it found them.
     local ok, why = Roster.Validate(order, chars)
     if not ok then return nil, why end
+    -- An import writes the active campaign's ordering wholesale, so it is a re-rank
+    -- like any other and the lock has to hold here too (spec 014). Refused before
+    -- pruneHierarchies touches anything, so a refused import changes nothing.
+    local activeId = ns.Campaign.ActiveId()
+    if ns.Campaign.HierarchyLocked(activeId) then
+        local allowed, why2 = Roster.LockedChangeAllowed(ns.Database.Hierarchy() or {}, order,
+            ns.Campaign.Get(activeId).host.tierCount)
+        if not allowed then
+            return nil, string.format("\"%s\" has started and its hierarchies are locked (%s). "
+                .. "The master looter can unlock them in the host panel.",
+                ns.Campaign.LabelFor(activeId), tostring(why2))
+        end
+    end
+    -- Pruning a dropped character out of another campaign's hierarchy is a removal, and
+    -- a removal is a re-rank: everything below it moves up a place. So it is refused
+    -- here exactly as Roster.Remove refuses it (spec 014).
+    -- Tested the way PruneToChars prunes, on the lowercased name: an entry whose
+    -- capitalisation differs from the imported key is not actually dropped, and
+    -- refusing the whole import over it would be the two rules disagreeing.
+    local importedNames = {}
+    for name in pairs(chars) do importedNames[name:lower()] = true end
+    for campaignId, campaign in pairs(ns.Database.Campaigns()) do
+        if ns.Campaign.HierarchyLocked(campaignId) then
+            for _, ranked in ipairs(campaign.hierarchy or {}) do
+                if not importedNames[tostring(ranked):lower()] then
+                    return nil, string.format("\"%s\" has started and its hierarchies are "
+                        .. "locked, and this import drops %s, which is ranked in it. The "
+                        .. "master looter can unlock them in the host panel.",
+                        ns.Campaign.LabelFor(campaignId), ranked)
+                end
+            end
+        end
+    end
     -- The character table is replaced wholesale, so every other campaign's hierarchy
     -- can be left naming a character this import dropped.
     pruneHierarchies(chars)

@@ -8,8 +8,10 @@ local ADDON, ns = ...
 ns.Widgets = {}
 local Widgets = ns.Widgets
 
+-- The dialog border with a solid fill. UI-DialogBox-Background carries its own
+-- transparency, so no backdrop colour makes it opaque; Window paints this one.
 local BACKDROP = {
-    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+    bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
     edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
     tile = true, tileSize = 32, edgeSize = 32,
     insets = { left = 11, right = 12, top = 12, bottom = 11 },
@@ -37,6 +39,37 @@ function Widgets.ColorName(name, class)
 end
 
 --------------------------------------------------------------------------------
+-- Timing
+--------------------------------------------------------------------------------
+
+--- Run `fn` once, on the next frame.
+--
+-- A frame's measurements are a frame behind whatever just changed around it: a
+-- font string that wraps still reports its old height until the text has been
+-- laid out for drawing. Layout code that sizes a window by measuring its
+-- contents therefore runs a second pass through here, so a window shown for the
+-- first time gets the same height it would get on the next redraw.
+local pendingCalls, pendingFrame = {}, nil
+
+function Widgets.NextFrame(fn)
+    for _, queued in ipairs(pendingCalls) do
+        if queued == fn then return end
+    end
+    if not pendingFrame then
+        pendingFrame = CreateFrame("Frame")
+        pendingFrame:Hide()                   -- OnUpdate only ticks while shown
+        pendingFrame:SetScript("OnUpdate", function(self)
+            local due = pendingCalls
+            pendingCalls = {}
+            self:Hide()
+            for _, call in ipairs(due) do call() end
+        end)
+    end
+    table.insert(pendingCalls, fn)
+    pendingFrame:Show()
+end
+
+--------------------------------------------------------------------------------
 -- Windows
 --------------------------------------------------------------------------------
 
@@ -47,6 +80,7 @@ function Widgets.Window(globalName, key, title, width, height)
     f:SetWidth(width)
     f:SetHeight(height)
     f:SetBackdrop(BACKDROP)
+    f:SetBackdropColor(0.06, 0.06, 0.06, 1)
     f:SetMovable(true)
     f:EnableMouse(true)
     f:RegisterForDrag("LeftButton")

@@ -8,7 +8,15 @@ local ns = ...
 local function run(input, ns)
     local Roster = ns.Roster
 
-    if input.kind == "validate" then
+    if input.kind == "locked" then
+        local ok, why = Roster.LockedChangeAllowed(input.stored, input.incoming, input.tierCount)
+        return { ok = ok == true, why = why or "" }
+
+    elseif input.kind == "lockedAppend" then
+        local ok, why = Roster.LockedAppendAllowed(input.stored, input.name, input.tierCount)
+        return { ok = ok == true, why = why or "" }
+
+    elseif input.kind == "validate" then
         local ok, why = Roster.Validate(input.order, input.chars)
         return { ok = ok == true, why = why }
 
@@ -363,6 +371,101 @@ return {
                                           hierarchy = { "Sneaky" } },
                       } },
             expected = { "Alt run" },
+        },
+        ------------------------------------------------------------------
+        -- The hierarchy lock (spec 014)
+        ------------------------------------------------------------------
+        {
+            name = "an unchanged hierarchy passes the lock",
+            input = { kind = "locked", stored = { "Matt", "Mattbot" },
+                      incoming = { "Matt", "Mattbot" } },
+            expected = { ok = true, why = "" },
+        },
+        {
+            -- The change the lock exists to stop: promoting a character to T1 the
+            -- evening before the boss that drops what you want.
+            name = "swapping two characters is refused",
+            input = { kind = "locked", stored = { "Matt", "Mattbot" },
+                      incoming = { "Mattbot", "Matt" } },
+            expected = { ok = false,
+                         why = "characters cannot be re-ranked in a locked hierarchy" },
+        },
+        {
+            -- Appending lands in Rest, below everyone already ranked, so it jumps
+            -- nobody -- and without it a bot rolled mid-campaign is unusable.
+            name = "a new character appended at the bottom is allowed",
+            input = { kind = "locked", stored = { "Matt", "Mattbot" },
+                      incoming = { "Matt", "Mattbot", "Mattpal" } },
+            expected = { ok = true, why = "" },
+        },
+        {
+            name = "an append past the tier count lands in Rest and is allowed",
+            input = { kind = "locked", stored = { "Matt", "Mattbot", "Mattpal" },
+                      incoming = { "Matt", "Mattbot", "Mattpal", "Mattalt" }, tierCount = 3 },
+            expected = { ok = true, why = "" },
+        },
+        {
+            -- Ranked short of the tier count: the new character would sit in T2 and
+            -- jump every other member's Rest characters.
+            name = "an append that would land in a real tier is refused",
+            input = { kind = "locked", stored = { "Matt" },
+                      incoming = { "Matt", "Mattbot" }, tierCount = 3 },
+            expected = { ok = false,
+                         why = "a character added to a locked hierarchy must land in Rest" },
+        },
+        {
+            -- A removal is a reorder wearing a disguise: taking out your T1
+            -- promotes everything below it by one.
+            name = "removing a character is refused",
+            input = { kind = "locked", stored = { "Matt", "Mattbot", "Mattpal" },
+                      incoming = { "Matt", "Mattpal" } },
+            expected = { ok = false,
+                         why = "characters cannot be re-ranked in a locked hierarchy" },
+        },
+        {
+            name = "truncating the tail is refused as a removal",
+            input = { kind = "locked", stored = { "Matt", "Mattbot" },
+                      incoming = { "Matt" } },
+            expected = { ok = false,
+                         why = "characters cannot be removed from a locked hierarchy" },
+        },
+        {
+            -- Inserting ahead of an existing character displaces it, which is a
+            -- re-rank however it is spelled.
+            name = "inserting a character at the top is refused",
+            input = { kind = "locked", stored = { "Matt", "Mattbot" },
+                      incoming = { "Mattpal", "Matt", "Mattbot" } },
+            expected = { ok = false,
+                         why = "characters cannot be re-ranked in a locked hierarchy" },
+        },
+        {
+            name = "case alone is not a re-rank",
+            input = { kind = "locked", stored = { "Matt" }, incoming = { "MATT" } },
+            expected = { ok = true, why = "" },
+        },
+        {
+            -- A member with nothing stored has not submitted yet; the caller only
+            -- consults the rule once a record exists, and an empty stored order
+            -- allows anything.
+            name = "a first submission is unconstrained",
+            input = { kind = "locked", stored = {}, incoming = { "Matt", "Mattbot" } },
+            expected = { ok = true, why = "" },
+        },
+        {
+            -- What ships passes a tier count; an empty stored order must still allow
+            -- the first submission, or a member with no characters yet is locked out.
+            name = "a first submission is unconstrained with a tier count",
+            input = { kind = "locked", stored = {}, incoming = { "Matt", "Mattbot" },
+                      tierCount = 3 },
+            expected = { ok = true, why = "" },
+        },
+        {
+            -- SetIncludedIn's path: the incoming order has to be the whole stored
+            -- list plus one, not just its first entry plus one.
+            name = "ticking a character on appends to a stored list of several",
+            input = { kind = "lockedAppend", stored = { "Matt", "Mattbot", "Mattpal" },
+                      name = "Mattalt", tierCount = 3 },
+            expected = { ok = true, why = "" },
         },
     },
 }

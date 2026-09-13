@@ -271,6 +271,14 @@ local saved = {}               -- overridden functions and values, restored on f
 local lastSeenRound
 local summary = {}
 
+-- The real campaign's own `started` flag, snapshotted before the simulator can set
+-- it. `Campaign.MarkStarted` (spec 014) writes straight through `Campaign.Get` --
+-- unlike `Database.Host`, that read is never overridden here -- so a round opened
+-- by the simulation would otherwise engage the hierarchy lock on a campaign that
+-- has never really run one, and nothing would ever unset it again.
+local startedCampaignId
+local startedBefore
+
 local function say(text)
     ns.Print("|cff88ccff[sim]|r " .. text)
 end
@@ -421,10 +429,26 @@ local function finish()
 
     -- Back to the real world: overrides off, fake rosters and peers forgotten.
     restoreAll()
+    -- `Campaign.MarkStarted` wrote straight to the real saved variables (it goes
+    -- through `Campaign.Get`, not the overridden `Database.Host`), so an `Open` run
+    -- during the simulation must be un-done here or the campaign stays locked for
+    -- real after the simulation ends.
+    if startedCampaignId then
+        local realCampaign = ns.Campaign.Get(startedCampaignId)
+        if realCampaign then
+            ns.Campaign.Normalise(realCampaign).host.started = startedBefore
+        end
+        startedCampaignId, startedBefore = nil, nil
+    end
+    local campaignId = ns.Campaign.ActiveId()
     for _, name in ipairs({ "Simdave", "Simanna", "Simerin", "Simkate", "Simoli" }) do
         ns.Roster.published[name] = nil
         ns.Round.peers[name] = nil
         ns.Round.peerCampaign[name] = nil
+        -- The fakes publish a ROSTER into the real campaign, which is now stored
+        -- rather than session-only (spec 013 section 3). Simulated members must not
+        -- outlive the simulation in the tier roster.
+        ns.Campaign.ForgetMember(campaignId, name)
     end
     ns.Roster.RefreshPresence()
     ns.Roster.Publish()
@@ -566,10 +590,13 @@ function Simulate.Run(argument)
         say("refused: a real round is open on this client.")
         return false
     end
-    if not ns.Campaign.Active() then
+    local activeCampaign = ns.Campaign.Active()
+    if not activeCampaign then
         say("refused: create or join a campaign first (/rls campaign new).")
         return false
     end
+    startedCampaignId = activeCampaign.id
+    startedBefore = activeCampaign.host.started
 
     local args = Simulate.ParseArgs(argument)
     local built, why = Simulate.Build(args.scenario, args)

@@ -52,6 +52,18 @@ for phrase in "${locale_strings[@]}"; do
     fi
 done
 
+# A global read of a one- or two-letter lowercase name is almost always a stray
+# quote inside a format string: `"but "%s" is"` parses as `"but " % s(" is")`.
+if command -v luac >/dev/null 2>&1; then
+    while IFS= read -r file; do
+        if hits=$(luac -l -p "$file" | grep -E 'GETGLOBAL' | awk '{print $NF}' \
+                | grep -xE '[a-z]{1,2}'); then
+            echo "Suspicious global read in ${file}: $(echo "$hits" | sort -u | tr '\n' ' ')"
+            status=1
+        fi
+    done < <(find Core Modules UI Data RaidLootSystem.lua -name '*.lua')
+fi
+
 if [ "$status" -eq 0 ]; then
     echo "purity and locale checks passed"
 fi

@@ -51,14 +51,27 @@ local function newMsgId()
 end
 
 --- Queue one message. It is chunked here and drained at C.SEND_RATE per second.
--- @return true when queued, false plus a reason when there is nowhere to send it
+-- @return true when queued (plus the chunk count queued for it), false plus a
+--         reason when there is nowhere to send it
 function Comms.Send(op, body)
     local channel = Comms.Channel()
     if not channel then return false, "not in a group" end
 
-    for _, wire in ipairs(Serialize.pack(op, body, newMsgId())) do
+    local chunks = Serialize.pack(op, body, newMsgId())
+    for _, wire in ipairs(chunks) do
         queue[#queue + 1] = { wire = wire, channel = channel }
     end
+    return true, #chunks
+end
+
+--- Queue a message whose body is built when it reaches the head of the queue.
+-- OPEN carries seconds remaining, so encoding it at call time and then waiting
+-- behind a long CSTATE would hand clients a deadline later than the host's.
+-- @param build  function returning the body, or nil to send nothing
+function Comms.SendDeferred(op, build)
+    local channel = Comms.Channel()
+    if not channel then return false, "not in a group" end
+    queue[#queue + 1] = { op = op, build = build, channel = channel }
     return true
 end
 
@@ -132,6 +145,17 @@ local function onUpdate(_, elapsed)
     while sendAccumulator >= interval and #queue > 0 do
         sendAccumulator = sendAccumulator - interval
         local item = table.remove(queue, 1)
+        while item and item.build do
+            local body = item.build()
+            if body then
+                local chunks = Serialize.pack(item.op, body, newMsgId())
+                for i = #chunks, 1, -1 do
+                    table.insert(queue, 1, { wire = chunks[i], channel = item.channel })
+                end
+            end
+            item = table.remove(queue, 1)
+        end
+        if not item then break end
         Comms.transport(C.PREFIX, item.wire, item.channel, item.target)
     end
     if #queue == 0 then sendAccumulator = 0 end

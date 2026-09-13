@@ -9,6 +9,8 @@ local function run(input, ns)
     local A = ns.Announce
     if input.op == "emits" then
         return A.Emits(input.level, input.verbosity)
+    elseif input.op == "plain" then
+        return A.PlainNames(input.text)
     elseif input.op == "format" then
         return A.Format(input.kind, input.args)
     elseif input.op == "round" then
@@ -55,6 +57,14 @@ return {
           input = { op = "format", kind = "OPEN",
                     args = { labels = { "[Item A]", "[Item B]", "[Item C]" }, seconds = 180 } },
           expected = "Rolling: [Item A] [Item B] [Item C] - 3:00" },
+        { name = "the open line leads with the mode under ROLL",
+          input = { op = "format", kind = "OPEN",
+                    args = { labels = { "[Item A]" }, seconds = 180, lootMode = "ROLL" } },
+          expected = "Rolling: [Item A] - 3:00" },
+        { name = "the open line leads with the mode under SK",
+          input = { op = "format", kind = "OPEN",
+                    args = { labels = { "[Item A]" }, seconds = 180, lootMode = "SK" } },
+          expected = "SK: [Item A] - 3:00" },
         { name = "a win line carries tier and roll",
           input = { op = "format", kind = "WIN",
                     args = { char = "Botty", tierLabel = "T2", roll = 83, label = "[Item A]" } },
@@ -82,12 +92,21 @@ return {
         { name = "a tier count of zero is a flat roll",
           input = { op = "format", kind = "TIER_COUNT", args = { tierCount = 0 } },
           expected = "Tier count is now 0 (flat roll)" },
+        { name = "locking hierarchies says what it stops, not that a flag flipped",
+          input = { op = "format", kind = "HIERARCHY_LOCK", args = { locked = true } },
+          expected = "Hierarchies are locked - tier rankings are fixed for this campaign" },
+        { name = "unlocking says what is now allowed",
+          input = { op = "format", kind = "HIERARCHY_LOCK", args = { locked = false } },
+          expected = "Hierarchies are unlocked - you may re-rank your characters" },
         { name = "the timer line is a clock",
           input = { op = "format", kind = "TIMER", args = { seconds = 90 } },
           expected = "Entry timer is now 1:30" },
-        { name = "the loot mode line names the mode",
+        { name = "the loot mode line names the mode the open line names",
           input = { op = "format", kind = "LOOT_MODE", args = { lootMode = "SK" } },
-          expected = "Loot mode is now Suicide Kings" },
+          expected = "Loot mode is now SK" },
+        { name = "the loot mode line back to roll says Roll",
+          input = { op = "format", kind = "LOOT_MODE", args = { lootMode = "ROLL" } },
+          expected = "Loot mode is now Roll" },
         { name = "an extension says what is left",
           input = { op = "format", kind = "EXTEND", args = { seconds = 60, left = 92 } },
           expected = "Entry timer extended by 60 seconds - 1:32 left" },
@@ -148,5 +167,32 @@ return {
             expected = { "Ann [T1, 50] wins [Item A]",
                          "[Item A] - tie re-rolls exhausted, the order was decided without one" },
         },
+        ------------------------------------------------------------------
+        -- Plain item names (spec 015)
+        ------------------------------------------------------------------
+        { name = "a coloured item link becomes the name it displays",
+          input = { op = "plain",
+                    text = "Rolling: |cffa335ee|Hitem:34334:0:0:0:0:0:0:0:0|h[Thunderfury]|h|r - 3:00" },
+          expected = "Rolling: [Thunderfury] - 3:00" },
+        { name = "an uncoloured link becomes its name too",
+          input = { op = "plain", text = "|Hitem:1234:0:0:0:0:0:0:0:0|h[Bracers]|h wins" },
+          expected = "[Bracers] wins" },
+        { name = "several links in one line are all reduced",
+          input = { op = "plain",
+                    text = "|cffa335ee|Hitem:1|h[A]|h|r |cffa335ee|Hitem:2|h[B]|h|r" },
+          expected = "[A] [B]" },
+        { name = "a line with no link is returned unchanged",
+          input = { op = "plain", text = "Round cancelled: the master looter changed" },
+          expected = "Round cancelled: the master looter changed" },
+        -- Class colours on a player name are not item links and must survive:
+        -- stripping them would uncolour every name in every line.
+        { name = "a coloured player name is not an item link",
+          input = { op = "plain", text = "|cffc41f3bBotty|r wins" },
+          expected = "|cffc41f3bBotty|r wins" },
+        -- The whisper exemption lives in enqueue rather than here, but the command
+        -- it protects has to survive this function if it is ever routed through it.
+        { name = "an equip command keeps its link when the strip is not applied",
+          input = { op = "plain", text = "equip" },
+          expected = "equip" },
     },
 }

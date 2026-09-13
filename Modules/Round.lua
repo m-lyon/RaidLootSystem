@@ -363,6 +363,16 @@ local function buildContext(round)
     }
 end
 
+--- OPEN carries seconds remaining (spec 000 section 5), so they are worked out when the
+-- message leaves the queue: a CSTATE draining ahead of it would otherwise hand every
+-- client a deadline later than the host's.
+local function sendOpen(round)
+    ns.Comms.SendDeferred(C.OPS.OPEN, function()
+        return (Serialize.encodeOpen(round.campaignId, round.id, round.tierCount,
+            math.max(0, round.endsAt - GetTime()), round.items, round.lootMode))
+    end)
+end
+
 --- Open a round over `items` (spec 004 supplies them).
 -- @return true, or false plus a reason the host can show
 function Round.Open(items)
@@ -412,7 +422,7 @@ function Round.Open(items)
         Round.current = nil
         return false, "this loot could not be encoded (" .. tostring(err) .. ")."
     end
-    ns.Comms.Send(C.OPS.OPEN, body)
+    sendOpen(round)
     -- The list follows OPEN, never inside it (spec 010 section 8).
     if round.lootMode == C.LOOT_MODE.SK and ns.Priority then ns.Priority.Broadcast() end
 
@@ -420,7 +430,7 @@ function Round.Open(items)
     for i, item in ipairs(round.items) do
         labels[i] = labelOf(item) .. (item.count > 1 and (" x" .. item.count) or "")
     end
-    say("OPEN", { labels = labels, seconds = seconds })
+    say("OPEN", { labels = labels, seconds = seconds, lootMode = round.lootMode })
     fireChanged()
     return true
 end
@@ -446,7 +456,7 @@ function Round.Extend(seconds)
             .. "the deadline is unchanged."
     end
     round.endsAt = endsAt
-    ns.Comms.Send(C.OPS.OPEN, body)
+    sendOpen(round)
     say("EXTEND", { seconds = seconds, left = secondsLeft })
     fireChanged()
     return true
@@ -498,10 +508,7 @@ function Round.DropSlots(goneSlots)
 
     -- Clients replace their item list on a same-id OPEN (spec 002 section 3), so the
     -- shrunken round reaches them the same way the original did.
-    local secondsLeft = math.max(0, round.endsAt - GetTime())
-    local body = Serialize.encodeOpen(round.campaignId, round.id, round.tierCount, secondsLeft,
-        round.items, round.lootMode)
-    if body then ns.Comms.Send(C.OPS.OPEN, body) end
+    sendOpen(round)
     stateDirty = true
     fireChanged()
     return true
@@ -587,15 +594,73 @@ local function onSubmit(sender, body)
     maybeAutoClose(round)
 end
 
+-- campaignId -> GetTime() before which another CSTATE for it is coalesced. A whole
+-- campaign, log and all, is the largest thing this addon sends, and after a reseed
+-- or a mass reload every client asks at once; unthrottled, those dumps share the one
+-- outgoing queue with OPEN and RESULT and push a live round minutes behind (spec 010
+-- section 8). The window has to cover how long the dump actually takes to drain
+-- (chunk count / C.SEND_RATE), not a flat C.SYNC_INTERVAL -- a campaign with a few
+-- hundred logged events chunks into far more than SYNC_INTERVAL seconds of traffic
+-- at C.CHUNK_BODY_MAX bytes each, and a fixed window lets every repeated SYNC queue
+-- another full copy behind the one still sending.
+local lastStateSent = {}
+local warnedIncomplete = {}
+local warnedBehind = {}
+
 local function onSync(sender, body)
     if not Round.IsHost() then return end
+
+    -- A priority list that has fallen behind is answered whether or not a round is
+    -- open: the history is standing state, and the client asking for it is usually one
+    -- that just joined or just took a list it could not chain (spec 010 section 8).
+    local ask = Serialize.decodeSync(body)
+    if ask.campaignId and ns.Priority and ns.Campaign.IsMemberOf(ask.campaignId) then
+        -- The version asked about is the one the client can replay to, so a client
+        -- holding the right order with no history behind it still gets answered.
+        -- Zero is always answered: a host whose own log cannot replay also reports
+        -- zero, and staying silent would leave the asker flagged with no word why.
+        local mine = ns.Priority.HistoryVersion(ask.campaignId)
+        local held = #((ns.Campaign.Get(ask.campaignId).priority or {}).order or {}) > 0
+        if mine == 0 and (ask.priorityVersion or 0) ~= 0 then
+            -- This host cannot replay its own log and the asker can: a CSTATE would be
+            -- refused anyway, once per window for as long as the raid syncs. Say so
+            -- once per session instead.
+            if held and not warnedIncomplete[ask.campaignId] then
+                warnedIncomplete[ask.campaignId] = true
+                ns.Print("members are asking for this campaign's history, but your own "
+                    .. "copy of it is incomplete, so it cannot be sent.")
+            end
+        elseif (ask.priorityVersion or 0) > mine and mine > 0 then
+            -- The asker is ahead: this host missed rounds, and a CSTATE would only be
+            -- thrown away as stale after queueing a whole dump ahead of the round.
+            if not warnedBehind[ask.campaignId] then
+                warnedBehind[ask.campaignId] = true
+                ns.Print("a member holds a newer priority list for this campaign than "
+                    .. "yours; ask the previous master looter to resend it.")
+            end
+        elseif (ask.priorityVersion or 0) == 0 or ask.priorityVersion < mine then
+            local now = GetTime()
+            local until_ = lastStateSent[ask.campaignId]
+            if until_ and now < until_ then
+                ns.Debug("coalesced a CSTATE for " .. tostring(ask.campaignId)
+                    .. "; one is still draining")
+            else
+                -- Stamped whether or not it went out: a refusal with a standing cause
+                -- (an incomplete log here, an encode failure) prints a line, and a raid
+                -- of clients retrying inside the window would fill the host's chat.
+                -- The window covers the estimated drain time, not just SYNC_INTERVAL,
+                -- so a repeated SYNC cannot queue another full dump behind the first.
+                local ok, chunks = ns.Priority.BroadcastState(ask.campaignId)
+                local drain = ok and (chunks or 1) / C.SEND_RATE or 0
+                lastStateSent[ask.campaignId] = now + math.max(C.SYNC_INTERVAL, drain)
+            end
+        end
+    end
+
     local round = Round.current
     if not round or round.state ~= C.ROUND_STATE.OPEN then return end
 
-    local secondsLeft = math.max(0, round.endsAt - GetTime())
-    local body2 = Serialize.encodeOpen(round.campaignId, round.id, round.tierCount, secondsLeft,
-        round.items, round.lootMode)
-    if body2 then ns.Comms.Send(C.OPS.OPEN, body2) end
+    sendOpen(round)
     -- SYNC resends OPEN, SKLIST and STATE (spec 010 section 8).
     if round.lootMode == C.LOOT_MODE.SK and ns.Priority then ns.Priority.Broadcast() end
     broadcastState()
@@ -697,6 +762,14 @@ function Round.Close()
     if ns.Award then ns.Award.Begin(round) end
     if ns.Priority then ns.Priority.ApplyAwards(round) end
     if ns.History then ns.History.Record(round) end
+    -- The campaign has begun, which is what the hierarchy lock turns on (spec 014).
+    -- Stamped only once a round resolves: a misclicked round that is cancelled or
+    -- aborted must not freeze every member's ranking with nothing to show for it.
+    ns.Campaign.MarkStarted(round.campaignId)
+    -- `started` is what engages the lock and it only travels on CFG, so it goes out
+    -- the moment it becomes true; a member who joined late would otherwise re-rank
+    -- freely and learn of the refusal from a chat line much later (spec 014 section 3).
+    Round.BroadcastConfig("started")
     -- These items have been rolled for; they stop being candidates for the next
     -- round (spec 006 section 3). Abort does not do this, so a retry still has them.
     if ns.LootDetect then ns.LootDetect.Consume(round.items) end
@@ -740,16 +813,22 @@ end
 
 --- Tier count is frozen at open, so this is refused mid-round rather than applied.
 -- @return true, or false plus a reason
-function Round.BroadcastConfig()
+-- @param key  the setting that changed, when there is just one; `lockHierarchy` is the
+--   one shared setting that is not frozen mid-round, and a lock the host alone stopped
+--   enforcing is no unlock at all -- every member's editor and onRoster gate reads its
+--   own copy (spec 014 section 6). `started` is exempt for the same reason: it becomes
+--   true when a round resolves and is useless to a member who hears it later.
+function Round.BroadcastConfig(key)
     if not Round.IsHost() then return false, "you are not the master looter." end
-    if Round.current and Round.current.state == C.ROUND_STATE.OPEN then
+    if key ~= "lockHierarchy" and key ~= "started"
+        and Round.current and Round.current.state == C.ROUND_STATE.OPEN then
         return false, "settings are frozen while a round is open; "
             .. "your change applies to the next one."
     end
     local host = ns.Database.Host()
     ns.Comms.Send(C.OPS.CFG,
         Serialize.encodeConfig(ns.Campaign.ActiveId(), host.tierCount, host.timerSeconds,
-            host.lootMode))
+            host.lootMode, host.lockHierarchy, host.started))
     return true
 end
 
@@ -760,14 +839,18 @@ end
 function Round.ChangeSetting(key, value)
     local host = ns.Database.Host()
     local settings = ns.Database.Settings()
-    -- Verbosity is a client setting, not a campaign one (it never reaches `host`
-    -- below), so it is the one key that still works with no active campaign.
-    if not host and key ~= "verbosity" then
+    -- The client settings below never reach `host`, so they are the keys that still
+    -- work with no active campaign.
+    local clientOnly = (key == "verbosity" or key == "autoEquipWinners"
+        or key == "plainItemNames")
+    if not host and not clientOnly then
         return false, "you have no campaign yet. Create or join one first (/rls campaign new)."
     end
-    local shared = (key == "tierCount" or key == "timerSeconds" or key == "lootMode")
+    local shared = (key == "tierCount" or key == "timerSeconds" or key == "lootMode"
+        or key == "lockHierarchy")
 
-    if shared and Round.current and Round.current.state == C.ROUND_STATE.OPEN then
+    if shared and key ~= "lockHierarchy"
+        and Round.current and Round.current.state == C.ROUND_STATE.OPEN then
         return false, "frozen while a round is open; the change applies to the next one."
     end
 
@@ -790,12 +873,34 @@ function Round.ChangeSetting(key, value)
         if value ~= 3 and value ~= 4 then
             return false, "the quality threshold is 3 (rare) or 4 (epic)."
         end
+    elseif key == "lockHierarchy" then
+        -- Host only: a member's own `false` would switch off their own gates in
+        -- silence, and ride out on the next CFG or CSTATE if they later took master
+        -- looter, unlocking the group with nobody told.
+        if not Round.IsHost() then return false, "you are not the master looter." end
+        -- Shared, so it broadcasts and is announced: it changes what members are
+        -- allowed to do, and a rule nobody was told about is not a rule. Unlike the
+        -- other shared settings it is *not* frozen mid-round -- unlocking is the
+        -- escape hatch, and a host who needs it needs it now.
+        value = value and true or false
+        kind = "HIERARCHY_LOCK"
     elseif key == "autoClose" then
         value = value and true or false
     elseif key == "verbosity" then
         if not C.VERBOSITY[value] then return false, "unknown verbosity: " .. tostring(value) end
         if settings.verbosity ~= value then
             settings.verbosity = value
+            fireChanged()
+        end
+        return true
+    elseif key == "autoEquipWinners" or key == "plainItemNames" then
+        -- Client settings, like verbosity: they change what this client says, not how
+        -- the group plays (spec 015). They are not broadcast and work with no
+        -- campaign. `autoEquipWinners` has no panel control -- it was never what made
+        -- bots trade items back -- but it stays settable.
+        value = value and true or false
+        if settings[key] ~= value then
+            settings[key] = value
             fireChanged()
         end
         return true
@@ -808,8 +913,8 @@ function Round.ChangeSetting(key, value)
 
     if key == "qualityThreshold" and ns.LootDetect.Rescan then ns.LootDetect.Rescan() end
     if shared and Round.IsHost() then
-        Round.BroadcastConfig()
-        say(kind, { tierCount = value, seconds = value, lootMode = value })
+        Round.BroadcastConfig(key)
+        say(kind, { tierCount = value, seconds = value, lootMode = value, locked = value })
     end
     if ns.HierarchyEditor then ns.HierarchyEditor.Refresh() end
     fireChanged()

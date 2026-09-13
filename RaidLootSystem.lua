@@ -191,10 +191,12 @@ end
 
 local function help()
     ns.Print("commands:")
-    ns.Print("  /rls              open the roll window, or your hierarchy when no round is live")
+    ns.Print("  /rls              open the window for your role: the host panel as master "
+        .. "looter, else the roll window, else your hierarchy")
     ns.Print("  /rls window       open the roll window")
     ns.Print("  /rls hierarchy    open your hierarchy")
-    ns.Print("  /rls host         open the host panel (master looter)")
+    ns.Print("  /rls host         open the host panel, or left-click the minimap button "
+        .. "while you are master looter")
     ns.Print("  /rls history      open the history browser")
     ns.Print("  /rls campaign     list your campaigns, marking the active one")
     ns.Print("  /rls campaign new <label> | switch <n> | rename <label> | delete <n>")
@@ -207,6 +209,8 @@ local function help()
     ns.Print("  /rls deliver <n>  open a trade for pending item n")
     ns.Print("  /rls abandon <n>  give up on pending item n (confirmed)")
     ns.Print("  /rls status       version, roster size, conflicts")
+    ns.Print("  /rls links off    announce items by name, so bots do not read a link")
+    ns.Print("  /rls tiers        who composes each tier of your campaign")
     ns.Print("  /rls tiers <0-5>  set the tier count you host with")
     ns.Print("  /rls publish      resend your roster to the raid")
     ns.Print("  /rls request      ask everyone to resend theirs")
@@ -226,7 +230,13 @@ local function dispatch(input)
     command = (command or ""):lower()
 
     if command == "" then
-        if ns.RollWindow.HasContent() then
+        -- The same decision the minimap button makes, from the same function: the
+        -- button and a bare /rls have always opened the same window, and two copies of
+        -- the rule would drift the first time one of them changed (spec 006 section 3).
+        local target = ns.Minimap.PrimaryTarget(ns.Round.IsHost(), ns.RollWindow.HasContent())
+        if target == "HOST" then
+            ns.HostPanel.Toggle()
+        elseif target == "ROLL" then
             ns.RollWindow.Toggle()
         else
             ns.HierarchyEditor.Toggle()
@@ -282,7 +292,15 @@ local function dispatch(input)
     elseif command == "status" then
         status()
     elseif command == "tiers" then
-        setTierCount(argument)
+        -- Bare opens the campaign's tier roster (spec 013 section 5); with a number
+        -- it still sets the count a host raids with. Reading who is in a tier and
+        -- choosing how many tiers there are are the same subject, so they share the
+        -- word rather than inventing a second one for the reading half.
+        if argument == "" then
+            ns.TierViewer.Toggle()
+        else
+            setTierCount(argument)
+        end
     elseif command == "publish" then
         ns.Roster.Publish()
         ns.Print("roster published.")
@@ -293,6 +311,23 @@ local function dispatch(input)
         lootList()
     elseif command == "start" then
         startRound()
+    elseif command == "links" then
+        -- Whether announcements carry item links (spec 015). On the host panel too;
+        -- here because a host whose bots are trading items back wants it off now,
+        -- not after finding the tick box.
+        local sub = argument:lower()
+        if sub == "off" then
+            ns.Round.ChangeSetting("plainItemNames", true)
+            ns.Print("items are announced by name. Bots no longer read a link in raid chat.")
+        elseif sub == "on" then
+            ns.Round.ChangeSetting("plainItemNames", false)
+            ns.Print("items are announced as links. Your bots may answer one by opening "
+                .. "a trade with you.")
+        else
+            ns.Print(string.format("item links in raid announcements: %s. "
+                .. "/rls links off announces names instead.",
+                ns.Database.Settings().plainItemNames and "off (names only)" or "on"))
+        end
     elseif command == "quality" then
         setQuality(argument)
     elseif command == "roll" then

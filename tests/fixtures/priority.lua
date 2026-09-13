@@ -91,6 +91,42 @@ local function run(input, ns)
         return { ok = r.ok, drift = drift, why = r.why or "" }
     elseif input.op == "action" then
         return P.DeliveryAction(input.record) or ""
+    elseif input.op == "chainAction" then
+        return P.ChainAction(input.stored, input.received)
+    elseif input.op == "chain" then
+        local next_, why = P.Chain(input.stored, input.events)
+        if not next_ then return { failed = why } end
+        local kinds = {}
+        for i, e in ipairs(next_.log) do kinds[i] = e.version .. ":" .. e.kind end
+        return { version = next_.version, order = next_.order, log = kinds }
+    elseif input.op == "replicate" then
+        -- A host mutates, a client chains the logged events, and both sides must end
+        -- on the same order AND the same replayable log (spec 010 section 8).
+        local host = { version = input.stored.version, seed = input.stored.seed,
+                       seedChars = input.stored.seedChars, order = input.stored.order,
+                       log = input.stored.log }
+        local sent = {}
+        for _, e in ipairs(input.events) do
+            local next_ = P.Mutate(host, e)
+            if not next_ then return { failed = "host could not apply " .. e.kind } end
+            host = next_
+            sent[#sent + 1] = host.log[#host.log]
+        end
+        local client = P.Chain(input.stored, sent)
+        if not client then return { failed = "client could not chain" } end
+        local hv = P.Verify(client)
+        return { sameOrder = #PL.diff(host.order, client.order) == 0,
+                 sameVersion = host.version == client.version,
+                 clientVerifies = hv.ok }
+    elseif input.op == "preview" then
+        local to, from, held = PL.suicidePreview(input.order, input.char, input.present)
+        return { to = to, from = from, held = held }
+    elseif input.op == "suicideText" then
+        local to, from, held = PL.suicidePreview(input.order, input.char, input.present)
+        return P.SuicideText(input.char, from, to, held)
+    elseif input.op == "suicideAnnounce" then
+        local to, from, held = PL.suicidePreview(input.order, input.char, input.present)
+        return P.SuicideAnnounce(input.by, input.char, from, to, held)
     elseif input.op == "candidates" then
         return P.SeedCandidates(input.claims)
     elseif input.op == "differs" then
@@ -111,11 +147,12 @@ local function run(input, ns)
     elseif input.op == "viewRows" then
         local out = {}
         for i, row in ipairs(PL.viewRows(input.order, input.ctx)) do
-            out[i] = string.format("%d %s %s%s%s%s", row.position, row.char,
+            out[i] = string.format("%d %s %s%s%s%s%s", row.position, row.char,
                 row.owner or "unclaimed",
                 row.isSelf and " self" or "",
                 row.contested and " contested" or "",
-                row.present and (row.aboveMedian and " top" or " here") or " absent")
+                row.present and (row.aboveMedian and " top" or " here") or " absent",
+                row.tier and (" T" .. row.tier) or "")
         end
         return out
     end
@@ -126,6 +163,31 @@ local ORDER = { "Ann", "Bob", "Cat", "Dan", "Eve" }
 local ALL = { ann = true, bob = true, cat = true, dan = true, eve = true }
 -- Bob and Dan are at home.
 local SOME = { ann = true, cat = true, eve = true }
+-- Dan and Eve are at home, so the absent characters are the tail of the list.
+local TAIL_ABSENT = { ann = true, bob = true, cat = true }
+
+-- The raid of 2026-09-11, from the campaign's own event log: a manual suicide on
+-- Mojojojo at 14 landed at 16 rather than 17, because Milhouse was not in the raid
+-- and held the last row. The move was correct (section 6) and the button said
+-- "Bottom", which is what made it read as broken.
+local RAID_NIGHT = { "Zappywitch", "Stormfist", "Jijyun", "Adamm", "Mattehh", "Kargun",
+                     "Warr", "Ino", "Mmattehh", "Kyga", "Maattehh", "Adam", "Matteehh",
+                     "Mojojojo", "Scrivs", "Gravechant", "Milhouse" }
+local RAID_NIGHT_PRESENT = {}
+for _, i in ipairs({ 2, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15, 16 }) do
+    RAID_NIGHT_PRESENT[RAID_NIGHT[i]:lower()] = true
+end
+
+-- Complete logs for the chainAction cases: a seed first, the stored version last.
+local LOG4 = { { kind = "seed", version = 1 }, { kind = "suicide", version = 4 } }
+local LOG9 = { { kind = "seed", version = 1 }, { kind = "suicide", version = 9 } }
+
+-- A genuinely seeded list: "Ann, Cat, Bob" is what seed 7 shuffles those three into,
+-- so replay starts where the stored order starts and `verify` means something.
+local CHAIN_STORED = { version = 1, seed = 7, seedChars = { "Ann", "Bob", "Cat" },
+                       order = { "Ann", "Cat", "Bob" },
+                       log = { { kind = "seed", seed = 7, version = 1,
+                                 chars = { "Ann", "Bob", "Cat" } } } }
 
 return {
     name = "priority",
@@ -448,6 +510,20 @@ return {
                 "10 C10 unclaimed absent",
             },
         },
+        {
+            -- Tiers come from each owner's own hierarchy, so they neither follow
+            -- list order nor repeat down it: Bob is its owner's first character
+            -- and outranks Ann, which sits above it on the list. A character
+            -- nobody has published gets no tier rather than an invented one.
+            name = "viewRows carries each character's tier, unrelated to list order",
+            input = { op = "viewRows", order = { "Ann", "Bob", "Cat" }, ctx = {
+                owners = { Ann = "Steve", Bob = "Dave", Cat = "Dave" },
+                tiers = { Ann = 2, Bob = 1 },
+            } },
+            expected = {
+                "1 Ann Steve absent T2", "2 Bob Dave absent T1", "3 Cat Dave absent",
+            },
+        },
         { name = "an empty order gives no rows rather than erroring",
           input = { op = "viewRows", order = {}, ctx = {} },
           expected = {} },
@@ -472,6 +548,131 @@ return {
         { name = "the roll window and the core rule agree at every position",
           input = { op = "medianAgrees", upTo = 12, present = { 2, 3, 5, 8, 11 } },
           expected = true },
+
+        ----------------------------------------------------------------------
+        -- Where a suicide lands, and what the panel says about it (sections 6, 10)
+        ----------------------------------------------------------------------
+        { name = "with everyone present a suicide lands on the last row",
+          input = { op = "preview", order = ORDER, char = "Ann", present = ALL },
+          expected = { to = 5, from = 1, held = {} } },
+        { name = "an absent tail holds the rows below the landing index",
+          input = { op = "preview", order = ORDER, char = "Ann", present = TAIL_ABSENT },
+          expected = { to = 3, from = 1, held = { "Dan", "Eve" } } },
+        { name = "the raid-night suicide landed at 16 with Milhouse holding 17",
+          input = { op = "preview", order = RAID_NIGHT, char = "Mojojojo",
+                    present = RAID_NIGHT_PRESENT },
+          expected = { to = 16, from = 14, held = { "Milhouse" } } },
+        { name = "a character not on the list previews nothing",
+          input = { op = "preview", order = ORDER, char = "Nobody", present = ALL },
+          expected = { to = nil, from = nil, held = nil } },
+
+        { name = "the confirmation says the bottom when it is the bottom",
+          input = { op = "suicideText", order = ORDER, char = "Ann", present = ALL },
+          expected = "Move Ann from 1 to 5, the bottom of the list? Announced and logged." },
+        { name = "the confirmation names who holds the rows below",
+          input = { op = "suicideText", order = ORDER, char = "Ann", present = TAIL_ABSENT },
+          expected = "Move Ann from 1 to 3, below every character in the raid? "
+                  .. "Dan and Eve are not here and hold 4-5. Announced and logged." },
+        { name = "the raid-night confirmation would have named Milhouse",
+          input = { op = "suicideText", order = RAID_NIGHT, char = "Mojojojo",
+                    present = RAID_NIGHT_PRESENT },
+          expected = "Move Mojojojo from 14 to 16, below every character in the raid? "
+                  .. "Milhouse is not here and holds 17. Announced and logged." },
+
+        { name = "the chat line carries the destination",
+          input = { op = "suicideAnnounce", by = "Mattehh", order = ORDER, char = "Ann",
+                    present = ALL },
+          expected = "Mattehh moved Ann to the bottom by hand (1 -> 5)" },
+        { name = "the chat line counts the absent characters below",
+          input = { op = "suicideAnnounce", by = "Mattehh", order = RAID_NIGHT,
+                    char = "Mojojojo", present = RAID_NIGHT_PRESENT },
+          expected = "Mattehh moved Mojojojo to the bottom by hand (14 -> 16); "
+                  .. "1 absent character holds 17" },
+
+        ----------------------------------------------------------------------
+        -- Replicating the log to every member (section 8)
+        ----------------------------------------------------------------------
+        { name = "the same version and order needs nothing",
+          input = { op = "chainAction", stored = { version = 4, order = ORDER, log = LOG4 },
+                    received = { version = 4, order = ORDER, events = {} } },
+          expected = "current" },
+        { name = "one event ahead chains",
+          input = { op = "chainAction", stored = { version = 4, order = ORDER, log = LOG4 },
+                    received = { version = 5, order = ORDER,
+                                 events = { { kind = "suicide", version = 5 } } } },
+          expected = "apply" },
+        { name = "two contiguous events chain",
+          input = { op = "chainAction", stored = { version = 4, order = ORDER, log = LOG4 },
+                    received = { version = 6, order = ORDER,
+                                 events = { { kind = "suicide", version = 5 },
+                                            { kind = "suicide", version = 6 } } } },
+          expected = "apply" },
+        { name = "a gap in the versions cannot chain",
+          input = { op = "chainAction", stored = { version = 4, order = ORDER, log = LOG4 },
+                    received = { version = 7, order = ORDER,
+                                 events = { { kind = "suicide", version = 6 },
+                                            { kind = "suicide", version = 7 } } } },
+          expected = "resync" },
+        { name = "a version jump with no events cannot chain",
+          input = { op = "chainAction", stored = { version = 4, order = ORDER, log = LOG4 },
+                    received = { version = 9, order = ORDER, events = {} } },
+          expected = "resync" },
+        { name = "a reseed never chains, it restarts the log",
+          input = { op = "chainAction", stored = { version = 4, order = ORDER, log = LOG4 },
+                    received = { version = 5, order = ORDER,
+                                 events = { { kind = "seed", version = 5 } } } },
+          expected = "resync" },
+        { -- Stored by a client from before logs were replicated: a version, no log,
+          -- and no flag. Chaining onto it would look complete and never resync.
+          name = "a stored list with no log behind its version cannot chain",
+          input = { op = "chainAction", stored = { version = 4, order = ORDER, log = {} },
+                    received = { version = 5, order = ORDER,
+                                 events = { { kind = "suicide", version = 5 } } } },
+          expected = "resync" },
+        { name = "a log flagged incomplete keeps chaining while its CSTATE is awaited",
+          input = { op = "chainAction",
+                    stored = { version = 4, order = ORDER, log = {}, logIncomplete = true },
+                    received = { version = 5, order = ORDER,
+                                 events = { { kind = "suicide", version = 5 } } } },
+          expected = "apply" },
+        { -- A master looter who missed rounds restates an older list on open. Taking it
+          -- would lower the stored version, and the CSTATE that follows would then pass
+          -- its version guard and install the stale log over the newer one.
+          name = "a version that went backwards is stale, not a resync",
+          input = { op = "chainAction", stored = { version = 9, order = ORDER, log = LOG9 },
+                    received = { version = 2, order = ORDER, events = {} } },
+          expected = "stale" },
+        { name = "an older list is stale even while this log awaits its CSTATE",
+          input = { op = "chainAction",
+                    stored = { version = 9, order = ORDER, log = {}, logIncomplete = true },
+                    received = { version = 4, order = ORDER,
+                                 events = { { kind = "suicide", version = 4 } } } },
+          expected = "stale" },
+        { name = "the same version with a different order is a disagreement, not a no-op",
+          input = { op = "chainAction", stored = { version = 4, order = ORDER, log = LOG4 },
+                    received = { version = 4, order = { "Bob", "Ann", "Cat", "Dan", "Eve" },
+                                 events = {} } },
+          expected = "resync" },
+
+        { name = "chaining appends every event to the client's own log",
+          input = { op = "chain", stored = CHAIN_STORED,
+                    events = { { kind = "suicide", char = "Ann", from = 1, version = 2,
+                                 present = { 1, 2, 3 } } } },
+          expected = { version = 2, order = { "Cat", "Bob", "Ann" },
+                       log = { "1:seed", "2:suicide" } } },
+        { name = "an event that does not apply is refused rather than half-applied",
+          input = { op = "chain", stored = CHAIN_STORED,
+                    events = { { kind = "suicide", char = "Ann", from = 3, version = 2,
+                                 present = { 1, 2, 3 } } } },
+          expected = { failed = "expected Ann at 3, found 1" } },
+
+
+        { name = "host and client end on the same order, version and replayable log",
+          input = { op = "replicate", stored = CHAIN_STORED, events = {
+                      { kind = "suicide", char = "Ann", from = 1, present = { 1, 2, 3 } },
+                      { kind = "suicide", char = "Cat", from = 1, present = { 1, 2, 3 } },
+                      { kind = "move", char = "Bob", from = 1, to = 2 } } },
+          expected = { sameOrder = true, sameVersion = true, clientVerifies = true } },
 
         { name = "the same version with another order differs",
           input = { op = "differs", stored = { version = 3, order = ORDER }, received = { version = 3, order = { "Bob", "Ann", "Cat", "Dan", "Eve" } } },

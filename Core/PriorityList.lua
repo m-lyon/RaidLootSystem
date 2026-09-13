@@ -113,6 +113,26 @@ function PriorityList.suicide(order, char, presentSet)
     return PriorityList.suicideAt(order, from, present), from, present
 end
 
+--- Where a suicide would land `char`, and who holds the positions below it.
+--
+-- The last present index is the bottom of the list as far as a suicide is concerned,
+-- and when anyone below it is absent that is not the last row on screen. The panel
+-- names both before the click, because "Bottom" that visibly is not the bottom reads
+-- as a broken button rather than as the rule in section 6.
+--
+-- Everything below the landing index is absent by construction: the index is the last
+-- present one.
+-- @return to, from, array of the absent characters below `to` in list order, or nil
+function PriorityList.suicidePreview(order, char, presentSet)
+    local from = PriorityList.indexOf(order, char)
+    if not from then return nil end
+    local present = PriorityList.presentIndices(order, presentSet, from)
+    local to = present[#present]
+    local held = {}
+    for i = to + 1, #order do held[#held + 1] = order[i] end
+    return to, from, held
+end
+
 --- Undo a suicide: the character returns to `index`, and the present characters that
 -- moved up shift back down. `present` is the index array the suicide used, so the
 -- restore is an exact inverse whoever has since come or gone.
@@ -300,14 +320,19 @@ end
 -- @param order array of character names, in list order
 -- @param ctx   { owners = { [char] = owner }, present = { [char] = true },
 --                classes = { [char] = "WARRIOR" }, contested = { [char] = true },
---                me = "Playername" }
+--                tiers = { [char] = 2 }, me = "Playername" }
+--
+-- `tiers` is a character's tier in its OWNER's hierarchy, never anything derived
+-- from this list: the two are orthogonal (spec 010 section 3). A character whose
+-- owner has published nothing carries a nil tier rather than a made-up one.
 -- @return array of { position, char, owner, class, isSelf, contested, present,
---         aboveMedian }
+--         tier, aboveMedian }
 function PriorityList.viewRows(order, ctx)
     order = order or {}
     ctx = ctx or {}
     local owners, present = ctx.owners or {}, ctx.present or {}
     local classes, contested = ctx.classes or {}, ctx.contested or {}
+    local tiers = ctx.tiers or {}
     local me = keyOf(ctx.me)
 
     -- The median is over who is here, so it needs a pass of its own first.
@@ -328,6 +353,7 @@ function PriorityList.viewRows(order, ctx)
             isSelf = me ~= nil and owner ~= nil and keyOf(owner) == me,
             contested = contested[char] == true,
             present = present[char] == true,
+            tier = tiers[char],
             aboveMedian = PriorityList.aboveMedian(i, presentPositions),
         }
     end

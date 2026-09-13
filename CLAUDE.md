@@ -48,6 +48,14 @@ with the reasoning.
   `^` / `~` / `=`.
 - **Bots are not comms peers.** Bot interaction is always
   `SendChatMessage(cmd, "WHISPER", nil, botName)`.
+- **An item link in party or raid chat makes bots open a trade with you.** Confirmed in game, not
+  a precaution. `plainItemNames` is therefore **on by default** and announcements carry item
+  *names*; anything new that puts a link in a group channel has to respect it. Whispers are
+  exempt on purpose -- `equip <link>` (spec 007 §7) is a command addressed to one bot and wants
+  its link. The whisper was tested and is not what caused the trades. Spec 015.
+- **Every outgoing chat line leaves through `Announce`'s `enqueue`.** That is deliberately the one
+  chokepoint, so a line-level transform like the item-link strip cannot be defeated by a format
+  added later -- and it is where the whisper exemption is decided. Spec 015 §4.
 - **Only the host writes to raid chat.** Clients never announce.
 - **Nothing irreversible without a confirmation dialog** — awarding loot, clearing history,
   overwriting a roster on import.
@@ -55,15 +63,61 @@ with the reasoning.
   costs someone an item.
 - **The priority list is per character; the hierarchy is per player.** They are orthogonal on
   purpose: the hierarchy picks your bucket, the list decides who wins inside it. Spec 010 §3.
+- **The priority list's event log is replicated to every member, not held only by the host.**
+  `SKLIST` carries the events that produced its version and clients append them; a client that
+  cannot chain them takes the order, flags its log incomplete and asks for a `CSTATE`. Clients no
+  longer recompute a round's suicides for themselves -- that was what made the log host-only.
+  Master looter moves constantly, and an audit trail that dies on handover is not one. Spec 010 §8.
+- **The campaign is the source of truth for how the group plays it.** `CFG` and `CSTATE` write
+  `lootMode`, `tierCount` and `timerSeconds` onto `campaign.host` for every member. `hierarchy` is
+  campaign-scoped too -- a hierarchy outside a campaign means nothing, and
+  `roster.defaultHierarchy` only seeds -- but it is *per member*: `CSTATE` leaves it alone and no
+  host screen edits it. Spec 012 §7 and §9.
+- **`campaign.members` is a cache of what each member broadcast, not an authority over it.**
+  Every `ROSTER` for a campaign you are in is stored there so the tier roster survives a reload
+  (spec 013 §3), which means the host *does* hold a copy of your hierarchy now -- but only you
+  write yours, by publishing. Nothing in `CFG` / `CSTATE` / any host control may touch it.
+- **A logged-in character name is not a player identity, and `campaign.members` is keyed by
+  player.** The saved variables are per account and one player runs several characters sharing one
+  hierarchy, so recording under whichever alt is logged in gives one record per alt and the tier
+  roster draws everyone once per alt. `Campaign.RecordMember` supersedes any stored record that
+  *mutually* names the incoming one. Mutual, not one-way: a stranger wrongly holding your main in
+  their hierarchy must stay a contested character, which is loud, not a silent record deletion.
+- **The hierarchy lock is enforced on receipt, not only in the editor.** `lockHierarchy` is on by
+  default and bites once a campaign has resolved a round (any non-aborted history record names it). A locked
+  ordering may only be *appended* to -- a swap, an insert, a removal and a truncation are all
+  re-ranks, and an append lands in Rest where it jumps nobody. Refusing only in the sender's own
+  editor would be a suggestion: an older build or an edited saved-variables file walks past it,
+  and `onRoster`'s copy is what the host stamps entry tiers from. Spec 014.
+- **`lockHierarchy` is assigned, never `or`-defaulted, wherever `CFG` / `CSTATE` are applied.**
+  `false` is a real value and the `and`/`or` idiom cannot carry one, so an unlock would never
+  reach anybody -- the failure that traps a campaign. Same trap as `autoClose` in `Campaign.New`.
+- **Recording a `ROSTER` and claiming from it are separate steps.** The record goes to whichever
+  campaign the message names, if you are in it; `Roster.claims` is still rebuilt for the *active*
+  campaign only, or two players claiming one character in unrelated groups reads as a conflict.
+  Spec 013 §3, spec 012 §8.
+- **Nothing simulated may outlive a simulation in the saved variables.** The fake players publish
+  a `ROSTER` into the real active campaign, so `Simulate` clears them out of `campaign.members` on
+  finish, next to where it forgets their claims and peers.
 - **The priority list is stored, not derived.** Unlike a tally, it degrades catastrophically —
   one missing round silently corrupts every later position. `verify` replays history to *detect*
   drift; it never repairs. Spec 010 §8.
+- **Seeding the priority list turns `SK` on, it does not merely unlock it.** `Priority.Seed`
+  finishes with `Round.ChangeSetting("lootMode", "SK")`. A seeded list left on `ROLL` is
+  indistinguishable on screen from a seeded list on `SK`, and the only symptom is that no winner
+  ever moves. Spec 010 §5.
+- **The open announcement leads with the loot mode**, "Rolling:" or "SK:". It is the host's own
+  read-back that the mode is what they think it is. Chat abbreviates; panels and dialogs spell
+  "Suicide Kings" out. Spec 006 §4.
 - **Under `SK` the resolution engine calls `rng` zero times.** There are no ties to break; the
   003 §6 re-roll path is unreachable and should assert rather than sit there as dead code.
 - **A failed delivery restores the winner's list position** from the recorded `priorIndex`.
   Never recompute it — by then the list has moved. Spec 010 §6.
 - **Absent characters hold their absolute index.** The naive remove-and-append rewards not
-  showing up. Spec 010 §6.
+  showing up. Spec 010 §6. The corollary: a suicide lands on the last *present* index, which is
+  not the last row when the tail is absent, so no surface may call it "the bottom" without also
+  naming the index and who holds the rows below. `PriorityList.suicidePreview` is the one place
+  that answers that; the panel control is labelled Suicide, not Bottom.
 - **SK rounds are a fixed point, not a sequential pass.** Loot-slot order must not decide who
   wins what; only the order suicides are applied in. Spec 010 §7.
 - **`itemLevel` / `quality` / `equipLoc` are logged on every item under both modes.** Nothing in
@@ -130,6 +184,27 @@ can open with `/rls sk`. Its row model is `PriorityList.viewRows` in `Core/`, an
 `PriorityList.aboveMedian` is the single definition of the near-the-top rule --
 `RollWindow.AboveMedian` delegates to it so the two screens cannot disagree.
 
+- **The number on a priority-list row is its rank within its tier, not its list index.** Spec 013
+  §6 supersedes 011 §3 here: the list is drawn in tier bands and a tier is walked to exhaustion
+  before the next is consulted, so "third in T1" is the real place in the queue. The global index
+  is still on the row (`position`) and is still what moves, suicides, the log and the
+  announcements are written in -- do not confuse the two when touching either surface.
+
+Spec 013 adds `Core/TierRoster.lua` and `UI/TierViewer.lua`: the campaign tier roster every
+player can open with `/rls tiers`, built from `campaign.members` -- what each member submitted,
+now stored rather than reconstructed from live `ROSTER` traffic each session. The same bands group
+the two priority-list surfaces, through `TierRoster.groupRows` over the rows
+`PriorityList.viewRows` already produces, so the list and the roster cannot disagree.
+
+Spec 014 adds the hierarchy lock: a campaign setting, on by default, that fixes each member's
+tier ranking once the campaign has run a round. The rule is `Roster.LockedChangeAllowed` (pure),
+the two gates are the editor's mutators and `onRoster`, and unlocking is the host's escape hatch --
+so it is the one shared setting that is *not* frozen mid-round.
+
+Spec 015 adds `plainItemNames`, on by default: group announcements name items instead of linking
+them, because a link in raid chat makes every bot open a trade. A client setting, a tick box in the
+host panel's Raid settings, and `/rls links`.
+
 **Spec 012 (campaigns) is built**, in the two commits it was specified to land in:
 
 1. **The rename**, 012 §2. One loot source's roll is a `round` everywhere in code, wire
@@ -161,7 +236,12 @@ The rules that are easiest to get wrong when working on it, each with its spec s
 
 ## Conventions
 
-- Semver in the `.toc`, `0.x` until it has survived a real raid night.
+- Semver, `0.x` until it has survived a real raid night. **Two places hold it and they move
+  together in the same commit:** `## Version` in the `.toc`, which an addon manager lists, and
+  `C.VERSION` in `Core/Constants.lua`, which rides in `HI` and drives the host panel's drift
+  column. A stale constant does not merely look wrong -- it reports a raid full of mismatched
+  builds as matching, which is the opposite of what that column is for. They drifted apart once,
+  0.2.0 against 0.5.0, and the column said nothing for four specs.
 - Frames created in Lua, no XML.
 - Commit subjects name the spec: `spec 003: tie re-roll loop`.
 - English only; no locale layer.
