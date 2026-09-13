@@ -419,14 +419,16 @@ end
 function Client.RequestSync(campaignId)
     local now = GetTime()
     if now - lastSync < C.SYNC_INTERVAL then return false end
-    lastSync = now
     local id = Client.round and Client.round.id or ""
     -- The campaign and the list version ride along so the host can answer a history
     -- that has fallen behind without being asked twice (spec 010 section 8).
     campaignId = campaignId or ns.Campaign.ActiveId()
     local version = ns.Priority and ns.Priority.HistoryVersion(campaignId) or 0
+    local ok, err = ns.Comms.Send(C.OPS.SYNC, Serialize.encodeSync(id, campaignId, version))
+    if not ok then return false, err end
+    lastSync = now
     lastSyncAsk = { campaignId = campaignId, version = version }
-    return ns.Comms.Send(C.OPS.SYNC, Serialize.encodeSync(id, campaignId, version))
+    return ok
 end
 
 --- True when a SYNC asking for this campaign's whole history (version 0) went out

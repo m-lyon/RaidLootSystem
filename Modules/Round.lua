@@ -605,6 +605,7 @@ end
 -- another full copy behind the one still sending.
 local lastStateSent = {}
 local warnedIncomplete = {}
+local warnedBehind = {}
 
 local function onSync(sender, body)
     if not Round.IsHost() then return end
@@ -629,7 +630,15 @@ local function onSync(sender, body)
                 ns.Print("members are asking for this campaign's history, but your own "
                     .. "copy of it is incomplete, so it cannot be sent.")
             end
-        elseif (ask.priorityVersion or 0) == 0 or ask.priorityVersion ~= mine then
+        elseif (ask.priorityVersion or 0) > mine and mine > 0 then
+            -- The asker is ahead: this host missed rounds, and a CSTATE would only be
+            -- thrown away as stale after queueing a whole dump ahead of the round.
+            if not warnedBehind[ask.campaignId] then
+                warnedBehind[ask.campaignId] = true
+                ns.Print("a member holds a newer priority list for this campaign than "
+                    .. "yours; ask the previous master looter to resend it.")
+            end
+        elseif (ask.priorityVersion or 0) == 0 or ask.priorityVersion < mine then
             local now = GetTime()
             local until_ = lastStateSent[ask.campaignId]
             if until_ and now < until_ then

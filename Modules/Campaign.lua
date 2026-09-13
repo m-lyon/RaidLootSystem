@@ -766,10 +766,22 @@ end
 -- owner who has submitted nothing leaves their characters without one. The two
 -- priority-list surfaces share this so they cannot band the same list differently.
 function Campaign.TierIndex(tierCount, campaignId)
-    local out = {}
+    -- A character two members both rank is contested: it gets no tier rather than
+    -- whichever member happens to sort last.
+    local out, contested = {}, {}
     for _, member in ipairs(Campaign.Members(campaignId)) do
+        local seen = {}
         for position, char in ipairs(member.order) do
-            out[char:lower()] = ns.Tiers.forPosition(position, tierCount)
+            local key = char:lower()
+            if not seen[key] then
+                seen[key] = true
+                if out[key] ~= nil or contested[key] then
+                    contested[key] = true
+                    out[key] = nil
+                else
+                    out[key] = ns.Tiers.forPosition(position, tierCount)
+                end
+            end
         end
     end
     return out
