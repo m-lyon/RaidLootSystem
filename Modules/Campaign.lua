@@ -654,7 +654,9 @@ function Campaign.HasStarted(campaignId)
         -- A simulated record must never outlive its simulation (spec 009): counting
         -- one here would leave a never-raided campaign permanently locked once
         -- /rls simulate had run in it, even after Simulate.finish() cleans up.
-        if record.campaignId == campaignId and not record.simulated then return true end
+        -- An aborted round ran nothing, so it does not begin a campaign either.
+        if record.campaignId == campaignId and not record.simulated
+            and record.outcome ~= "ABORTED" then return true end
     end
     return false
 end
@@ -665,7 +667,7 @@ function Campaign.HierarchyLocked(campaignId)
     campaignId = campaignId or Campaign.ActiveId()
     local campaign = Campaign.Get(campaignId)
     if not campaign or campaign.host.lockHierarchy == false then return false end
-    -- The host stamps `started` when the first round opens and it rides on CFG and
+    -- The host stamps `started` when the first round resolves and it rides on CFG and
     -- CSTATE, so a member who joined mid-campaign -- including one who takes master
     -- looter -- reads the same answer as everyone else. Own history still counts,
     -- for a group whose host predates the flag.
@@ -673,7 +675,7 @@ function Campaign.HierarchyLocked(campaignId)
     return Campaign.HasStarted(campaignId)
 end
 
---- Mark a campaign as begun (spec 014). Called when a round opens; the flag then
+--- Mark a campaign as begun (spec 014). Called when a round resolves; the flag then
 -- travels with CFG and CSTATE.
 function Campaign.MarkStarted(campaignId)
     local campaign = Campaign.Get(campaignId or Campaign.ActiveId())

@@ -422,14 +422,6 @@ function Round.Open(items)
         Round.current = nil
         return false, "this loot could not be encoded (" .. tostring(err) .. ")."
     end
-    -- The campaign has begun, which is what the hierarchy lock turns on (spec 014).
-    -- Stamped only once the round really opens: a round that failed to encode must not
-    -- freeze every member's ranking with nothing to show for it.
-    ns.Campaign.MarkStarted(round.campaignId)
-    -- `started` is what engages the lock and it only travels on CFG, so it goes out
-    -- the moment it becomes true; a member who joined late would otherwise re-rank
-    -- freely and learn of the refusal from a chat line much later (spec 014 section 3).
-    Round.BroadcastConfig("started")
     sendOpen(round)
     -- The list follows OPEN, never inside it (spec 010 section 8).
     if round.lootMode == C.LOOT_MODE.SK and ns.Priority then ns.Priority.Broadcast() end
@@ -750,6 +742,14 @@ function Round.Close()
     if ns.Award then ns.Award.Begin(round) end
     if ns.Priority then ns.Priority.ApplyAwards(round) end
     if ns.History then ns.History.Record(round) end
+    -- The campaign has begun, which is what the hierarchy lock turns on (spec 014).
+    -- Stamped only once a round resolves: a misclicked round that is cancelled or
+    -- aborted must not freeze every member's ranking with nothing to show for it.
+    ns.Campaign.MarkStarted(round.campaignId)
+    -- `started` is what engages the lock and it only travels on CFG, so it goes out
+    -- the moment it becomes true; a member who joined late would otherwise re-rank
+    -- freely and learn of the refusal from a chat line much later (spec 014 section 3).
+    Round.BroadcastConfig("started")
     -- These items have been rolled for; they stop being candidates for the next
     -- round (spec 006 section 3). Abort does not do this, so a retry still has them.
     if ns.LootDetect then ns.LootDetect.Consume(round.items) end

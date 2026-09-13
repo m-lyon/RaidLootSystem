@@ -181,11 +181,14 @@ end
 -- produce a log that replays to the wrong order and says nothing about why, which is
 -- worse than admitting the gap and asking for the whole thing.
 -- @return "apply" when the events chain from the stored version to the received one,
---         "current" when there is nothing to do, "resync" otherwise
+--         "current" when there is nothing to do, "stale" when the sender holds an
+--         older list than this client, "resync" otherwise
 function Priority.ChainAction(stored, received)
     local from = stored.version or 0
     local to = received.version or 0
-    if to < from then return "resync" end            -- a reseed, or a different list
+    -- A reseed is stamped version + 1, so a lower version is older whatever its seed:
+    -- a master looter who missed rounds must not roll every member backwards.
+    if to < from then return "stale" end
     -- An already-flagged log is awaiting its CSTATE; any other gap has to ask for one.
     if from > 0 and not stored.logIncomplete and not Priority.LogComplete(stored) then
         return "resync"
@@ -756,6 +759,15 @@ local function onSklist(sender, body)
                     ns.Debug("SKLIST events did not apply (" .. tostring(why) .. "); resyncing")
                     requestState(msg, stored, round)
                 end
+            elseif action == "stale" then
+                -- Neither the order nor the log is touched, so the CSTATE version guard
+                -- still has the newer version to hold the line with (section 8).
+                ns.Debug(string.format("ignored a SKLIST at version %d, behind the stored %d",
+                    msg.version or 0, stored.version or 0))
+                ns.Print(string.format("the master looter's priority list for \"%s\" is older "
+                    .. "than yours (version %d, you hold %d) and was not taken. They are "
+                    .. "behind; loot should be mastered by someone holding the newer list.",
+                    ns.Campaign.LabelFor(msg.campaignId), msg.version or 0, stored.version or 0))
             else
                 requestState(msg, stored, round)
             end
@@ -851,7 +863,7 @@ function Priority.RunVerify()
         ns.Print("verify: there is no campaign to verify. Create or join one first.")
         return nil
     end
-    if priority.logIncomplete then
+    if priority.logIncomplete or not Priority.LogComplete(priority) then
         ns.Print("verify: this client took a list it could not chain and is still waiting for "
             .. "its history from the master looter. Try again in a moment.")
         return nil

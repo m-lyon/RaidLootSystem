@@ -275,10 +275,14 @@ New ops, added to the 000 §5 table:
 - **Chaining.** A client exactly one or more contiguous versions behind applies the events on
   `SKLIST` and appends them to its own log. It ends on the host's order *and* the host's history.
 - **Gaps are admitted, not papered over.** When the events do not chain — a missed message, a
-  reseed, a version that went backwards, or the same version with a different order — the client
-  takes the order as authoritative so the current round resolves correctly, marks its log
-  incomplete, and asks for a `CSTATE`. A half-written log is worse than an absent one: it replays
-  to the wrong answer and gives no reason.
+  reseed, or the same version with a different order — the client takes the order as
+  authoritative so the current round resolves correctly, marks its log incomplete, and asks for a
+  `CSTATE`. A half-written log is worse than an absent one: it replays to the wrong answer and
+  gives no reason.
+- **A version that went backwards is stale, not a gap.** A reseed is stamped version + 1, so a
+  lower version is an older list -- a master looter who missed rounds. The client keeps its list
+  and log untouched, logs the drop and says the host is behind; lowering its stored version would
+  let that host's `CSTATE` past its version guard and roll every member back.
 - `CSTATE` is sent on a seed or reseed, which nothing can chain onto, and in reply to a `SYNC`
   whose history version differs from the host's.
 - **`SYNC` carries the version a client can replay to**, which is zero when its log is incomplete

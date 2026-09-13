@@ -40,7 +40,7 @@ Two conditions, both required:
 | Condition | Why |
 |---|---|
 | `campaign.host.lockHierarchy` is on | The host setting, shared like the tier count and the loot mode. Default **on**. |
-| The campaign **has started** — `campaign.host.started`, or any history record names it | "Mid-campaign" is shared state, not a private reading: the host stamps `started` when the first round opens and it rides on `CFG` and `CSTATE`, so every member answers the same way. Own history still counts, for a group whose host predates the flag. Before the first round the campaign is being set up and everyone arranges their characters freely: a lock that engaged at creation would make an on-by-default setting unusable. |
+| The campaign **has started** — `campaign.host.started`, or any non-aborted history record names it | "Mid-campaign" is shared state, not a private reading: the host stamps `started` when the first round resolves (an aborted round begins nothing) and it rides on `CFG` and `CSTATE`, so every member answers the same way. Own history still counts, for a group whose host predates the flag. Before the first round the campaign is being set up and everyone arranges their characters freely: a lock that engaged at creation would make an on-by-default setting unusable. |
 
 `started` is one-way. A campaign that has run a round never un-runs it, so neither `CFG` nor
 `CSTATE` may clear it — a master looter who joined after the first round and has seen none of it

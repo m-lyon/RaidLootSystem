@@ -64,7 +64,6 @@ function Comms.Send(op, body)
     return true, #chunks
 end
 
---- Send to one player. Used for targeted replies; bots are never comms peers.
 --- Queue a message whose body is built when it reaches the head of the queue.
 -- OPEN carries seconds remaining, so encoding it at call time and then waiting
 -- behind a long CSTATE would hand clients a deadline later than the host's.
@@ -76,6 +75,7 @@ function Comms.SendDeferred(op, build)
     return true
 end
 
+--- Send to one player. Used for targeted replies; bots are never comms peers.
 function Comms.SendWhisper(op, body, target)
     for _, wire in ipairs(Serialize.pack(op, body, newMsgId())) do
         queue[#queue + 1] = { wire = wire, channel = "WHISPER", target = target }

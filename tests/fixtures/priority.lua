@@ -635,10 +635,19 @@ return {
                     received = { version = 5, order = ORDER,
                                  events = { { kind = "suicide", version = 5 } } } },
           expected = "apply" },
-        { name = "a version that went backwards is a different list",
+        { -- A master looter who missed rounds restates an older list on open. Taking it
+          -- would lower the stored version, and the CSTATE that follows would then pass
+          -- its version guard and install the stale log over the newer one.
+          name = "a version that went backwards is stale, not a resync",
           input = { op = "chainAction", stored = { version = 9, order = ORDER, log = LOG9 },
                     received = { version = 2, order = ORDER, events = {} } },
-          expected = "resync" },
+          expected = "stale" },
+        { name = "an older list is stale even while this log awaits its CSTATE",
+          input = { op = "chainAction",
+                    stored = { version = 9, order = ORDER, log = {}, logIncomplete = true },
+                    received = { version = 4, order = ORDER,
+                                 events = { { kind = "suicide", version = 4 } } } },
+          expected = "stale" },
         { name = "the same version with a different order is a disagreement, not a no-op",
           input = { op = "chainAction", stored = { version = 4, order = ORDER, log = LOG4 },
                     received = { version = 4, order = { "Bob", "Ann", "Cat", "Dan", "Eve" },

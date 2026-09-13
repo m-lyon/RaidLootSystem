@@ -84,7 +84,7 @@ with the reasoning.
   *mutually* names the incoming one. Mutual, not one-way: a stranger wrongly holding your main in
   their hierarchy must stay a contested character, which is loud, not a silent record deletion.
 - **The hierarchy lock is enforced on receipt, not only in the editor.** `lockHierarchy` is on by
-  default and bites once a campaign has run a round (any history record names it). A locked
+  default and bites once a campaign has resolved a round (any non-aborted history record names it). A locked
   ordering may only be *appended* to -- a swap, an insert, a removal and a truncation are all
   re-ranks, and an append lands in Rest where it jumps nobody. Refusing only in the sender's own
   editor would be a suggestion: an older build or an edited saved-variables file walks past it,
