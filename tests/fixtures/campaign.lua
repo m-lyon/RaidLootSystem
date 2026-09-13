@@ -584,16 +584,29 @@ return {
                          members = { "Dave=Dave,Davebot@2", "Steve=Steve,Sneaky,Dave@1" } },
         },
         {
-            -- Carol is a new alt Alice's stored ordering does not list yet, so the
-            -- mutual test misses it; the append still names Alice and extends her
-            -- ordering, so it is her record and not a second owner of her characters.
-            name = "publishing an append from an alt the record does not name replaces it",
+            -- A stranger ranking a one-character member first extends that member's
+            -- ordering exactly as a new alt would. Nothing but mutual naming says
+            -- they are the same player, so Alice keeps her record.
+            name = "a stranger's ordering extending a one-character member keeps both records",
+            input = { op = "members", records = {
+                { player = "Alice", order = { "Alice" }, at = 1 },
+                { player = "Bob", order = { "Alice", "Bob" }, at = 2 },
+            } },
+            expected = { filled = true, listed = 2, logged = 1, version = 7,
+                         tierCount = 3, members = { "Alice=Alice@1", "Bob=Alice,Bob@2" } },
+        },
+        {
+            -- Carol is a new alt Alice's stored ordering does not list yet: two
+            -- records until one of the player's characters publishes again, and the
+            -- shared hierarchy then names both, so the mutual test collapses them.
+            name = "a new alt's record collapses into the old one on the next publish",
             input = { op = "members", records = {
                 { player = "Alice", order = { "Alice", "Bot1" }, at = 1 },
                 { player = "Carol", order = { "Alice", "Bot1", "Carol" }, at = 2 },
+                { player = "Alice", order = { "Alice", "Bot1", "Carol" }, at = 3 },
             } },
             expected = { filled = true, listed = 2, logged = 1, version = 7,
-                         tierCount = 3, members = { "Carol=Alice,Bot1,Carol@2" } },
+                         tierCount = 3, members = { "Alice=Alice,Bot1,Carol@3" } },
         },
         {
             name = "two unrelated players keep a record each",

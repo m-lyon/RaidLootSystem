@@ -393,6 +393,7 @@ local function refreshSettings()
     settings.lootMode:SetValue(host.lootMode or C.LOOT_MODE.ROLL)
     settings.autoClose:SetChecked(host.autoClose and true or false)
     settings.lockHierarchy:SetChecked(host.lockHierarchy ~= false)
+    if ns.Round.IsHost() then settings.lockHierarchy:Enable() else settings.lockHierarchy:Disable() end
     settings.plainNames:SetChecked(DB().Settings().plainItemNames and true or false)
 
     -- 3.3.5a: sliders and dropdowns are enabled or disabled by their own calls.

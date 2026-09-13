@@ -604,6 +604,7 @@ end
 -- at C.CHUNK_BODY_MAX bytes each, and a fixed window lets every repeated SYNC queue
 -- another full copy behind the one still sending.
 local lastStateSent = {}
+local warnedIncomplete = {}
 
 local function onSync(sender, body)
     if not Round.IsHost() then return end
@@ -617,8 +618,18 @@ local function onSync(sender, body)
         -- holding the right order with no history behind it still gets answered.
         -- Zero is always answered: a host whose own log cannot replay also reports
         -- zero, and staying silent would leave the asker flagged with no word why.
-        if (ask.priorityVersion or 0) == 0
-            or ask.priorityVersion ~= ns.Priority.HistoryVersion(ask.campaignId) then
+        local mine = ns.Priority.HistoryVersion(ask.campaignId)
+        local held = #((ns.Campaign.Get(ask.campaignId).priority or {}).order or {}) > 0
+        if mine == 0 and (ask.priorityVersion or 0) ~= 0 then
+            -- This host cannot replay its own log and the asker can: a CSTATE would be
+            -- refused anyway, once per window for as long as the raid syncs. Say so
+            -- once per session instead.
+            if held and not warnedIncomplete[ask.campaignId] then
+                warnedIncomplete[ask.campaignId] = true
+                ns.Print("members are asking for this campaign's history, but your own "
+                    .. "copy of it is incomplete, so it cannot be sent.")
+            end
+        elseif (ask.priorityVersion or 0) == 0 or ask.priorityVersion ~= mine then
             local now = GetTime()
             local until_ = lastStateSent[ask.campaignId]
             if until_ and now < until_ then
@@ -854,6 +865,10 @@ function Round.ChangeSetting(key, value)
             return false, "the quality threshold is 3 (rare) or 4 (epic)."
         end
     elseif key == "lockHierarchy" then
+        -- Host only: a member's own `false` would switch off their own gates in
+        -- silence, and ride out on the next CFG or CSTATE if they later took master
+        -- looter, unlocking the group with nobody told.
+        if not Round.IsHost() then return false, "you are not the master looter." end
         -- Shared, so it broadcasts and is announced: it changes what members are
         -- allowed to do, and a rule nobody was told about is not a rule. Unlike the
         -- other shared settings it is *not* frozen mid-round -- unlocking is the
