@@ -250,6 +250,25 @@ function RollWindow.EntryTiers(tiers, allEntries)
     return out
 end
 
+--- The two rank tables `refreshEntry` needs (spec 013 section 6), built together so
+-- the split cannot be collapsed back into one table without a fixture failing. The
+-- grid bands and labels each row by this client's own live hierarchy, so its rank
+-- must come from the plain live tier index -- otherwise it disagrees with `/rls sk`
+-- for every character sharing a tier with a resubmitted entry, including ones with
+-- no entry of their own. The detail panel bands by the entry's *stamped* tier
+-- instead (comment above EntryTiers), so it needs the overridden table.
+-- @param priority    round.priority: { [char] = list index }
+-- @param liveTiers   this client's current Campaign.TierIndex
+-- @param allEntries  round.entries
+-- @param tierCount   round.tierCount
+-- @return grid, detail -- both { [char] = tierPosition }, keyed as `priority` is
+function RollWindow.Ranks(priority, liveTiers, allEntries, tierCount)
+    local grid = ns.TierRoster.ranks(priority, liveTiers, tierCount)
+    local entryTiers = RollWindow.EntryTiers(liveTiers, allEntries)
+    local detail = ns.TierRoster.ranks(priority, entryTiers, tierCount)
+    return grid, detail
+end
+
 local function finalRoll(row)
     local rerolled = row.rerolled or {}
     if #rerolled > 0 then return rerolled[#rerolled] end
@@ -764,23 +783,17 @@ local function refreshEntry(round)
 
     -- Present characters' list positions, for the SK median, and every character's
     -- rank inside its tier -- the number the priority viewer draws (spec 013 section
-    -- 6), from the same owner hierarchies the viewer bands by.
-    --
-    -- Two separate rank tables, not one: the grid bands and labels each row by this
-    -- client's own live hierarchy (`rosterRows`' `char.tier`), so its rank must come
-    -- from that same live TierIndex or it disagrees with `/rls sk` for every
-    -- character sharing a tier with one whose entry was stamped elsewhere. The
-    -- detail panel bands by the entry's *stamped* tier instead (comment above
-    -- RollWindow.EntryTiers), so it needs the overridden table.
+    -- 6), from the same owner hierarchies the viewer bands by. RollWindow.Ranks keeps
+    -- the grid on the live tier index and the detail panel on the stamped one; see
+    -- the comment above that function for why the two must not be merged.
     local presentPositions, tierRanks, detailRanks = {}, nil, nil
     if sk and round.priority then
         for name, position in pairs(round.priority) do
             if ns.Roster.IsPresent(name) then presentPositions[#presentPositions + 1] = position end
         end
         local liveTiers = ns.Campaign.TierIndex(round.tierCount, round.campaignId)
-        tierRanks = ns.TierRoster.ranks(round.priority, liveTiers, round.tierCount)
-        local entryTiers = RollWindow.EntryTiers(liveTiers, round.entries)
-        detailRanks = ns.TierRoster.ranks(round.priority, entryTiers, round.tierCount)
+        tierRanks, detailRanks = RollWindow.Ranks(round.priority, liveTiers, round.entries,
+            round.tierCount)
     end
 
     -- Columns.

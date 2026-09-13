@@ -42,6 +42,16 @@ local function run(input, ns)
         table.sort(out)
         return out
 
+    elseif input.op == "ranks" then
+        local grid, detail = RW.Ranks(input.priority, input.tiers, input.allEntries, input.tierCount)
+        local function fmt(t)
+            local out = {}
+            for char, rank in pairs(t) do out[#out + 1] = char .. "=" .. rank end
+            table.sort(out)
+            return out
+        end
+        return { grid = fmt(grid), detail = fmt(detail) }
+
     elseif input.op == "entrydetail" then
         -- The real pipeline refreshEntry wires up for the detail panel: live tiers,
         -- overridden by each entry's stamped tier, ranked, then rendered as detail
@@ -349,14 +359,18 @@ return {
             -- overridden by each entry's stamped tier, then ranked, then rendered.
             -- Ash's stamped tier (1) differs from its live one (2), and its rank
             -- must be computed inside the stamped tier -- 2nd behind Sneaky, not
-            -- whatever it would rank among tier 2's members. Zed is uninvolved and
-            -- keeps its live tier and the rank that comes with it.
+            -- whatever it would rank among tier 2's members. Zed's own entry is
+            -- still stamped tier 2 (allEntries carries it, unchanged from live), but
+            -- moving Ash out of tier 2 leaves Zed alone there, so Zed's rank in this
+            -- table (1) differs from its live rank (2, behind Ash) even though Zed
+            -- never resubmitted -- the detail panel drags in untouched band-mates.
             name = "entrydetail ranks a resubmitted entry inside its stamped tier",
             input = { op = "entrydetail", isSK = true, tierCount = 2,
                       tiers = { ash = 2, sneaky = 1, zed = 2 },
                       priority = { Ash = 5, Sneaky = 3, Zed = 9 },
                       allEntries = { [1] = { { char = "Ash", tier = 1 },
-                                              { char = "Sneaky", tier = 1 } } },
+                                              { char = "Sneaky", tier = 1 } },
+                                     [2] = { { char = "Zed", tier = 2 } } },
                       entries = {
                           { char = "Ash", owner = "Anna", tier = 1 },
                           { char = "Sneaky", owner = "Steve", tier = 1 },
@@ -364,6 +378,26 @@ return {
                       } },
             expected = { "T1 Sneaky (Steve) #3 rank 1", "T1 Ash (Anna) #5 rank 2",
                          "T2 Zed (Anna) #9 rank 1" },
+        },
+        {
+            -- Regression (spec 005/013): refreshEntry must keep the grid's numbers on
+            -- the live tier index even though the detail panel overrides by the
+            -- entry's stamped tier. Same inputs as the case above: Ash's stamped tier
+            -- (1) differs from its live one (2). The grid must match plain
+            -- TierRoster.ranks over the live index -- what /rls sk shows -- for every
+            -- character including Zed, who never resubmitted; only the detail table
+            -- may move Zed's rank as a side effect of Ash's move.
+            name = "ranks keeps the grid on the live tier index while the detail table follows stamped tiers",
+            input = { op = "ranks", tierCount = 2,
+                      tiers = { ash = 2, sneaky = 1, zed = 2 },
+                      priority = { Ash = 5, Sneaky = 3, Zed = 9 },
+                      allEntries = { [1] = { { char = "Ash", tier = 1 },
+                                              { char = "Sneaky", tier = 1 } },
+                                     [2] = { { char = "Zed", tier = 2 } } } },
+            expected = {
+                grid = { "Ash=1", "Sneaky=1", "Zed=2" },
+                detail = { "Ash=2", "Sneaky=1", "Zed=1" },
+            },
         },
 
         ----------------------------------------------------------------------
