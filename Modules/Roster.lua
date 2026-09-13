@@ -937,7 +937,7 @@ local function onRoster(sender, body)
             if not ok then
                 lockedOverlaps[#lockedOverlaps + 1] = other.player
                 local line = string.format("%s published a hierarchy that ranks %s's "
-                    .. "characters, but "%s" is locked (%s); the characters they share "
+                    .. 'characters, but "%s" is locked (%s); the characters they share '
                     .. "are contested.", tostring(sender), other.player,
                     ns.Campaign.LabelFor(msg.campaignId), tostring(why))
                 if warnedLocked[sender] then ns.Debug(line) else
