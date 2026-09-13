@@ -22,6 +22,8 @@ local OVERRIDE = { filterEnabled = true, override = true }
 
 local PLATE_CHEST = { equipLoc = "INVTYPE_CHEST", armorSubclass = "PLATE", quality = 4 }
 local CLOTH_CHEST = { equipLoc = "INVTYPE_CHEST", armorSubclass = "CLOTH", quality = 4 }
+local LEATHER_CHEST = { equipLoc = "INVTYPE_CHEST", armorSubclass = "LEATHER", quality = 4 }
+local MAIL_CHEST  = { equipLoc = "INVTYPE_CHEST", armorSubclass = "MAIL", quality = 4 }
 local CLOTH_CLOAK = { equipLoc = "INVTYPE_CLOAK", armorSubclass = "CLOTH", quality = 4 }
 local MISC_RING   = { equipLoc = "INVTYPE_FINGER", armorSubclass = "MISCELLANEOUS", quality = 4 }
 local SWORD_2H    = { equipLoc = "INVTYPE_2HWEAPON", weaponSubclass = "SWORD_2H", quality = 4 }
@@ -127,9 +129,9 @@ return {
             expected = { ok = false, reason = "WRONG_ARMOR" },
         },
         {
-            name = "WARRIOR fails a cloth chest",
+            name = "WARRIOR passes a cloth chest: a class may take anything below its rank",
             input = { item = CLOTH_CHEST, char = char("WARRIOR"), config = FILTER_ON },
-            expected = { ok = false, reason = "WRONG_ARMOR" },
+            expected = PASS,
         },
         {
             name = "WARRIOR passes for a cloth cloak",
@@ -143,10 +145,59 @@ return {
         },
         {
             name = "a robe is an armour slot",
-            input = { item = { equipLoc = "INVTYPE_ROBE", armorSubclass = "CLOTH" },
-                      char = char("WARRIOR"), config = FILTER_ON },
+            input = { item = { equipLoc = "INVTYPE_ROBE", armorSubclass = "PLATE" },
+                      char = char("MAGE"), config = FILTER_ON },
             expected = { ok = false, reason = "WRONG_ARMOR" },
         },
+
+        ------------------------------------------------------------------------
+        -- The armour RANK rule (spec 003 section 8). Each class is tested at its own
+        -- rank, one rank below it (must pass) and one rank above it (must fail).
+        -- These are the cases the old strict one-type-per-class table got wrong.
+        ------------------------------------------------------------------------
+        { name = "rank: SHAMAN passes mail, its own type",
+          input = { item = MAIL_CHEST, char = char("SHAMAN"), config = FILTER_ON }, expected = PASS },
+        { name = "rank: SHAMAN passes leather, one below",
+          input = { item = LEATHER_CHEST, char = char("SHAMAN"), config = FILTER_ON }, expected = PASS },
+        { name = "rank: SHAMAN passes cloth, two below",
+          input = { item = CLOTH_CHEST, char = char("SHAMAN"), config = FILTER_ON }, expected = PASS },
+        { name = "rank: SHAMAN fails plate, one above",
+          input = { item = PLATE_CHEST, char = char("SHAMAN"), config = FILTER_ON },
+          expected = { ok = false, reason = "WRONG_ARMOR" } },
+        { name = "rank: HUNTER passes cloth",
+          input = { item = CLOTH_CHEST, char = char("HUNTER"), config = FILTER_ON }, expected = PASS },
+        { name = "rank: HUNTER fails plate",
+          input = { item = PLATE_CHEST, char = char("HUNTER"), config = FILTER_ON },
+          expected = { ok = false, reason = "WRONG_ARMOR" } },
+        { name = "rank: ROGUE passes cloth",
+          input = { item = CLOTH_CHEST, char = char("ROGUE"), config = FILTER_ON }, expected = PASS },
+        { name = "rank: ROGUE passes leather, its own type",
+          input = { item = LEATHER_CHEST, char = char("ROGUE"), config = FILTER_ON }, expected = PASS },
+        { name = "rank: ROGUE fails mail, one above",
+          input = { item = MAIL_CHEST, char = char("ROGUE"), config = FILTER_ON },
+          expected = { ok = false, reason = "WRONG_ARMOR" } },
+        { name = "rank: DRUID passes cloth",
+          input = { item = CLOTH_CHEST, char = char("DRUID"), config = FILTER_ON }, expected = PASS },
+        { name = "rank: DRUID fails mail",
+          input = { item = MAIL_CHEST, char = char("DRUID"), config = FILTER_ON },
+          expected = { ok = false, reason = "WRONG_ARMOR" } },
+        { name = "rank: MAGE passes cloth, its own type",
+          input = { item = CLOTH_CHEST, char = char("MAGE"), config = FILTER_ON }, expected = PASS },
+        { name = "rank: MAGE fails leather, one above",
+          input = { item = LEATHER_CHEST, char = char("MAGE"), config = FILTER_ON },
+          expected = { ok = false, reason = "WRONG_ARMOR" } },
+        { name = "rank: PRIEST fails leather",
+          input = { item = LEATHER_CHEST, char = char("PRIEST"), config = FILTER_ON },
+          expected = { ok = false, reason = "WRONG_ARMOR" } },
+        { name = "rank: WARLOCK fails mail",
+          input = { item = MAIL_CHEST, char = char("WARLOCK"), config = FILTER_ON },
+          expected = { ok = false, reason = "WRONG_ARMOR" } },
+        { name = "rank: PALADIN passes mail, one below",
+          input = { item = MAIL_CHEST, char = char("PALADIN"), config = FILTER_ON }, expected = PASS },
+        { name = "rank: DEATHKNIGHT passes leather",
+          input = { item = LEATHER_CHEST, char = char("DEATHKNIGHT"), config = FILTER_ON }, expected = PASS },
+        { name = "rank: DEATHKNIGHT passes plate, its own type",
+          input = { item = PLATE_CHEST, char = char("DEATHKNIGHT"), config = FILTER_ON }, expected = PASS },
         {
             name = "an override lets a MAGE enter for a plate chest",
             input = { item = PLATE_CHEST, char = char("MAGE"), config = OVERRIDE },

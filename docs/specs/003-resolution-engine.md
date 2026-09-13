@@ -204,9 +204,22 @@ Order of checks, first failure wins:
 | 3 | `itemInfo.special` → **pass immediately** | — |
 | 4 | `config.filterEnabled` false → **pass immediately** | — |
 | 5 | `tokenClasses` present → class must be in it | `WRONG_CLASS_TOKEN` |
-| 6 | `armorSubclass` present **and** the slot is one of the eight armour slots → class must be permitted that armour type | `WRONG_ARMOR` |
+| 6 | `armorSubclass` present **and** the slot is one of the eight armour slots → the armour type must be at or below the class's own rank | `WRONG_ARMOR` |
 | 7 | `weaponSubclass` present → class must be permitted that weapon type | `WRONG_WEAPON` |
 | 8 | otherwise | pass |
+
+**Check 6 is a rank rule, not an equality.** Armour types are ordered
+`CLOTH < LEATHER < MAIL < PLATE`, each class has a maximum — Mage/Priest/Warlock cloth,
+Rogue/Druid leather, Hunter/Shaman mail, Warrior/Paladin/Death Knight plate — and a class is
+eligible for its own type **and everything below it**. A Shaman may take leather and cloth; a
+Rogue may take cloth. Only armour *above* a class's maximum fails, because that is genuinely
+unequippable.
+
+This supersedes the strict "what this class wears at level 80" mapping the tables originally
+carried (004 §5). The strict rule was meant to stop a Hunter taking leather off a Rogue, but it
+also filtered characters off off-pieces they really do wear, and the tier model — not the
+eligibility filter — is what decides who *should* get an item. An unknown armour subclass and an
+unknown class both fail open, as before.
 
 **Check 6's slot condition is essential.** Cloaks, rings, necks and trinkets report an armour
 subclass (`CLOTH` / `MISCELLANEOUS`) but are wearable by everyone. Only apply the armour-type

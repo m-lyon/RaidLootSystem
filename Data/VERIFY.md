@@ -22,10 +22,14 @@ reason to leave it unverified.
 
 ## The armour table
 
-**Settled.** It is the mapping specified in spec 004 §5, reviewed and merged in PR #1, and it
-encodes intent — *the armour class this class should be competing for at level 80* — rather than
-what the client will physically let a character equip. A Hunter can wear leather; it should not
-be taking leather off a Rogue.
+**Settled**, and as of v0.4.0 it is a *rank* model rather than one armour type per class:
+`CLOTH < LEATHER < MAIL < PLATE`, each class has a ceiling, and a class is eligible for its own
+type and everything below it (spec 003 §8 check 6).
+
+The previous strict mapping — *the armour class this class should be competing for at level 80* —
+was reported wrong on a raid night: Shamans and Rogues were filtered off cloth. Who *should* get
+an off-piece is a tier and roll question, not an eligibility one; the filter now only excludes
+armour a character genuinely cannot equip.
 
 The only thing worth re-checking is `Data.ARMOR_SLOTS`. It must contain the eight true armour
 slots and **nothing else**. Cloaks, rings, necks and trinkets report an armour subclass but are

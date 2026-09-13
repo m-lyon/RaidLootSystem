@@ -113,14 +113,19 @@ comparison uses the internal constant.
 Static permission tables, used because there is no API to ask "can this *other* character equip
 this?" — and every bot is another character.
 
-**Armour, at level 80:**
+**Armour is ranked, and a class may take its own type and everything below it.** `Data.ARMOR_RANK`
+orders the types and `Data.ARMOR_MAX` gives each class its ceiling:
 
-| Type | Classes |
-|---|---|
-| `CLOTH` | MAGE, PRIEST, WARLOCK |
-| `LEATHER` | ROGUE, DRUID |
-| `MAIL` | HUNTER, SHAMAN |
-| `PLATE` | WARRIOR, PALADIN, DEATHKNIGHT |
+| Type | Rank | Classes whose maximum it is |
+|---|---|---|
+| `CLOTH` | 1 | MAGE, PRIEST, WARLOCK |
+| `LEATHER` | 2 | ROGUE, DRUID |
+| `MAIL` | 3 | HUNTER, SHAMAN |
+| `PLATE` | 4 | WARRIOR, PALADIN, DEATHKNIGHT |
+
+`Data.canWearArmor(class, sub)` is `rank(sub) <= max(class)`. The earlier version of this table
+was an equality — one armour type per class — and it filtered Shamans and Rogues off cloth they
+legitimately wear. See 003 §8 check 6 for the reasoning.
 
 Applied **only** when `equipLoc` is one of the eight armour slots (003 §8 check 6).
 
