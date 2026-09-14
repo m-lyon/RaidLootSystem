@@ -19,12 +19,14 @@ LootDetect.SKIP = {
     NO_LINK        = "NO_LINK",          -- a coin slot
     BELOW_QUALITY  = "BELOW_QUALITY",
     NOT_EQUIPPABLE = "NOT_EQUIPPABLE",
+    ALREADY_ROLLED = "ALREADY_ROLLED",   -- a closed round on this corpse took it
 }
 
 LootDetect.SKIP_TEXT = {
     NO_LINK        = "not an item",
     BELOW_QUALITY  = "below the quality threshold",
     NOT_EQUIPPABLE = "not equippable and not a tier token",
+    ALREADY_ROLLED = "already rolled for",
 }
 
 --------------------------------------------------------------------------------
@@ -77,18 +79,25 @@ end
 -- @param manualIds  set of item ids the host added by hand from the skipped list
 -- @param manualRows item-link additions with no loot slot: { quantity, info }
 -- @param threshold  host.qualityThreshold
--- @param removedIds set of item ids withdrawn from the list: taken out by hand, or
---                   already rolled by a round that closed. They are not offered back
---                   under `skipped` either -- the host said no, or the question has
---                   been answered. "Add item" on the link puts one back.
+-- @param removedIds set of item ids the host took out by hand. They are not offered
+--                   back under `skipped` either -- the host said no. "Add item" on the
+--                   link puts one back.
+-- @param consumedIds set of item ids a closed round already rolled for. Offered under
+--                   `skipped`, not dropped: a different corpse can share ids with the
+--                   last one, and a silently missing drop costs someone an item.
 -- @return rows for Collapse, skipped array of { lootSlot, info, quality, reason }
-function LootDetect.Partition(scanRows, manualIds, manualRows, threshold, removedIds)
+function LootDetect.Partition(scanRows, manualIds, manualRows, threshold, removedIds,
+                              consumedIds)
     local rows, skipped = {}, {}
     manualIds = manualIds or {}
     removedIds = removedIds or {}
+    consumedIds = consumedIds or {}
     for _, row in ipairs(scanRows or {}) do
         local id = row.info and row.info.itemId
         local ok, reason = LootDetect.IsCandidate(row.info, row.quality, threshold)
+        if id and consumedIds[id] then
+            ok, reason = false, LootDetect.SKIP.ALREADY_ROLLED
+        end
         if id and removedIds[id] then                    -- withdrawn: neither list
         elseif ok or (id and manualIds[id]) then
             rows[#rows + 1] = row
@@ -99,7 +108,7 @@ function LootDetect.Partition(scanRows, manualIds, manualRows, threshold, remove
     end
     for _, row in ipairs(manualRows or {}) do
         local id = row.info and row.info.itemId
-        if not (id and removedIds[id]) then rows[#rows + 1] = row end
+        if not (id and (removedIds[id] or consumedIds[id])) then rows[#rows + 1] = row end
     end
     return rows, skipped
 end
@@ -245,6 +254,7 @@ LootDetect.candidates = {}     -- from Collapse
 LootDetect.skipped = {}        -- { lootSlot, info, quality, reason } -- the manual-add list
 LootDetect.scanning = false
 LootDetect.windowOpen = false
+LootDetect.newSource = false     -- did the last scan look like a different corpse?
 LootDetect.sourceName = nil    -- the looted creature, as far as 3.3.5a lets us tell
 
 local scanRows = {}            -- every slot of the last scan: { lootSlot, quantity, quality, info }
@@ -278,11 +288,8 @@ end
 
 --- Recompute the candidate and skipped lists from the retained scan (Partition).
 local function rebuild(newScan)
-    local withdrawn = {}
-    for id in pairs(consumedIds) do withdrawn[id] = true end
-    for id in pairs(removedIds) do withdrawn[id] = true end
     local rows, skipped = LootDetect.Partition(scanRows, manualIds, manualRows, threshold(),
-        withdrawn)
+        removedIds, consumedIds)
     LootDetect.candidates = LootDetect.Collapse(rows)
     LootDetect.skipped = skipped
     fireChanged(newScan)
@@ -313,7 +320,8 @@ function LootDetect.Scan(callback)
         for i = 1, #slots do slots[i].info = infos[i] end
         -- A new corpse: whatever the host added by hand, or took out, was for the
         -- last one. A reopened one keeps what its closed rounds consumed.
-        if not LootDetect.SameSource(scanRows, slots) then consumedIds = {} end
+        LootDetect.newSource = not LootDetect.SameSource(scanRows, slots)
+        if LootDetect.newSource then consumedIds = {} end
         scanRows, manualIds, manualRows, removedIds = slots, {}, {}, {}
         LootDetect.scanning = false
         rebuild(true)
@@ -502,7 +510,19 @@ local function onEvent(_, event, arg1)
         -- Only the master looter builds a round, and only they see the candidate list.
         if not ns.Round.IsHost() then return end
         LootDetect.Scan(function(items)
-            if #items == 0 then return end
+            if #items == 0 then
+                -- Judged the same corpse by contents, which a different one sharing
+                -- drops can pass. Say so rather than show nothing.
+                local rolled = 0
+                for _, skip in ipairs(LootDetect.skipped) do
+                    if skip.reason == LootDetect.SKIP.ALREADY_ROLLED then rolled = rolled + 1 end
+                end
+                if rolled > 0 then
+                    ns.Print(string.format("%d item(s) here were already rolled for. "
+                        .. "/rls loot to list them.", rolled))
+                end
+                return
+            end
             -- The roll window's setup state, not the host panel: one window for the
             -- whole loot journey (spec 005 section 2). Only the master looter gets it,
             -- and only when this corpse actually has something worth rolling for.

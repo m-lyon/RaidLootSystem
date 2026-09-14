@@ -1258,7 +1258,18 @@ local ticked = {}                   -- itemId -> false when the host unticked it
 local setupRows = {}
 
 local autoClosedRoundId              -- the round the window already closed itself for
+local autoCloseAt                    -- when a finished round's results may close
+local AUTO_CLOSE_LINGER = 5          -- seconds a finished round's results stay readable
 local closeLootForRoundId            -- a closed round whose corpse awards are still owed
+
+--- The records in `list` that belong to round `roundId`.
+local function recordsOfRound(list, roundId)
+    local out = {}
+    for _, record in ipairs(list or {}) do
+        if record.roundId == roundId then out[#out + 1] = record end
+    end
+    return out
+end
 
 local SETUP_ROW_H = 22
 local QUALITY_NAME = { [0] = "poor", "common", "uncommon", "rare", "epic", "legendary" }
@@ -1400,7 +1411,7 @@ local function refreshSetup()
     else
         local skipped = #LootDetect.skipped
         setupPanel.hint:SetText(skipped > 0 and string.format(
-            "%d skipped by the filter (quality, not equippable). Add one below.", skipped) or "")
+            "%d skipped (filtered, or already rolled for). Add one below.", skipped) or "")
     end
 
     local round = currentRound()
@@ -1789,17 +1800,33 @@ local function build()
         -- decided and nothing awaiting an award or a trade (section 2). Clients never
         -- auto-close; their results stay until they dismiss them.
         -- Once per round: a host who reopens a finished round's results means to.
+        -- Only this round's records count: a trade from an earlier boss has two hours
+        -- to run and must not hold every later window open. The results linger a few
+        -- seconds first, so "nobody wanted X" is seen before it goes.
         if ns.Round.IsHost() and ns.Award and ns.Pending and not RollWindow.InSetup()
             and round and autoClosedRoundId ~= round.id
-            and RollWindow.CanAutoClose(round, ns.Award.OutstandingRecords(),
-                ns.Pending.OutstandingRecords()) then
-            autoClosedRoundId = round.id
-            frame:Hide()
+            and RollWindow.CanAutoClose(round,
+                recordsOfRound(ns.Award.OutstandingRecords(), round.id),
+                recordsOfRound(ns.Pending.OutstandingRecords(), round.id)) then
+            autoCloseAt = autoCloseAt or GetTime() + AUTO_CLOSE_LINGER
+            if GetTime() >= autoCloseAt then
+                autoClosedRoundId = round.id
+                autoCloseAt = nil
+                frame:Hide()
+            end
+        else
+            autoCloseAt = nil
         end
     end)
 
     frame:SetScript("OnShow", function() RollWindow.Refresh() end)
-    frame:SetScript("OnHide", function() abortHideAt = nil end)
+    -- A host who closes the candidate list is done with it; it must not keep owning
+    -- the minimap button and a bare /rls after they walk away from the corpse.
+    frame:SetScript("OnHide", function()
+        abortHideAt = nil
+        autoCloseAt = nil
+        setupRequested = false
+    end)
 end
 
 --------------------------------------------------------------------------------
@@ -1882,7 +1909,8 @@ end
 function RollWindow.HasContent()
     -- The host's candidate list is content too: it is now the first screen of the
     -- loot journey, and the button has to be able to bring it back.
-    if RollWindow.InSetup() then return true end
+    -- Only while the corpse is open, though: a stale list's slot indices are no use.
+    if RollWindow.InSetup() and ns.LootDetect.windowOpen then return true end
     local round = currentRound()
     if not round then return false end
     if round.state == C.ROUND_STATE.OPEN then return true end
@@ -1930,6 +1958,9 @@ function RollWindow.Init()
         -- A new corpse means a fresh set of ticks; a rebuild of the same one (a manual
         -- add, a lost slot, a moved quality bar) keeps what the host unticked.
         if newScan then ticked = {} end
+        -- A different corpse is open: an older round's last award must not CloseLoot()
+        -- this one out from under the host.
+        if newScan and ns.LootDetect.newSource then closeLootForRoundId = nil end
         -- A corpse with nothing worth rolling for does not keep an older list up.
         if newScan and #ns.LootDetect.candidates == 0 then setupRequested = false end
         RollWindow.Refresh()

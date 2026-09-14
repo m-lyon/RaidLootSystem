@@ -46,7 +46,7 @@ local function run(input, ns)
 
     elseif input.op == "partition" then
         local rows, skipped = LootDetect.Partition(input.scanRows, input.manualIds,
-            input.manualRows, input.threshold, input.removedIds)
+            input.manualRows, input.threshold, input.removedIds, input.consumedIds)
         local candidates = project(LootDetect.Collapse(rows))
         local out = {}
         for i, skip in ipairs(skipped) do
@@ -361,6 +361,34 @@ return {
                       removedIds = { [44083] = true }, scanRows = {
                           { lootSlot = 2, quantity = 1, quality = 4, info = MOUNT },
                       } },
+            expected = { candidates = {}, skipped = {} },
+        },
+        {
+            -- A different corpse can hold only ids the last one did and pass SameSource.
+            -- What a closed round consumed is then offered back, never silently dropped.
+            name = "a different corpse sharing an overlapping drop is judged the same source",
+            input = { op = "samesource",
+                      old = { { lootSlot = 1, info = TOKEN }, { lootSlot = 2, info = EPIC_CHEST } },
+                      new = { { lootSlot = 1, info = TOKEN } } },
+            expected = true,
+        },
+        {
+            name = "an item a closed round consumed is skipped as already rolled, not dropped",
+            input = { op = "partition", threshold = 4, consumedIds = { [40616] = true },
+                      scanRows = {
+                          { lootSlot = 1, quantity = 1, quality = 4, info = TOKEN },
+                          { lootSlot = 2, quantity = 1, quality = 4, info = EPIC_CHEST },
+                      } },
+            expected = {
+                candidates = { { idx = 1, itemString = "item:40000:0:0:0:0:0:0:0:0",
+                                 count = 1, slots = "2", units = "2=1" } },
+                skipped = { "1:ALREADY_ROLLED" },
+            },
+        },
+        {
+            name = "a consumed item-link addition is not offered again",
+            input = { op = "partition", threshold = 4, consumedIds = { [50001] = true },
+                      manualRows = { { quantity = 1, info = info(50001) } } },
             expected = { candidates = {}, skipped = {} },
         },
 

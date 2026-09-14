@@ -50,8 +50,10 @@ open. Reopening the corpse to award keeps the items that round consumed out of t
 The roll window itself closes only when **every item has a decision and nothing is waiting to be
 handed over** — `RollWindow.CanAutoClose(round, awards, pending)`. An award that has not been made
 is made *from the results view*, so closing over it would hide the one control that finishes the
-job, and a pending trade has two hours to run and wants the reminder. It closes itself once per
-round, so a host who reopens a finished round's results keeps them.
+job, and a pending trade has two hours to run and wants the reminder. Only that round's awards and
+trades count, so an undelivered trade from an earlier boss holds no later window open. The results
+stay up a few seconds first, so an unclaimed item is seen before the window goes. It closes itself
+once per round, so a host who reopens a finished round's results keeps them.
 
 **Clients never auto-close.** Their results stay until dismissed. The abort linger (§6) is
 unchanged.
