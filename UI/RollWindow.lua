@@ -1278,8 +1278,7 @@ local setupRows = {}
 local autoClosedRoundId              -- the round the window already closed itself for
 local autoCloseAt                    -- when a finished round's results may close
 local AUTO_CLOSE_LINGER = 5          -- seconds a finished round's results stay readable
-local closeLootForRoundId            -- a closed round whose corpse awards are still owed
-local closeLootSource                -- the loot source that round was bound to
+local closeLootPending = {}          -- closed round id -> the corpse its awards are still owed on
 local lastClosedRoundId              -- the round whose close was already handled
 local lastResultsShownRoundId        -- the closed round whose results already opened the window
 
@@ -1916,23 +1915,29 @@ end
 --- Shut the host's loot frame once the closed round owes the corpse nothing:
 -- GiveMasterLoot needs it open, so closing it earlier forces a reopen per award.
 local function closeLootIfDone()
-    if not closeLootForRoundId then return end
-    -- Only that round's corpse: another one open in between is not done, and going
-    -- back to the round's corpse to award must still close it (A, B, A).
-    if not ns.LootDetect.SourceOpen(closeLootSource) then return end
-    for _, record in ipairs(outstandingFor(closeLootForRoundId, true)) do
-        -- A LOST record stays outstanding for good; it must not hold the frame open.
-        if record.delivery == C.DELIVERY.AWAITING or record.delivery == C.DELIVERY.FAILED then
-            return
-        end
-    end
+    if not next(closeLootPending) then return end
     -- Candidates the host left unticked are still outstanding for a later round.
     if #ns.LootDetect.candidates > 0 then return end
     -- So are the drops the filter skips (patterns, mounts, mats): the host adds those by hand.
     for _, skip in ipairs(ns.LootDetect.skipped) do
         if skip.reason == ns.LootDetect.SKIP.NOT_EQUIPPABLE then return end
     end
-    closeLootForRoundId, closeLootSource = nil, nil
+    local done = {}
+    for roundId, source in pairs(closeLootPending) do
+        -- Only that round's corpse: another one open in between is not done, and going
+        -- back to the round's corpse to award must still close it (A, B, A).
+        if ns.LootDetect.SourceOpen(source) then
+            for _, record in ipairs(outstandingFor(roundId, true)) do
+                -- A LOST record stays outstanding for good; it must not hold the frame open.
+                if record.delivery == C.DELIVERY.AWAITING or record.delivery == C.DELIVERY.FAILED then
+                    return
+                end
+            end
+            done[#done + 1] = roundId
+        end
+    end
+    if #done == 0 then return end
+    for _, roundId in ipairs(done) do closeLootPending[roundId] = nil end
     if ns.Round.IsHost() and ns.LootDetect.windowOpen then CloseLoot() end
 end
 
@@ -1942,7 +1947,10 @@ end
 
 function RollWindow.Toggle()
     if frame and frame:IsShown() then
-        frame:Hide()
+        -- The button promised the candidate list when it is one click away.
+        if RollWindow.InSetup() or not (RollWindow.SetupReachable() and RollWindow.ShowSetup()) then
+            frame:Hide()
+        end
     elseif not (RollWindow.SetupReachable() and RollWindow.ShowSetup()) then
         RollWindow.Show()
     end
@@ -2006,8 +2014,7 @@ local function onClientChanged(round)
             -- been made (section 2).
             -- Only the corpse the round came from: another one open now is not done.
             if ns.Round.IsHost() and ns.LootDetect.RoundSourceOpen(round.id) then
-                closeLootForRoundId = round.id
-                closeLootSource = ns.LootDetect.RoundSource(round.id)
+                closeLootPending[round.id] = ns.LootDetect.RoundSource(round.id)
                 closeLootIfDone()
             end
             ns.LootDetect.ReleaseRound(round.id)

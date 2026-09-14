@@ -475,7 +475,6 @@ end
 function LootDetect.Consume(items, roundId)
     local target, stripManual = LootDetect.ConsumeTarget(roundSources, openSource, roundId)
     local set = target and target.consumed
-    if not roundId then set = consumedIds end
     for _, item in ipairs(items or {}) do
         local _, id = ns.ItemInfo.ParseLink(item.itemString)
         if id then
