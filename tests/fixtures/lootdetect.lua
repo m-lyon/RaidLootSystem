@@ -86,7 +86,6 @@ local TOKEN = info(40616, { equipLoc = nil, tokenGroup = "PROTECTOR",
                             tokenClasses = { WARRIOR = true } })
 local MOUNT = info(44083, { special = true })
 local COLD = info(50000, { quality = nil, special = true, unresolved = true })
-local RECIPE = info(22711, { equipLoc = nil, recipe = true, special = true })
 local GREEN = info(41000, { equipLoc = "INVTYPE_CHEST", quality = 2 })
 
 --- A round item as LootDetect.Collapse would produce it.
@@ -143,19 +142,6 @@ return {
             name = "a tier token is a candidate despite being equippable by nobody",
             input = { op = "candidate", info = TOKEN, quality = 4 },
             expected = { ok = true, reason = "" },
-        },
-        {
-            -- Reported from a raid night: "Plans: Invulnerable Mail" never appeared.
-            -- A recipe is not equippable, so it needs its own clause above the equip
-            -- test, exactly as a token does (section 6).
-            name = "a recipe is a candidate despite being equippable by nobody",
-            input = { op = "candidate", info = RECIPE, quality = 4 },
-            expected = { ok = true, reason = "" },
-        },
-        {
-            name = "a recipe below the quality threshold is still skipped",
-            input = { op = "candidate", info = RECIPE, quality = 3, threshold = 4 },
-            expected = { ok = false, reason = "BELOW_QUALITY" },
         },
         {
             name = "a mount is not auto-added; it is manually addable instead",

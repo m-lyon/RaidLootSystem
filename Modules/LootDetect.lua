@@ -24,7 +24,7 @@ LootDetect.SKIP = {
 LootDetect.SKIP_TEXT = {
     NO_LINK        = "not an item",
     BELOW_QUALITY  = "below the quality threshold",
-    NOT_EQUIPPABLE = "not equippable, not a tier token and not a recipe",
+    NOT_EQUIPPABLE = "not equippable and not a tier token",
 }
 
 --------------------------------------------------------------------------------
@@ -54,12 +54,6 @@ function LootDetect.IsCandidate(info, quality, threshold)
     -- A tier token is not equippable by anyone and is the whole reason this test is not
     -- simply "is it equippable" (spec 004 section 6).
     if info.tokenGroup then return true end
-
-    -- A recipe is not equippable either, and the equip test would drop it. Profession
-    -- plans at or above the quality bar are rolled for like any other drop, so the class
-    -- check runs ahead of it, exactly as the token check does (spec 004 section 6).
-    if info.recipe then return true end
-
     if ns.ItemInfo.IsEquippable(info) then return true end
 
     -- The client never resolved it. It passed the quality bar, so it is very likely worth

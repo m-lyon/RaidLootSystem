@@ -222,9 +222,10 @@ the two gates are the editor's mutators and `onRoster`, and unlocking is the hos
 so it is the one shared setting that is *not* frozen mid-round.
 
 v0.4.0 (issue #26) moves the round candidate list out of `UI/HostPanel.lua` and into the roll
-window's host-only setup state, adds `Widgets.Raise` for window layering, makes armour a rank
-rule in `Data/ClassArmor.lua` and makes recipes round candidates (`Data.CLASS_INDEX.RECIPE`,
-unverified -- see `Data/VERIFY.md`).
+window's host-only setup state, adds `Widgets.Raise` for window layering, and makes armour a rank
+rule in `Data/ClassArmor.lua` -- a class takes its own armour type and everything lighter.
+Non-equippable drops (recipes, patterns, mounts, mats) are still *not* automatic candidates: the
+host adds them by hand from the setup list, which is the whole point of that list.
 
 Spec 015 adds `plainItemNames`, on by default: group announcements name items instead of linking
 them, because a link in raid chat makes every bot open a trade. A client setting, a tick box in the

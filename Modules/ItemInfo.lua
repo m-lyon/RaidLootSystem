@@ -102,16 +102,8 @@ function ItemInfo.Classify(raw)
         itemLevel  = raw.itemLevel,
         equipLoc   = (raw.equipLoc ~= "" and raw.equipLoc) or nil,
         icon       = raw.icon,
-        classIndex = raw.classIndex,
         special    = false,
     }
-
-    -- The class position rides on every return path below. Dropping it on the
-    -- not-equippable path is what hid recipes: nothing downstream could tell
-    -- "Plans: Invulnerable Mail" from a pile of gold (spec 004 section 6).
-    if raw.classIndex and raw.classIndex == Data.CLASS_INDEX.RECIPE then
-        info.recipe = true
-    end
 
     -- 1. Tier token. Checked first and by name, so it still works on an uncached item and
     --    so it never falls through to the equip test -- no token is equippable by anyone,
@@ -222,15 +214,10 @@ function ItemInfo.Get(link)
     local name, fullLink, quality, itemLevel, _, itemType, itemSubType, _, equipLoc, icon =
         GetItemInfo(itemString)
 
-    -- The class position is resolved even when the subclass map is unusable: it comes
-    -- from GetAuctionItemClasses, which the length check says nothing about, and it is
-    -- what marks a recipe. Only the subclass lookup is gated (section 4).
     local classIndex, subClassIndex
-    if itemType and classIndexOf then
-        classIndex = classIndexOf[itemType]
-    end
-    if mapUsable and classIndex then
-        local subs = subIndexOf[classIndex]
+    if mapUsable and itemType then
+        classIndex = classIndexOf and classIndexOf[itemType] or nil
+        local subs = classIndex and subIndexOf[classIndex] or nil
         subClassIndex = subs and subs[itemSubType] or nil
     end
 
@@ -343,11 +330,6 @@ function ItemInfo.DumpClasses()
                 tostring(subs[j]), tostring(ours[j])))
         end
     end
-
-    ns.Print(string.format("Data/ItemClasses.lua expects weapon=%d armour=%d recipe=%d; "
-        .. "the recipe position is UNVERIFIED (Data/VERIFY.md). Position %d above reads: %s",
-        Data.CLASS_INDEX.WEAPON, Data.CLASS_INDEX.ARMOR, Data.CLASS_INDEX.RECIPE,
-        Data.CLASS_INDEX.RECIPE, tostring(classes[Data.CLASS_INDEX.RECIPE])))
 
     dump(Data.CLASS_INDEX.WEAPON, Data.WEAPON_SUBCLASSES, "weapon")
     dump(Data.CLASS_INDEX.ARMOR, Data.ARMOR_SUBCLASSES, "armour")
