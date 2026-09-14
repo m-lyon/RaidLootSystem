@@ -421,12 +421,9 @@ end
 -- @param isHost      Round.IsHost()
 -- @param requested   the host opened a corpse (or asked for the list) and has not
 --                    since been handed a round or a result to look at instead
--- @param candidates  how many candidate rows LootDetect is holding. Zero still shows
---                    the list once requested: the host who removed the last row needs
---                    the Add item box that replaces it.
 -- @param roundState  the mirrored round's state, or nil when there is no round
 -- @param outstanding awards of that round not yet made
-function RollWindow.SetupActive(isHost, requested, candidates, roundState, outstanding)
+function RollWindow.SetupActive(isHost, requested, roundState, outstanding)
     if not isHost or not requested then return false end
     -- A live round owns the window: the grid and the countdown are what the host
     -- needs while it runs, and the candidate list is the next corpse's problem.
@@ -1280,6 +1277,7 @@ local autoCloseAt                    -- when a finished round's results may clos
 local AUTO_CLOSE_LINGER = 5          -- seconds a finished round's results stay readable
 local closeLootForRoundId            -- a closed round whose corpse awards are still owed
 local lastClosedRoundId              -- the round whose close was already handled
+local lastResultsShownRoundId        -- the closed round whose results already opened the window
 
 --- The records in `list` that belong to round `roundId`.
 local function recordsOfRound(list, roundId)
@@ -1895,8 +1893,7 @@ function RollWindow.InSetup()
         return ns.LootDetect.windowOpen
             and ns.LootDetect.SlotHolds(record.lootSlot, record.itemString)
     end)
-    return RollWindow.SetupActive(ns.Round.IsHost(), setupRequested,
-        #ns.LootDetect.candidates, round.state, blocking)
+    return RollWindow.SetupActive(ns.Round.IsHost(), setupRequested, round.state, blocking)
 end
 
 --- Shut the host's loot frame once the closed round owes the corpse nothing:
@@ -1979,7 +1976,12 @@ local function onClientChanged(round)
                 closeLootIfDone()
             end
         end
-        if round.results and not RollWindow.IsShown() then RollWindow.Show() end
+        -- Not for a window the host closed, or one that closed itself, on this round.
+        if round.results and not RollWindow.IsShown() and autoClosedRoundId ~= round.id
+            and lastResultsShownRoundId ~= round.id then
+            lastResultsShownRoundId = round.id
+            RollWindow.Show()
+        end
     elseif round.state == C.ROUND_STATE.ABORTED then
         if RollWindow.IsShown() and not abortHideAt then
             abortHideAt = GetTime() + C.ABORT_LINGER_SECONDS

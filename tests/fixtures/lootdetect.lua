@@ -60,6 +60,16 @@ local function run(input, ns)
     elseif input.op == "matchsource" then
         return LootDetect.MatchSource(input.sources, input.guid, input.new) or 0
 
+    elseif input.op == "remember" then
+        -- Each scan in turn; the source each one lands on, numbered by first sighting.
+        local sources, seen, out = {}, {}, {}
+        for i, scan in ipairs(input.scans) do
+            local source = LootDetect.RememberSource(sources, scan.guid, scan.rows, 10)
+            seen[source] = seen[source] or i
+            out[i] = seen[source]
+        end
+        return table.concat(out, ",")
+
     elseif input.op == "prune" then
         local gone = input.gone
         local kept, lost = LootDetect.Prune(input.items, function(slot)
@@ -386,6 +396,17 @@ return {
                                      { lootSlot = 2, info = EPIC_CHEST } } },
                       } },
             expected = 2,
+        },
+        {
+            -- Boss A (no GUID), then trash B holding a subset of A's ids, then A again.
+            -- B's contents match must not overwrite A's rows, or A reopens as a stranger.
+            name = "a subset corpse matched by contents leaves the source it matched intact",
+            input = { op = "remember", scans = {
+                { rows = { { lootSlot = 1, info = TOKEN }, { lootSlot = 2, info = EPIC_CHEST } } },
+                { guid = "0xF130000003", rows = { { lootSlot = 1, info = TOKEN } } },
+                { rows = { { lootSlot = 1, info = TOKEN }, { lootSlot = 2, info = EPIC_CHEST } } },
+            } },
+            expected = "1,1,1",
         },
         {
             name = "a corpse matching no remembered source is a new source",

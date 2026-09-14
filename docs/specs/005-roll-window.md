@@ -34,7 +34,7 @@ Loot mode, tier count, the timer and every other raid-wide setting stay in the h
 are the raid's rules, not this corpse's contents, and they are changed between rounds rather than
 over a body.
 
-`RollWindow.SetupActive(isHost, requested, candidates, roundState)` is the pure rule. A live or
+`RollWindow.SetupActive(isHost, requested, roundState, outstanding)` is the pure rule. A live or
 resolving round always wins the window; a *closed* one does not, because by then the host is
 standing over the next corpse and a stale result is not what they asked for — unless that closed
 round still has an award to make, because the results view holds the only control that makes it.

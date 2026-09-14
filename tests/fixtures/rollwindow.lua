@@ -35,14 +35,14 @@ local function run(input, ns)
         return { inCount = inCount, total = total, outstanding = table.concat(names, ",") }
 
     elseif input.op == "setup" then
-        return RW.SetupActive(input.isHost, input.requested, input.candidates,
-            input.roundState, input.outstanding)
+        return RW.SetupActive(input.isHost, input.requested, input.roundState,
+            input.outstanding)
 
     elseif input.op == "setupawards" then
         local blocking = RW.SetupBlockingAwards(input.records, function(record)
             return input.slotHolds
         end)
-        return RW.SetupActive(true, true, 2, "CLOSED", blocking)
+        return RW.SetupActive(true, true, "CLOSED", blocking)
 
     elseif input.op == "autoclose" then
         return RW.CanAutoClose(input.round, input.awards, input.pending)

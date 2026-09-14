@@ -414,6 +414,7 @@ function Round.Open(items)
         round.source = "Item link"
     end
     Round.current = round
+    if ns.LootDetect then ns.LootDetect.BindRound(round.id) end
     if ns.Award then ns.Award.Snapshot(round) end     -- spec 007: what the host already had
 
     local body, err = Serialize.encodeOpen(round.campaignId, round.id, tierCount, seconds,
@@ -772,7 +773,7 @@ function Round.Close()
     Round.BroadcastConfig("started")
     -- These items have been rolled for; they stop being candidates for the next
     -- round (spec 006 section 3). Abort does not do this, so a retry still has them.
-    if ns.LootDetect then ns.LootDetect.Consume(round.items) end
+    if ns.LootDetect then ns.LootDetect.Consume(round.items, round.id) end
 
     fireChanged()
     return true

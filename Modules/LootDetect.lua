@@ -157,6 +157,32 @@ function LootDetect.MatchSource(sources, guid, newRows)
     return nil
 end
 
+--- Remember a fresh scan as a loot source, reusing the one it reopens.
+--
+-- A contents-only match is not certain: a different corpse holding a subset of the
+-- matched one's ids passes it. So the matched record's rows and GUID are replaced only
+-- when both GUIDs agree; otherwise it is kept as it was, and reopening the original
+-- corpse still finds it with its consumed set.
+--
+-- @param sources array of { guid, rows, consumed }, newest first; modified in place
+-- @param guid    the dead target's GUID at LOOT_OPENED, or nil
+-- @param rows    the fresh scan's rows
+-- @param max     how many sources to keep
+-- @return the source, and the index it matched at (nil for a new source)
+function LootDetect.RememberSource(sources, guid, rows, max)
+    local match = LootDetect.MatchSource(sources, guid, rows)
+    local source
+    if match then
+        source = table.remove(sources, match)
+        if guid and source.guid == guid then source.rows = rows end
+    else
+        source = { consumed = {}, rows = rows, guid = guid }
+    end
+    table.insert(sources, 1, source)
+    for i = #sources, (max or #sources) + 1, -1 do sources[i] = nil end
+    return source, match
+end
+
 --------------------------------------------------------------------------------
 -- Pure: duplicate stacks (section 2)
 --------------------------------------------------------------------------------
@@ -285,6 +311,7 @@ local manualRows = {}          -- item-link additions with no loot slot: { quant
 local removedIds = {}          -- ids withdrawn by hand
 local consumedIds = {}         -- ids a closed round rolled for; the open source's set
 local sources = {}             -- remembered loot sources, newest first: { guid, rows, consumed }
+local roundSources = {}        -- round id -> the source that round was opened from
 local MAX_SOURCES = 10
 
 local listeners = {}
@@ -345,12 +372,8 @@ function LootDetect.Scan(callback)
         -- A new corpse: whatever the host added by hand, or took out, was for the
         -- last one. A reopened one keeps what its closed rounds consumed, even with
         -- other corpses opened in between.
-        local match = LootDetect.MatchSource(sources, LootDetect.sourceGuid, slots)
-        local source = match and table.remove(sources, match) or { consumed = {} }
-        source.rows = slots
-        source.guid = LootDetect.sourceGuid or source.guid
-        table.insert(sources, 1, source)
-        sources[MAX_SOURCES + 1] = nil
+        local source, match = LootDetect.RememberSource(sources, LootDetect.sourceGuid,
+            slots, MAX_SOURCES)
         LootDetect.newSource = match ~= 1
         consumedIds = source.consumed
         scanRows, manualIds, manualRows, removedIds = slots, {}, {}, {}
@@ -420,7 +443,10 @@ end
 --- The items a round closed on stop being candidates for the next one (spec 006
 -- section 3). Called on close, not on open: an aborted round leaves its items in
 -- place so the host can start it again.
-function LootDetect.Consume(items)
+function LootDetect.Consume(items, roundId)
+    -- The source the round was built from, which need not be the one open now.
+    local set = (roundId and roundSources[roundId] or {}).consumed or consumedIds
+    if roundId then roundSources[roundId] = nil end
     for _, item in ipairs(items or {}) do
         local _, id = ns.ItemInfo.ParseLink(item.itemString)
         if id then
@@ -428,18 +454,15 @@ function LootDetect.Consume(items)
                 if manualRows[i].info.itemId == id then table.remove(manualRows, i) end
             end
             manualIds[id] = nil
-            -- The source the round was built from, which need not be the one open now.
-            local set = consumedIds
-            for _, source in ipairs(sources) do
-                if LootDetect.SameSource(source.rows, { { info = { itemId = id } } }) then
-                    set = source.consumed
-                    break
-                end
-            end
             set[id] = true
         end
     end
     rebuild()
+end
+
+--- Tie a round to the loot source open when it started, for Consume.
+function LootDetect.BindRound(roundId)
+    if roundId then roundSources[roundId] = sources[1] end
 end
 
 --------------------------------------------------------------------------------
