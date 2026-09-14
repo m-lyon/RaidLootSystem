@@ -104,6 +104,29 @@ function LootDetect.Partition(scanRows, manualIds, manualRows, threshold, remove
     return rows, skipped
 end
 
+--- Is a fresh scan the same corpse reopened, rather than a new one?
+--
+-- 3.3.5a has no loot-source API, so it is judged by contents: a reopened corpse holds
+-- nothing it did not hold before (awards only take slots away). Items a closed round
+-- consumed survive a reopen, or the loot already rolled for comes back as candidates
+-- and a second round on it is one click away.
+--
+-- @param oldRows the previous scan's rows
+-- @param newRows the fresh scan's rows
+function LootDetect.SameSource(oldRows, newRows)
+    if #(oldRows or {}) == 0 or #(newRows or {}) == 0 then return false end
+    local had = {}
+    for _, row in ipairs(oldRows) do
+        local id = row.info and row.info.itemId
+        if id then had[id] = true end
+    end
+    for _, row in ipairs(newRows) do
+        local id = row.info and row.info.itemId
+        if not (id and had[id]) then return false end
+    end
+    return true
+end
+
 --------------------------------------------------------------------------------
 -- Pure: duplicate stacks (section 2)
 --------------------------------------------------------------------------------
@@ -227,7 +250,8 @@ LootDetect.sourceName = nil    -- the looted creature, as far as 3.3.5a lets us 
 local scanRows = {}            -- every slot of the last scan: { lootSlot, quantity, quality, info }
 local manualIds = {}           -- item ids the host added by hand from the skipped list
 local manualRows = {}          -- item-link additions with no loot slot: { quantity, info }
-local removedIds = {}          -- ids withdrawn by hand or consumed by a closed round
+local removedIds = {}          -- ids withdrawn by hand
+local consumedIds = {}         -- ids a closed round rolled for; kept across a reopen
 
 local listeners = {}
 local expectedClears = {}      -- loot slots our own award is about to empty
@@ -254,8 +278,11 @@ end
 
 --- Recompute the candidate and skipped lists from the retained scan (Partition).
 local function rebuild(newScan)
+    local withdrawn = {}
+    for id in pairs(consumedIds) do withdrawn[id] = true end
+    for id in pairs(removedIds) do withdrawn[id] = true end
     local rows, skipped = LootDetect.Partition(scanRows, manualIds, manualRows, threshold(),
-        removedIds)
+        withdrawn)
     LootDetect.candidates = LootDetect.Collapse(rows)
     LootDetect.skipped = skipped
     fireChanged(newScan)
@@ -285,7 +312,8 @@ function LootDetect.Scan(callback)
         if token ~= scanToken then return end
         for i = 1, #slots do slots[i].info = infos[i] end
         -- A new corpse: whatever the host added by hand, or took out, was for the
-        -- last one.
+        -- last one. A reopened one keeps what its closed rounds consumed.
+        if not LootDetect.SameSource(scanRows, slots) then consumedIds = {} end
         scanRows, manualIds, manualRows, removedIds = slots, {}, {}, {}
         LootDetect.scanning = false
         rebuild(true)
@@ -310,6 +338,7 @@ function LootDetect.AddCandidate(link, callback)
         return false
     end
     removedIds[itemId] = nil            -- adding it back undoes a withdrawal
+    consumedIds[itemId] = nil
 
     for _, row in ipairs(scanRows) do
         if row.info and row.info.itemId == itemId then
@@ -360,7 +389,7 @@ function LootDetect.Consume(items)
                 if manualRows[i].info.itemId == id then table.remove(manualRows, i) end
             end
             manualIds[id] = nil
-            removedIds[id] = true
+            consumedIds[id] = true
         end
     end
     rebuild()

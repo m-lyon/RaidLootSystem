@@ -421,16 +421,21 @@ end
 -- @param isHost      Round.IsHost()
 -- @param requested   the host opened a corpse (or asked for the list) and has not
 --                    since been handed a round or a result to look at instead
--- @param candidates  how many candidate rows LootDetect is holding
+-- @param candidates  how many candidate rows LootDetect is holding. Zero still shows
+--                    the list once requested: the host who removed the last row needs
+--                    the Add item box that replaces it.
 -- @param roundState  the mirrored round's state, or nil when there is no round
-function RollWindow.SetupActive(isHost, requested, candidates, roundState)
+-- @param outstanding awards of that round not yet made
+function RollWindow.SetupActive(isHost, requested, candidates, roundState, outstanding)
     if not isHost or not requested then return false end
-    if (candidates or 0) == 0 then return false end
     -- A live round owns the window: the grid and the countdown are what the host
     -- needs while it runs, and the candidate list is the next corpse's problem.
     if roundState == C.ROUND_STATE.OPEN or roundState == C.ROUND_STATE.RESOLVING then
         return false
     end
+    -- So does a closed round with an award still to make: the results view holds the
+    -- only control that makes it.
+    if roundState == C.ROUND_STATE.CLOSED and (outstanding or 0) > 0 then return false end
     return true
 end
 
@@ -1252,6 +1257,9 @@ local setupRequested = false
 local ticked = {}                   -- itemId -> false when the host unticked it
 local setupRows = {}
 
+local autoClosedRoundId              -- the round the window already closed itself for
+local closeLootForRoundId            -- a closed round whose corpse awards are still owed
+
 local SETUP_ROW_H = 22
 local QUALITY_NAME = { [0] = "poor", "common", "uncommon", "rare", "epic", "legendary" }
 
@@ -1424,8 +1432,7 @@ function RollWindow.Refresh()
 
     -- Setup comes first: a host standing over a corpse wants the candidate list,
     -- whatever an older round of theirs still has on screen (section 2).
-    if RollWindow.SetupActive(ns.Round.IsHost(), setupRequested,
-        #ns.LootDetect.candidates, round and round.state) then
+    if RollWindow.InSetup() then
         frame.titleText:SetText("Raid Loot System - "
             .. (ns.LootDetect.sourceName or "loot") .. " - "
             .. #ns.LootDetect.candidates .. " to roll for")
@@ -1781,9 +1788,12 @@ local function build()
         -- The host's window closes itself once the round is finished with: every item
         -- decided and nothing awaiting an award or a trade (section 2). Clients never
         -- auto-close; their results stay until they dismiss them.
+        -- Once per round: a host who reopens a finished round's results means to.
         if ns.Round.IsHost() and ns.Award and ns.Pending and not RollWindow.InSetup()
+            and round and autoClosedRoundId ~= round.id
             and RollWindow.CanAutoClose(round, ns.Award.OutstandingRecords(),
                 ns.Pending.OutstandingRecords()) then
+            autoClosedRoundId = round.id
             frame:Hide()
         end
     end)
@@ -1813,10 +1823,32 @@ function RollWindow.ShowSetup()
     return true
 end
 
+--- Outstanding award records of one round, optionally only those still on the corpse.
+local function outstandingFor(roundId, corpseOnly)
+    local out = {}
+    if not (ns.Award and roundId) then return out end
+    for _, record in ipairs(ns.Award.OutstandingRecords()) do
+        if record.roundId == roundId and (record.lootSlot or not corpseOnly) then
+            out[#out + 1] = record
+        end
+    end
+    return out
+end
+
 --- Is the window currently on the host's candidate list?
 function RollWindow.InSetup()
+    local round = currentRound() or {}
     return RollWindow.SetupActive(ns.Round.IsHost(), setupRequested,
-        #ns.LootDetect.candidates, (currentRound() or {}).state)
+        #ns.LootDetect.candidates, round.state, #outstandingFor(round.id))
+end
+
+--- Shut the host's loot frame once the closed round owes the corpse nothing:
+-- GiveMasterLoot needs it open, so closing it earlier forces a reopen per award.
+local function closeLootIfDone()
+    if not closeLootForRoundId then return end
+    if #outstandingFor(closeLootForRoundId, true) > 0 then return end
+    closeLootForRoundId = nil
+    if ns.Round.IsHost() and ns.LootDetect.windowOpen then CloseLoot() end
 end
 
 function RollWindow.Hide()
@@ -1876,9 +1908,12 @@ local function onClientChanged(round)
     elseif round.state == C.ROUND_STATE.CLOSED then
         setupRequested = false
         -- The corpse has nothing left to offer this round, so the host's loot window
-        -- is dismissed for them: one fewer frame over the results, and one fewer
-        -- thing to click before moving on (section 2).
-        if ns.Round.IsHost() and ns.LootDetect.windowOpen then CloseLoot() end
+        -- is dismissed for them -- but only once every award from it has been made
+        -- (section 2).
+        if ns.Round.IsHost() and closeLootForRoundId ~= round.id then
+            closeLootForRoundId = round.id
+            closeLootIfDone()
+        end
         if round.results and not RollWindow.IsShown() then RollWindow.Show() end
     elseif round.state == C.ROUND_STATE.ABORTED then
         if RollWindow.IsShown() and not abortHideAt then
@@ -1895,6 +1930,9 @@ function RollWindow.Init()
         -- A new corpse means a fresh set of ticks; a rebuild of the same one (a manual
         -- add, a lost slot, a moved quality bar) keeps what the host unticked.
         if newScan then ticked = {} end
+        -- A corpse with nothing worth rolling for does not keep an older list up.
+        if newScan and #ns.LootDetect.candidates == 0 then setupRequested = false end
         RollWindow.Refresh()
     end)
+    if ns.Award then ns.Award.RegisterListener(closeLootIfDone) end
 end

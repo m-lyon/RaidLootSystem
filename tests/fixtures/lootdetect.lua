@@ -54,6 +54,9 @@ local function run(input, ns)
         end
         return { candidates = candidates, skipped = out }
 
+    elseif input.op == "samesource" then
+        return LootDetect.SameSource(input.old, input.new)
+
     elseif input.op == "prune" then
         local gone = input.gone
         local kept, lost = LootDetect.Prune(input.items, function(slot)
@@ -142,6 +145,27 @@ return {
             name = "a tier token is a candidate despite being equippable by nobody",
             input = { op = "candidate", info = TOKEN, quality = 4 },
             expected = { ok = true, reason = "" },
+        },
+        {
+            -- Reopening a corpse to award from it must not bring back what a closed
+            -- round consumed, or the same loot is offered for a second round.
+            name = "a reopened corpse holding a subset of the last scan is the same source",
+            input = { op = "samesource",
+                      old = { { lootSlot = 1, info = TOKEN }, { lootSlot = 2, info = MOUNT } },
+                      new = { { lootSlot = 1, info = TOKEN } } },
+            expected = true,
+        },
+        {
+            name = "a corpse holding anything new is a new source",
+            input = { op = "samesource",
+                      old = { { lootSlot = 1, info = TOKEN } },
+                      new = { { lootSlot = 1, info = TOKEN }, { lootSlot = 2, info = MOUNT } } },
+            expected = false,
+        },
+        {
+            name = "the first scan is a new source",
+            input = { op = "samesource", old = {}, new = { { lootSlot = 1, info = TOKEN } } },
+            expected = false,
         },
         {
             name = "a mount is not auto-added; it is manually addable instead",

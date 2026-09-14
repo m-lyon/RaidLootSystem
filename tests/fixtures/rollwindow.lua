@@ -36,7 +36,7 @@ local function run(input, ns)
 
     elseif input.op == "setup" then
         return RW.SetupActive(input.isHost, input.requested, input.candidates,
-            input.roundState)
+            input.roundState, input.outstanding)
 
     elseif input.op == "autoclose" then
         return RW.CanAutoClose(input.round, input.awards, input.pending)
@@ -561,8 +561,12 @@ return {
           input = { op = "setup", isHost = true, requested = true, candidates = 2,
                     roundState = "CLOSED" },
           expected = true },
-        { name = "an empty candidate list shows nothing",
+        { name = "removing the last row keeps the list up, with its Add item box",
           input = { op = "setup", isHost = true, requested = true, candidates = 0 },
+          expected = true },
+        { name = "a closed round with an award still to make keeps its results in the window",
+          input = { op = "setup", isHost = true, requested = true, candidates = 2,
+                    roundState = "CLOSED", outstanding = 1 },
           expected = false },
         { name = "a host who has not opened a corpse is not dragged into setup",
           input = { op = "setup", isHost = true, requested = false, candidates = 3 },

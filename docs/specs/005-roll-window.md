@@ -36,16 +36,22 @@ over a body.
 
 `RollWindow.SetupActive(isHost, requested, candidates, roundState)` is the pure rule. A live or
 resolving round always wins the window; a *closed* one does not, because by then the host is
-standing over the next corpse and a stale result is not what they asked for.
+standing over the next corpse and a stale result is not what they asked for — unless that closed
+round still has an award to make, because the results view holds the only control that makes it.
+Once requested, the list stays up with zero rows, so the Add item box survives removing the last one.
 
 ### Auto-close
 
-When a round closes, the host's Blizzard loot frame is closed for them (`CloseLoot()`).
+When a round closes, the host's Blizzard loot frame is closed for them (`CloseLoot()`) — but only
+once no award of that round is still owed from a loot slot, because `GiveMasterLoot` needs the frame
+open. Reopening the corpse to award keeps the items that round consumed out of the candidate list
+(`LootDetect.SameSource`).
 
 The roll window itself closes only when **every item has a decision and nothing is waiting to be
 handed over** — `RollWindow.CanAutoClose(round, awards, pending)`. An award that has not been made
 is made *from the results view*, so closing over it would hide the one control that finishes the
-job, and a pending trade has two hours to run and wants the reminder.
+job, and a pending trade has two hours to run and wants the reminder. It closes itself once per
+round, so a host who reopens a finished round's results keeps them.
 
 **Clients never auto-close.** Their results stay until dismissed. The abort linger (§6) is
 unchanged.
