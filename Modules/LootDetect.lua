@@ -521,6 +521,16 @@ function LootDetect.SourceOpen(source)
         and source == openSource
 end
 
+--- Is `source` still remembered (or the one open now), so the corpse can come back?
+function LootDetect.SourceKnown(source)
+    if source == nil then return false end
+    if source == openSource then return true end
+    for _, known in ipairs(sources) do
+        if known == source then return true end
+    end
+    return false
+end
+
 --- Forget a round's source once its close or abort has been handled.
 function LootDetect.ReleaseRound(roundId)
     if roundId then roundSources[roundId] = nil end
@@ -657,10 +667,15 @@ local function onEvent(_, event, arg1)
             -- The roll window's setup state, not the host panel: one window for the
             -- whole loot journey (spec 005 section 2). Only the master looter gets it,
             -- and only when this corpse actually has something worth rolling for.
-            -- A window left on a round's results (an award still owed here) is not
-            -- an invitation to start another round on the same loot.
-            if ns.RollWindow and (ns.RollWindow.ShowSetup() or ns.RollWindow.IsShown()) then
-                return
+            -- A window left on a closed round's results (an award still owed here) is
+            -- not an invitation to start another round on the same loot. A live round
+            -- still gets the chat line, so this corpse is not silently passed over.
+            if ns.RollWindow then
+                if ns.RollWindow.ShowSetup() then return end
+                local round = ns.Round.current
+                if ns.RollWindow.IsShown() and round and round.state == C.ROUND_STATE.CLOSED then
+                    return
+                end
             end
             ns.Print(string.format("%d item(s) here are worth rolling for. "
                 .. "/rls loot to list them, /rls start to open a round.", #items))

@@ -563,6 +563,13 @@ local function currentRound()
     return ns.Client and ns.Client.round or nil
 end
 
+--- The round a host-only decision reads: the host's own, not its mirror, which only
+-- moves when the host's OPEN / RESULT echo comes back through the throttle.
+local function hostRound()
+    if ns.Round.IsHost() and ns.Round.current then return ns.Round.current end
+    return currentRound()
+end
+
 local function isSK(round)
     return round.lootMode == C.LOOT_MODE.SK          -- OPEN carries it (spec 010 section 8)
 end
@@ -1280,6 +1287,7 @@ local autoCloseAt                    -- when a finished round's results may clos
 local AUTO_CLOSE_LINGER = 5          -- seconds a finished round's results stay readable
 local closeLootPending = {}          -- closed round id -> the corpse its awards are still owed on
 local lastClosedRoundId              -- the round whose close was already handled
+local lastHostClosedRoundId          -- the host round whose loot-frame close was already handled
 local lastResultsShownRoundId        -- the closed round whose results already opened the window
 
 --- The records in `list` that belong to round `roundId`.
@@ -1434,7 +1442,7 @@ local function refreshSetup()
             "%d skipped (filtered, or already rolled for). Add one below.", skipped) or "")
     end
 
-    local round = currentRound()
+    local round = hostRound()
     local blocker = ns.HostPanel.StartBlocker({
         isHost = ns.Round.IsHost(),
         lootMethod = (GetLootMethod()),
@@ -1870,7 +1878,7 @@ end
 function RollWindow.ShowSetup()
     if not ns.Round.IsHost() then return false end
     if #ns.LootDetect.candidates == 0 then return false end
-    local state = (currentRound() or {}).state
+    local state = (hostRound() or {}).state
     if state == C.ROUND_STATE.OPEN or state == C.ROUND_STATE.RESOLVING then return false end
     setupRequested = true
     abortHideAt = nil
@@ -1891,7 +1899,7 @@ local function outstandingFor(roundId, corpseOnly)
 end
 
 local function setupActiveFor(requested)
-    local round = currentRound() or {}
+    local round = hostRound() or {}
     local blocking = RollWindow.SetupBlockingAwards(outstandingFor(round.id), function(record)
         return ns.LootDetect.windowOpen
             and ns.LootDetect.SlotHolds(record.lootSlot, record.itemString)
@@ -1915,25 +1923,36 @@ end
 --- Shut the host's loot frame once the closed round owes the corpse nothing:
 -- GiveMasterLoot needs it open, so closing it earlier forces a reopen per award.
 local function closeLootIfDone()
+    -- A corpse that has aged out of the remembered sources can never be reopened as itself.
+    for roundId, source in pairs(closeLootPending) do
+        if not ns.LootDetect.SourceKnown(source) then closeLootPending[roundId] = nil end
+    end
     if not next(closeLootPending) then return end
     -- Candidates the host left unticked are still outstanding for a later round.
     if #ns.LootDetect.candidates > 0 then return end
-    -- So are the drops the filter skips (patterns, mounts, mats): the host adds those by hand.
+    -- So are the drops the filter skips (patterns, mounts, mats, anything under the
+    -- quality bar but still master-looted): the host hands those out by hand.
+    local threshold = GetLootThreshold and GetLootThreshold() or 0
     for _, skip in ipairs(ns.LootDetect.skipped) do
-        if skip.reason == ns.LootDetect.SKIP.NOT_EQUIPPABLE then return end
+        if skip.reason == ns.LootDetect.SKIP.NOT_EQUIPPABLE
+            or (skip.reason == ns.LootDetect.SKIP.BELOW_QUALITY and (skip.quality or 0) >= threshold) then
+            return
+        end
     end
     local done = {}
     for roundId, source in pairs(closeLootPending) do
         -- Only that round's corpse: another one open in between is not done, and going
         -- back to the round's corpse to award must still close it (A, B, A).
         if ns.LootDetect.SourceOpen(source) then
+            local owed = false
             for _, record in ipairs(outstandingFor(roundId, true)) do
                 -- A LOST record stays outstanding for good; it must not hold the frame open.
                 if record.delivery == C.DELIVERY.AWAITING or record.delivery == C.DELIVERY.FAILED then
-                    return
+                    owed = true
+                    break
                 end
             end
-            done[#done + 1] = roundId
+            if not owed then done[#done + 1] = roundId end
         end
     end
     if #done == 0 then return end
@@ -2009,15 +2028,6 @@ local function onClientChanged(round)
         if lastClosedRoundId ~= round.id then
             lastClosedRoundId = round.id
             setupRequested = false
-            -- The corpse has nothing left to offer this round, so the host's loot
-            -- window is dismissed for them -- but only once every award from it has
-            -- been made (section 2).
-            -- Only the corpse the round came from: another one open now is not done.
-            if ns.Round.IsHost() and ns.LootDetect.RoundSourceOpen(round.id) then
-                closeLootPending[round.id] = ns.LootDetect.RoundSource(round.id)
-                closeLootIfDone()
-            end
-            ns.LootDetect.ReleaseRound(round.id)
         end
         -- Not for a window the host closed, or one that closed itself, on this round.
         if round.results and not RollWindow.IsShown() and autoClosedRoundId ~= round.id
@@ -2033,8 +2043,27 @@ local function onClientChanged(round)
     RollWindow.Refresh()
 end
 
+--- The host's own round closed. Read off Round, not the echoed mirror: an echo the
+-- server drops would otherwise leave the loot frame open and the source bound.
+local function onRoundChanged(round)
+    if not (round and round.state == C.ROUND_STATE.CLOSED) then return end
+    if lastHostClosedRoundId == round.id then return end
+    lastHostClosedRoundId = round.id
+    -- The corpse has nothing left to offer this round, so the host's loot
+    -- window is dismissed for them -- but only once every award from it has
+    -- been made (section 2).
+    -- Only the corpse the round came from: another one open now is not done.
+    if ns.Round.IsHost() and ns.LootDetect.RoundSourceOpen(round.id) then
+        closeLootPending[round.id] = ns.LootDetect.RoundSource(round.id)
+        closeLootIfDone()
+    end
+    ns.LootDetect.ReleaseRound(round.id)
+    RollWindow.Refresh()
+end
+
 function RollWindow.Init()
     ns.Client.RegisterListener(onClientChanged)
+    ns.Round.RegisterListener(onRoundChanged)
     ns.Roster.RegisterListener(function() RollWindow.Refresh() end)
     ns.LootDetect.RegisterListener(function(_, newScan)
         -- A new corpse means a fresh set of ticks; a rebuild of the same one (a manual
