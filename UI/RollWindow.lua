@@ -1276,6 +1276,7 @@ local autoClosedRoundId              -- the round the window already closed itse
 local autoCloseAt                    -- when a finished round's results may close
 local AUTO_CLOSE_LINGER = 5          -- seconds a finished round's results stay readable
 local closeLootForRoundId            -- a closed round whose corpse awards are still owed
+local closeLootSource                -- the loot source that round was bound to
 local lastClosedRoundId              -- the round whose close was already handled
 local lastResultsShownRoundId        -- the closed round whose results already opened the window
 
@@ -1912,6 +1913,9 @@ end
 -- GiveMasterLoot needs it open, so closing it earlier forces a reopen per award.
 local function closeLootIfDone()
     if not closeLootForRoundId then return end
+    -- Only that round's corpse: another one open in between is not done, and going
+    -- back to the round's corpse to award must still close it (A, B, A).
+    if not ns.LootDetect.SourceOpen(closeLootSource) then return end
     for _, record in ipairs(outstandingFor(closeLootForRoundId, true)) do
         -- A LOST record stays outstanding for good; it must not hold the frame open.
         if record.delivery == C.DELIVERY.AWAITING or record.delivery == C.DELIVERY.FAILED then
@@ -1920,7 +1924,7 @@ local function closeLootIfDone()
     end
     -- Candidates the host left unticked are still outstanding for a later round.
     if #ns.LootDetect.candidates > 0 then return end
-    closeLootForRoundId = nil
+    closeLootForRoundId, closeLootSource = nil, nil
     if ns.Round.IsHost() and ns.LootDetect.windowOpen then CloseLoot() end
 end
 
@@ -1995,6 +1999,7 @@ local function onClientChanged(round)
             -- Only the corpse the round came from: another one open now is not done.
             if ns.Round.IsHost() and ns.LootDetect.RoundSourceOpen(round.id) then
                 closeLootForRoundId = round.id
+                closeLootSource = ns.LootDetect.RoundSource(round.id)
                 closeLootIfDone()
             end
             ns.LootDetect.ReleaseRound(round.id)
@@ -2020,9 +2025,6 @@ function RollWindow.Init()
         -- A new corpse means a fresh set of ticks; a rebuild of the same one (a manual
         -- add, a lost slot, a moved quality bar) keeps what the host unticked.
         if newScan then ticked = {} end
-        -- A different corpse is open: an older round's last award must not CloseLoot()
-        -- this one out from under the host.
-        if newScan and ns.LootDetect.newSource then closeLootForRoundId = nil end
         -- A corpse with nothing worth rolling for does not keep an older list up.
         if newScan and #ns.LootDetect.candidates == 0 then setupRequested = false end
         -- Removing the last leftover candidate finishes the corpse.

@@ -409,6 +409,35 @@ return {
             expected = "1,1,1",
         },
         {
+            -- Awards took the chest; the same GUID reopened holds only the token. The
+            -- source's rows are replaced, so the chest back again reads as another corpse.
+            name = "a same-GUID reopen replaces the matched source's rows",
+            input = { op = "remember", scans = {
+                { guid = "0xF130000004", rows = { { lootSlot = 1, info = TOKEN },
+                                                  { lootSlot = 2, info = EPIC_CHEST } } },
+                { guid = "0xF130000004", rows = { { lootSlot = 1, info = TOKEN } } },
+                { rows = { { lootSlot = 1, info = TOKEN } } },
+                { rows = { { lootSlot = 1, info = TOKEN }, { lootSlot = 2, info = EPIC_CHEST } } },
+            } },
+            expected = "1,1,1,4",
+        },
+        {
+            -- An item the cache has not resolved yet must not make a reopened corpse a
+            -- stranger, or what its closed rounds consumed comes back as candidates.
+            name = "an unresolved row does not stop a reopened corpse matching",
+            input = { op = "samesource",
+                      old = { { lootSlot = 1, info = TOKEN }, { lootSlot = 2, info = EPIC_CHEST } },
+                      new = { { lootSlot = 1, info = TOKEN }, { lootSlot = 2 } } },
+            expected = true,
+        },
+        {
+            name = "a scan with no resolved rows matches nothing",
+            input = { op = "samesource",
+                      old = { { lootSlot = 1, info = TOKEN } },
+                      new = { { lootSlot = 1 } } },
+            expected = false,
+        },
+        {
             name = "a corpse matching no remembered source is a new source",
             input = { op = "matchsource", new = { { lootSlot = 1, info = MOUNT } },
                       sources = { { rows = { { lootSlot = 1, info = TOKEN } } } } },
@@ -437,6 +466,18 @@ return {
                 candidates = { { idx = 1, itemString = "item:40000:0:0:0:0:0:0:0:0",
                                  count = 1, slots = "2", units = "2=1" } },
                 skipped = { "1:ALREADY_ROLLED" },
+            },
+        },
+        {
+            -- Add item undoes consumption: the host asked for it by hand.
+            name = "a consumed item the host added by hand is offered again",
+            input = { op = "partition", threshold = 4, consumedIds = { [40616] = true },
+                      manualIds = { [40616] = true },
+                      scanRows = { { lootSlot = 1, quantity = 1, quality = 4, info = TOKEN } } },
+            expected = {
+                candidates = { { idx = 1, itemString = "item:40616:0:0:0:0:0:0:0:0",
+                                 count = 1, slots = "1", units = "1=1" } },
+                skipped = {},
             },
         },
         {

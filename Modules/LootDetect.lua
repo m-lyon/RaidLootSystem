@@ -129,11 +129,16 @@ function LootDetect.SameSource(oldRows, newRows)
         local id = row.info and row.info.itemId
         if id then had[id] = true end
     end
+    -- A row the item cache has not resolved yet is unknown, not a mismatch.
+    local matched = false
     for _, row in ipairs(newRows) do
         local id = row.info and row.info.itemId
-        if not (id and had[id]) then return false end
+        if id then
+            if not had[id] then return false end
+            matched = true
+        end
     end
-    return true
+    return matched
 end
 
 --- Which remembered loot source is a fresh scan reopening, if any?
@@ -301,7 +306,6 @@ LootDetect.candidates = {}     -- from Collapse
 LootDetect.skipped = {}        -- { lootSlot, info, quality, reason } -- the manual-add list
 LootDetect.scanning = false
 LootDetect.windowOpen = false
-LootDetect.newSource = false     -- did the last scan look like a different corpse?
 LootDetect.sourceName = nil    -- the looted creature, as far as 3.3.5a lets us tell
 LootDetect.sourceGuid = nil    -- its GUID, when the looter is targeting it
 
@@ -372,9 +376,8 @@ function LootDetect.Scan(callback)
         -- A new corpse: whatever the host added by hand, or took out, was for the
         -- last one. A reopened one keeps what its closed rounds consumed, even with
         -- other corpses opened in between.
-        local source, match = LootDetect.RememberSource(sources, LootDetect.sourceGuid,
+        local source = LootDetect.RememberSource(sources, LootDetect.sourceGuid,
             slots, MAX_SOURCES)
-        LootDetect.newSource = match ~= 1
         consumedIds = source.consumed
         scanRows, manualIds, manualRows, removedIds = slots, {}, {}, {}
         LootDetect.scanning = false
@@ -467,9 +470,10 @@ function LootDetect.Consume(items, roundId)
 end
 
 --- Tie a round to the loot source open when it started, for Consume.
--- Only a round with loot-slot items, started while a loot window is open.
+-- Only a round with loot-slot items. Those came from the last scan, whether or not its
+-- loot window is still open, so the round is bound to that scan's source regardless.
 function LootDetect.BindRound(roundId, items)
-    if not (roundId and LootDetect.windowOpen) then return end
+    if not roundId then return end
     for _, item in ipairs(items or {}) do
         if item.lootSlot then
             roundSources[roundId] = sources[1]
@@ -481,6 +485,16 @@ end
 --- Is the loot source round `roundId` was bound to the one open now?
 function LootDetect.RoundSourceOpen(roundId)
     local source = roundId and roundSources[roundId]
+    return source ~= nil and LootDetect.SourceOpen(source)
+end
+
+--- The loot source round `roundId` was bound to, or nil.
+function LootDetect.RoundSource(roundId)
+    return roundId and roundSources[roundId]
+end
+
+--- Is `source` the loot source open now?
+function LootDetect.SourceOpen(source)
     return source ~= nil and LootDetect.windowOpen and source == sources[1]
 end
 
