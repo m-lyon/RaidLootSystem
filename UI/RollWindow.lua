@@ -1928,6 +1928,10 @@ local function closeLootIfDone()
     end
     -- Candidates the host left unticked are still outstanding for a later round.
     if #ns.LootDetect.candidates > 0 then return end
+    -- So are the drops the filter skips (patterns, mounts, mats): the host adds those by hand.
+    for _, skip in ipairs(ns.LootDetect.skipped) do
+        if skip.reason == ns.LootDetect.SKIP.NOT_EQUIPPABLE then return end
+    end
     closeLootForRoundId, closeLootSource = nil, nil
     if ns.Round.IsHost() and ns.LootDetect.windowOpen then CloseLoot() end
 end

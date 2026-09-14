@@ -463,13 +463,19 @@ function LootDetect.Consume(items, roundId)
     else
         set = consumedIds
     end
+    -- The manual additions belong to the corpse open now; another corpse's round must
+    -- not strip a same-id item the host added here.
+    local bound = roundId and roundSources[roundId]
+    local stripManual = not bound or bound == sources[1]
     for _, item in ipairs(items or {}) do
         local _, id = ns.ItemInfo.ParseLink(item.itemString)
         if id then
-            for i = #manualRows, 1, -1 do
-                if manualRows[i].info.itemId == id then table.remove(manualRows, i) end
+            if stripManual then
+                for i = #manualRows, 1, -1 do
+                    if manualRows[i].info.itemId == id then table.remove(manualRows, i) end
+                end
+                manualIds[id] = nil
             end
-            manualIds[id] = nil
             if set then set[id] = true end
         end
     end
@@ -502,7 +508,9 @@ end
 
 --- Is `source` the loot source open now?
 function LootDetect.SourceOpen(source)
-    return source ~= nil and LootDetect.windowOpen and source == sources[1]
+    -- Until a new window's scan lands, sources[1] is still the last corpse's.
+    return source ~= nil and LootDetect.windowOpen and not LootDetect.scanning
+        and source == sources[1]
 end
 
 --- Forget a round's source once its close or abort has been handled.
@@ -623,13 +631,18 @@ local function onEvent(_, event, arg1)
             if #items == 0 then
                 -- Judged the same corpse by contents, which a different one sharing
                 -- drops can pass. Say so rather than show nothing.
-                local rolled = 0
+                local rolled, handAdd = 0, 0
                 for _, skip in ipairs(LootDetect.skipped) do
                     if skip.reason == LootDetect.SKIP.ALREADY_ROLLED then rolled = rolled + 1 end
+                    if skip.reason == LootDetect.SKIP.NOT_EQUIPPABLE then handAdd = handAdd + 1 end
                 end
                 if rolled > 0 then
                     ns.Print(string.format("%d item(s) here were already rolled for. "
                         .. "/rls loot to list them.", rolled))
+                end
+                if handAdd > 0 then
+                    ns.Print(string.format("%d item(s) here are not equippable and can be "
+                        .. "added by hand. /rls loot to list them.", handAdd))
                 end
                 return
             end
