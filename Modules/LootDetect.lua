@@ -182,6 +182,13 @@ function LootDetect.RememberSource(sources, guid, rows, max)
         if guid and source.guid == guid then source.rows = rows end
     else
         source = { consumed = {}, rows = rows, guid = guid }
+        -- A scan with no resolved ids can never be matched again; remembering it would
+        -- only push a real corpse, and its consumed set, off the end of the list.
+        local anyId = false
+        for _, row in ipairs(rows or {}) do
+            if row.info and row.info.itemId then anyId = true break end
+        end
+        if not anyId then return source, nil end
     end
     table.insert(sources, 1, source)
     for i = #sources, (max or #sources) + 1, -1 do sources[i] = nil end

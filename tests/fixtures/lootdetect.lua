@@ -422,6 +422,17 @@ return {
             expected = "1,1,1,4",
         },
         {
+            -- Coin-only corpses can never match; ten of them must not push the boss out.
+            name = "scans with no resolved ids are not remembered",
+            input = { op = "remember", scans = {
+                { rows = { { lootSlot = 1, info = TOKEN } } },
+                { rows = {} }, { rows = {} }, { rows = {} }, { rows = {} }, { rows = {} },
+                { rows = {} }, { rows = {} }, { rows = {} }, { rows = {} }, { rows = {} },
+                { rows = { { lootSlot = 1, info = TOKEN } } },
+            } },
+            expected = "1,2,3,4,5,6,7,8,9,10,11,1",
+        },
+        {
             -- An item the cache has not resolved yet must not make a reopened corpse a
             -- stranger, or what its closed rounds consumed comes back as candidates.
             name = "an unresolved row does not stop a reopened corpse matching",

@@ -438,16 +438,19 @@ end
 
 --- How many of a closed round's awards still hold the window on its results?
 --
--- Only an award the host can still make from it: AWAITING, with its slot still on the
--- open corpse. A LOST or FAILED record, or one from a corpse no longer open, would
--- otherwise keep every later corpse's setup list away until a new round opened.
+-- Only an award the host can still make from it: AWAITING, or a FAILED one that can be
+-- retried, with its slot still on the open corpse. A LOST record, or one from a corpse
+-- no longer open, would otherwise keep every later corpse's setup list away until a new
+-- round opened.
 --
 -- @param records   the round's outstanding award records
 -- @param slotHolds function(record) -> does the open corpse still hold its item?
 function RollWindow.SetupBlockingAwards(records, slotHolds)
     local n = 0
     for _, record in ipairs(records or {}) do
-        if record.delivery == C.DELIVERY.AWAITING and record.lootSlot and slotHolds(record) then
+        local owed = record.delivery == C.DELIVERY.AWAITING
+            or (record.delivery == C.DELIVERY.FAILED and ns.Award.Retryable(record))
+        if owed and record.lootSlot and slotHolds(record) then
             n = n + 1
         end
     end
@@ -1871,6 +1874,7 @@ function RollWindow.ShowSetup()
     local state = (currentRound() or {}).state
     if state == C.ROUND_STATE.OPEN or state == C.ROUND_STATE.RESOLVING then return false end
     setupRequested = true
+    abortHideAt = nil
     RollWindow.Show()
     return RollWindow.InSetup()
 end
