@@ -414,7 +414,7 @@ function Round.Open(items)
         round.source = "Item link"
     end
     Round.current = round
-    if ns.LootDetect then ns.LootDetect.BindRound(round.id) end
+    if ns.LootDetect then ns.LootDetect.BindRound(round.id, items) end
     if ns.Award then ns.Award.Snapshot(round) end     -- spec 007: what the host already had
 
     local body, err = Serialize.encodeOpen(round.campaignId, round.id, tierCount, seconds,
@@ -804,6 +804,7 @@ function Round.Abort(reason)
     end
 
     if ns.History then ns.History.Record(round) end
+    if ns.LootDetect then ns.LootDetect.ReleaseRound(round.id) end
     fireChanged()
     return true
 end

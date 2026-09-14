@@ -445,8 +445,14 @@ end
 -- place so the host can start it again.
 function LootDetect.Consume(items, roundId)
     -- The source the round was built from, which need not be the one open now.
-    local set = (roundId and roundSources[roundId] or {}).consumed or consumedIds
-    if roundId then roundSources[roundId] = nil end
+    -- A round bound to no corpse (an item-link round, or one started with no loot
+    -- window open) consumes no corpse's ids.
+    local set
+    if roundId then
+        set = (roundSources[roundId] or {}).consumed
+    else
+        set = consumedIds
+    end
     for _, item in ipairs(items or {}) do
         local _, id = ns.ItemInfo.ParseLink(item.itemString)
         if id then
@@ -454,15 +460,33 @@ function LootDetect.Consume(items, roundId)
                 if manualRows[i].info.itemId == id then table.remove(manualRows, i) end
             end
             manualIds[id] = nil
-            set[id] = true
+            if set then set[id] = true end
         end
     end
     rebuild()
 end
 
 --- Tie a round to the loot source open when it started, for Consume.
-function LootDetect.BindRound(roundId)
-    if roundId then roundSources[roundId] = sources[1] end
+-- Only a round with loot-slot items, started while a loot window is open.
+function LootDetect.BindRound(roundId, items)
+    if not (roundId and LootDetect.windowOpen) then return end
+    for _, item in ipairs(items or {}) do
+        if item.lootSlot then
+            roundSources[roundId] = sources[1]
+            return
+        end
+    end
+end
+
+--- Is the loot source round `roundId` was bound to the one open now?
+function LootDetect.RoundSourceOpen(roundId)
+    local source = roundId and roundSources[roundId]
+    return source ~= nil and LootDetect.windowOpen and source == sources[1]
+end
+
+--- Forget a round's source once its close or abort has been handled.
+function LootDetect.ReleaseRound(roundId)
+    if roundId then roundSources[roundId] = nil end
 end
 
 --------------------------------------------------------------------------------

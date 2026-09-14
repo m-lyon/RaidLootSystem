@@ -1886,21 +1886,38 @@ local function outstandingFor(roundId, corpseOnly)
     return out
 end
 
---- Is the window currently on the host's candidate list?
-function RollWindow.InSetup()
+local function setupActiveFor(requested)
     local round = currentRound() or {}
     local blocking = RollWindow.SetupBlockingAwards(outstandingFor(round.id), function(record)
         return ns.LootDetect.windowOpen
             and ns.LootDetect.SlotHolds(record.lootSlot, record.itemString)
     end)
-    return RollWindow.SetupActive(ns.Round.IsHost(), setupRequested, round.state, blocking)
+    return RollWindow.SetupActive(ns.Round.IsHost(), requested, round.state, blocking)
+end
+
+--- Is the window currently on the host's candidate list?
+function RollWindow.InSetup()
+    return setupActiveFor(setupRequested)
+end
+
+--- Is the candidate list on screen, or one click away? A host who closed it with the
+-- corpse still open must be able to bring it back from the button and a bare /rls.
+function RollWindow.SetupReachable()
+    if RollWindow.InSetup() then return true end
+    if not ns.LootDetect.windowOpen or #ns.LootDetect.candidates == 0 then return false end
+    return setupActiveFor(true)
 end
 
 --- Shut the host's loot frame once the closed round owes the corpse nothing:
 -- GiveMasterLoot needs it open, so closing it earlier forces a reopen per award.
 local function closeLootIfDone()
     if not closeLootForRoundId then return end
-    if #outstandingFor(closeLootForRoundId, true) > 0 then return end
+    for _, record in ipairs(outstandingFor(closeLootForRoundId, true)) do
+        -- A LOST record stays outstanding for good; it must not hold the frame open.
+        if record.delivery == C.DELIVERY.AWAITING or record.delivery == C.DELIVERY.FAILED then
+            return
+        end
+    end
     -- Candidates the host left unticked are still outstanding for a later round.
     if #ns.LootDetect.candidates > 0 then return end
     closeLootForRoundId = nil
@@ -1912,7 +1929,11 @@ function RollWindow.Hide()
 end
 
 function RollWindow.Toggle()
-    if frame and frame:IsShown() then frame:Hide() else RollWindow.Show() end
+    if frame and frame:IsShown() then
+        frame:Hide()
+    elseif not (RollWindow.SetupReachable() and RollWindow.ShowSetup()) then
+        RollWindow.Show()
+    end
 end
 
 function RollWindow.IsShown()
@@ -1939,7 +1960,7 @@ function RollWindow.HasContent()
     -- The host's candidate list is content too: it is now the first screen of the
     -- loot journey, and the button has to be able to bring it back.
     -- Only while the corpse is open, though: a stale list's slot indices are no use.
-    if RollWindow.InSetup() and ns.LootDetect.windowOpen then return true end
+    if RollWindow.SetupReachable() and ns.LootDetect.windowOpen then return true end
     local round = currentRound()
     if not round then return false end
     if round.state == C.ROUND_STATE.OPEN then return true end
@@ -1971,10 +1992,12 @@ local function onClientChanged(round)
             -- The corpse has nothing left to offer this round, so the host's loot
             -- window is dismissed for them -- but only once every award from it has
             -- been made (section 2).
-            if ns.Round.IsHost() then
+            -- Only the corpse the round came from: another one open now is not done.
+            if ns.Round.IsHost() and ns.LootDetect.RoundSourceOpen(round.id) then
                 closeLootForRoundId = round.id
                 closeLootIfDone()
             end
+            ns.LootDetect.ReleaseRound(round.id)
         end
         -- Not for a window the host closed, or one that closed itself, on this round.
         if round.results and not RollWindow.IsShown() and autoClosedRoundId ~= round.id

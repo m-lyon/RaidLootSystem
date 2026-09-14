@@ -238,7 +238,7 @@ local function dispatch(input)
         -- button and a bare /rls have always opened the same window, and two copies of
         -- the rule would drift the first time one of them changed (spec 006 section 3).
         local target = ns.Minimap.PrimaryTarget(ns.Round.IsHost(), ns.RollWindow.HasContent(),
-            ns.RollWindow.InSetup())
+            ns.RollWindow.SetupReachable())
         if target == "HOST" then
             ns.HostPanel.Toggle()
         elseif target == "ROLL" then
@@ -247,7 +247,9 @@ local function dispatch(input)
             ns.HierarchyEditor.Toggle()
         end
     elseif command == "window" then
-        ns.RollWindow.Show()
+        if not (ns.RollWindow.SetupReachable() and ns.RollWindow.ShowSetup()) then
+            ns.RollWindow.Show()
+        end
     elseif command == "hierarchy" then
         ns.HierarchyEditor.Toggle()
     elseif command == "host" then

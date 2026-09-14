@@ -97,7 +97,7 @@ function Minimap.Init()
                 return
             end
             local isHost, hasContent = ns.Round.IsHost(), ns.RollWindow.HasContent()
-            local inSetup = ns.RollWindow.InSetup()
+            local inSetup = ns.RollWindow.SetupReachable()
             local target
             if IsControlKeyDown() then target = Minimap.CtrlTarget(isHost, hasContent, inSetup) end
             -- Ctrl with nothing behind it falls through rather than doing nothing: a
@@ -114,7 +114,7 @@ function Minimap.Init()
         OnTooltipShow = function(tooltip)
             tooltip:AddLine("Raid Loot System")
             local isHost, hasContent = ns.Round.IsHost(), ns.RollWindow.HasContent()
-            local inSetup = ns.RollWindow.InSetup()
+            local inSetup = ns.RollWindow.SetupReachable()
             -- Always says what the click will do right now, rather than listing chords
             -- that may not apply: the primary action changes with your role.
             tooltip:AddLine("Left-click: "
