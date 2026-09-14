@@ -136,6 +136,27 @@ function LootDetect.SameSource(oldRows, newRows)
     return true
 end
 
+--- Which remembered loot source is a fresh scan reopening, if any?
+--
+-- Every source is kept, not only the last one: a host who closes a round on the boss,
+-- loots a trash mob and goes back to the boss to award must still find the boss's
+-- consumed items out. A dead target's GUID tells two sources apart when both have one;
+-- it never matches on its own, since the looter need not be targeting the corpse.
+--
+-- @param sources array of { guid, rows, consumed }, newest first
+-- @param guid    the dead target's GUID at LOOT_OPENED, or nil
+-- @param newRows the fresh scan's rows
+-- @return index into sources, or nil for a new source
+function LootDetect.MatchSource(sources, guid, newRows)
+    for i, source in ipairs(sources or {}) do
+        if not (guid and source.guid and guid ~= source.guid)
+            and LootDetect.SameSource(source.rows, newRows) then
+            return i
+        end
+    end
+    return nil
+end
+
 --------------------------------------------------------------------------------
 -- Pure: duplicate stacks (section 2)
 --------------------------------------------------------------------------------
@@ -256,12 +277,15 @@ LootDetect.scanning = false
 LootDetect.windowOpen = false
 LootDetect.newSource = false     -- did the last scan look like a different corpse?
 LootDetect.sourceName = nil    -- the looted creature, as far as 3.3.5a lets us tell
+LootDetect.sourceGuid = nil    -- its GUID, when the looter is targeting it
 
 local scanRows = {}            -- every slot of the last scan: { lootSlot, quantity, quality, info }
 local manualIds = {}           -- item ids the host added by hand from the skipped list
 local manualRows = {}          -- item-link additions with no loot slot: { quantity, info }
 local removedIds = {}          -- ids withdrawn by hand
-local consumedIds = {}         -- ids a closed round rolled for; kept across a reopen
+local consumedIds = {}         -- ids a closed round rolled for; the open source's set
+local sources = {}             -- remembered loot sources, newest first: { guid, rows, consumed }
+local MAX_SOURCES = 10
 
 local listeners = {}
 local expectedClears = {}      -- loot slots our own award is about to empty
@@ -319,9 +343,16 @@ function LootDetect.Scan(callback)
         if token ~= scanToken then return end
         for i = 1, #slots do slots[i].info = infos[i] end
         -- A new corpse: whatever the host added by hand, or took out, was for the
-        -- last one. A reopened one keeps what its closed rounds consumed.
-        LootDetect.newSource = not LootDetect.SameSource(scanRows, slots)
-        if LootDetect.newSource then consumedIds = {} end
+        -- last one. A reopened one keeps what its closed rounds consumed, even with
+        -- other corpses opened in between.
+        local match = LootDetect.MatchSource(sources, LootDetect.sourceGuid, slots)
+        local source = match and table.remove(sources, match) or { consumed = {} }
+        source.rows = slots
+        source.guid = LootDetect.sourceGuid or source.guid
+        table.insert(sources, 1, source)
+        sources[MAX_SOURCES + 1] = nil
+        LootDetect.newSource = match ~= 1
+        consumedIds = source.consumed
         scanRows, manualIds, manualRows, removedIds = slots, {}, {}, {}
         LootDetect.scanning = false
         rebuild(true)
@@ -397,7 +428,15 @@ function LootDetect.Consume(items)
                 if manualRows[i].info.itemId == id then table.remove(manualRows, i) end
             end
             manualIds[id] = nil
-            consumedIds[id] = true
+            -- The source the round was built from, which need not be the one open now.
+            local set = consumedIds
+            for _, source in ipairs(sources) do
+                if LootDetect.SameSource(source.rows, { { info = { itemId = id } } }) then
+                    set = source.consumed
+                    break
+                end
+            end
+            set[id] = true
         end
     end
     rebuild()
@@ -492,6 +531,7 @@ local function onSlotCleared(lootSlot)
         if row.lootSlot ~= lootSlot then kept[#kept + 1] = row end
     end
     if #kept ~= #scanRows then
+        if sources[1] and sources[1].rows == scanRows then sources[1].rows = kept end
         scanRows = kept
         rebuild()
     end
@@ -504,8 +544,10 @@ local function onEvent(_, event, arg1)
         -- and is right whenever the looter is targeting what they killed (spec 008).
         if UnitExists("target") and UnitIsDead("target") then
             LootDetect.sourceName = UnitName("target")
+            LootDetect.sourceGuid = UnitGUID("target")
         else
             LootDetect.sourceName = nil
+            LootDetect.sourceGuid = nil
         end
         -- Only the master looter builds a round, and only they see the candidate list.
         if not ns.Round.IsHost() then return end
@@ -526,7 +568,11 @@ local function onEvent(_, event, arg1)
             -- The roll window's setup state, not the host panel: one window for the
             -- whole loot journey (spec 005 section 2). Only the master looter gets it,
             -- and only when this corpse actually has something worth rolling for.
-            if ns.RollWindow and ns.RollWindow.ShowSetup() then return end
+            -- A window left on a round's results (an award still owed here) is not
+            -- an invitation to start another round on the same loot.
+            if ns.RollWindow and (ns.RollWindow.ShowSetup() or ns.RollWindow.IsShown()) then
+                return
+            end
             ns.Print(string.format("%d item(s) here are worth rolling for. "
                 .. "/rls loot to list them, /rls start to open a round.", #items))
         end)

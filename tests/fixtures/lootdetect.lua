@@ -57,6 +57,9 @@ local function run(input, ns)
     elseif input.op == "samesource" then
         return LootDetect.SameSource(input.old, input.new)
 
+    elseif input.op == "matchsource" then
+        return LootDetect.MatchSource(input.sources, input.guid, input.new) or 0
+
     elseif input.op == "prune" then
         local gone = input.gone
         local kept, lost = LootDetect.Prune(input.items, function(slot)
@@ -371,6 +374,36 @@ return {
                       old = { { lootSlot = 1, info = TOKEN }, { lootSlot = 2, info = EPIC_CHEST } },
                       new = { { lootSlot = 1, info = TOKEN } } },
             expected = true,
+        },
+        {
+            -- Boss A closed a round, trash B was looted, then A was reopened to award.
+            -- A must still be found, or its consumed items come back as candidates.
+            name = "a corpse reopened after another was looted matches its own source (A, B, A)",
+            input = { op = "matchsource", new = { { lootSlot = 1, info = TOKEN } },
+                      sources = {
+                          { rows = { { lootSlot = 1, info = MOUNT } } },
+                          { rows = { { lootSlot = 1, info = TOKEN },
+                                     { lootSlot = 2, info = EPIC_CHEST } } },
+                      } },
+            expected = 2,
+        },
+        {
+            name = "a corpse matching no remembered source is a new source",
+            input = { op = "matchsource", new = { { lootSlot = 1, info = MOUNT } },
+                      sources = { { rows = { { lootSlot = 1, info = TOKEN } } } } },
+            expected = 0,
+        },
+        {
+            name = "a different dead target's GUID keeps a same-contents corpse apart",
+            input = { op = "matchsource", guid = "0xF130000001", new = { { lootSlot = 1, info = TOKEN } },
+                      sources = { { guid = "0xF130000002", rows = { { lootSlot = 1, info = TOKEN } } } } },
+            expected = 0,
+        },
+        {
+            name = "an unknown GUID falls back to contents",
+            input = { op = "matchsource", new = { { lootSlot = 1, info = TOKEN } },
+                      sources = { { guid = "0xF130000002", rows = { { lootSlot = 1, info = TOKEN } } } } },
+            expected = 1,
         },
         {
             name = "an item a closed round consumed is skipped as already rolled, not dropped",

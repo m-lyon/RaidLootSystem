@@ -44,8 +44,9 @@ Once requested, the list stays up with zero rows, so the Add item box survives r
 
 When a round closes, the host's Blizzard loot frame is closed for them (`CloseLoot()`) — but only
 once no award of that round is still owed from a loot slot, because `GiveMasterLoot` needs the frame
-open. Reopening the corpse to award keeps the items that round consumed out of the candidate list
-(`LootDetect.SameSource`).
+open, and no candidate the host left unticked is still on the corpse. Reopening the corpse to award
+keeps the items that round consumed out of the candidate list, even after other corpses were looted
+in between (`LootDetect.MatchSource`).
 
 The roll window itself closes only when **every item has a decision and nothing is waiting to be
 handed over** — `RollWindow.CanAutoClose(round, awards, pending)`. An award that has not been made

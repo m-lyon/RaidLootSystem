@@ -1845,6 +1845,9 @@ local function build()
         abortHideAt = nil
         autoCloseAt = nil
         setupRequested = false
+        -- Closed by hand counts too: a reopen of these results is on purpose.
+        local round = currentRound()
+        if round and round.state == C.ROUND_STATE.CLOSED then autoClosedRoundId = round.id end
     end)
 end
 
@@ -1901,6 +1904,8 @@ end
 local function closeLootIfDone()
     if not closeLootForRoundId then return end
     if #outstandingFor(closeLootForRoundId, true) > 0 then return end
+    -- Candidates the host left unticked are still outstanding for a later round.
+    if #ns.LootDetect.candidates > 0 then return end
     closeLootForRoundId = nil
     if ns.Round.IsHost() and ns.LootDetect.windowOpen then CloseLoot() end
 end
@@ -1995,6 +2000,8 @@ function RollWindow.Init()
         if newScan and ns.LootDetect.newSource then closeLootForRoundId = nil end
         -- A corpse with nothing worth rolling for does not keep an older list up.
         if newScan and #ns.LootDetect.candidates == 0 then setupRequested = false end
+        -- Removing the last leftover candidate finishes the corpse.
+        if not newScan then closeLootIfDone() end
         RollWindow.Refresh()
     end)
     if ns.Award then ns.Award.RegisterListener(closeLootIfDone) end
