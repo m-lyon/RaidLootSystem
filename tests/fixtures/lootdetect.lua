@@ -70,6 +70,19 @@ local function run(input, ns)
         end
         return table.concat(out, ",")
 
+    elseif input.op == "consumetarget" then
+        -- Sources are named by string so the result can say which one was picked.
+        local byName, roundSources = {}, {}
+        local function named(name)
+            if not name then return nil end
+            byName[name] = byName[name] or { consumed = {}, name = name }
+            return byName[name]
+        end
+        for roundId, name in pairs(input.rounds or {}) do roundSources[roundId] = named(name) end
+        local target, strip = LootDetect.ConsumeTarget(roundSources, named(input.open),
+            input.roundId)
+        return { target = target and target.name or "", strip = strip }
+
     elseif input.op == "prune" then
         local gone = input.gone
         local kept, lost = LootDetect.Prune(input.items, function(slot)
@@ -496,6 +509,24 @@ return {
             input = { op = "partition", threshold = 4, consumedIds = { [50001] = true },
                       manualRows = { { quantity = 1, info = info(50001) } } },
             expected = { candidates = {}, skipped = {} },
+        },
+
+        {
+            -- Round on boss A, trash B looted, round closed with B open: A's set takes
+            -- the ids, and the host's additions on B stay put.
+            name = "a round bound to another corpse consumes into it and leaves manual rows (A, B, A)",
+            input = { op = "consumetarget", rounds = { r1 = "A" }, open = "B", roundId = "r1" },
+            expected = { target = "A", strip = false },
+        },
+        {
+            name = "an unbound item-link round consumes no corpse's ids",
+            input = { op = "consumetarget", rounds = {}, open = "A", roundId = "r2" },
+            expected = { target = "", strip = true },
+        },
+        {
+            name = "a round bound to the open corpse consumes into it and strips manual rows",
+            input = { op = "consumetarget", rounds = { r1 = "A" }, open = "A", roundId = "r1" },
+            expected = { target = "A", strip = true },
         },
 
         ----------------------------------------------------------------------

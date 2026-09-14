@@ -195,6 +195,23 @@ function LootDetect.RememberSource(sources, guid, rows, max)
     return source, match
 end
 
+--- Which loot source a closing round consumes into, and whether it strips the manual
+-- additions.
+--
+-- A round bound to a corpse writes to that corpse's consumed set, which need not be the
+-- one open now. A round bound to none (an item-link round) consumes no corpse's ids. The
+-- manual additions belong to the corpse open now, so another corpse's round leaves them.
+--
+-- @param roundSources round id -> the source that round was opened from
+-- @param openSource   the source of the last scan, or nil
+-- @param roundId      the closing round, or nil for the open source
+-- @return the source to consume into (nil for none), and whether to strip manual rows
+function LootDetect.ConsumeTarget(roundSources, openSource, roundId)
+    if not roundId then return openSource, true end
+    local bound = roundSources[roundId]
+    return bound, bound == nil or bound == openSource
+end
+
 --------------------------------------------------------------------------------
 -- Pure: duplicate stacks (section 2)
 --------------------------------------------------------------------------------
@@ -323,6 +340,7 @@ local removedIds = {}          -- ids withdrawn by hand
 local consumedIds = {}         -- ids a closed round rolled for; the open source's set
 local sources = {}             -- remembered loot sources, newest first: { guid, rows, consumed }
 local roundSources = {}        -- round id -> the source that round was opened from
+local openSource = nil         -- the last scan's source, remembered or not
 local MAX_SOURCES = 10
 
 local listeners = {}
@@ -385,6 +403,7 @@ function LootDetect.Scan(callback)
         -- other corpses opened in between.
         local source = LootDetect.RememberSource(sources, LootDetect.sourceGuid,
             slots, MAX_SOURCES)
+        openSource = source
         consumedIds = source.consumed
         scanRows, manualIds, manualRows, removedIds = slots, {}, {}, {}
         LootDetect.scanning = false
@@ -454,19 +473,9 @@ end
 -- section 3). Called on close, not on open: an aborted round leaves its items in
 -- place so the host can start it again.
 function LootDetect.Consume(items, roundId)
-    -- The source the round was built from, which need not be the one open now.
-    -- A round bound to no corpse (an item-link round, or one started with no loot
-    -- window open) consumes no corpse's ids.
-    local set
-    if roundId then
-        set = (roundSources[roundId] or {}).consumed
-    else
-        set = consumedIds
-    end
-    -- The manual additions belong to the corpse open now; another corpse's round must
-    -- not strip a same-id item the host added here.
-    local bound = roundId and roundSources[roundId]
-    local stripManual = not bound or bound == sources[1]
+    local target, stripManual = LootDetect.ConsumeTarget(roundSources, openSource, roundId)
+    local set = target and target.consumed
+    if not roundId then set = consumedIds end
     for _, item in ipairs(items or {}) do
         local _, id = ns.ItemInfo.ParseLink(item.itemString)
         if id then
@@ -489,7 +498,7 @@ function LootDetect.BindRound(roundId, items)
     if not roundId then return end
     for _, item in ipairs(items or {}) do
         if item.lootSlot then
-            roundSources[roundId] = sources[1]
+            roundSources[roundId] = openSource
             return
         end
     end
@@ -508,9 +517,9 @@ end
 
 --- Is `source` the loot source open now?
 function LootDetect.SourceOpen(source)
-    -- Until a new window's scan lands, sources[1] is still the last corpse's.
+    -- Until a new window's scan lands, openSource is still the last corpse's.
     return source ~= nil and LootDetect.windowOpen and not LootDetect.scanning
-        and source == sources[1]
+        and source == openSource
 end
 
 --- Forget a round's source once its close or abort has been handled.
@@ -607,7 +616,7 @@ local function onSlotCleared(lootSlot)
         if row.lootSlot ~= lootSlot then kept[#kept + 1] = row end
     end
     if #kept ~= #scanRows then
-        if sources[1] and sources[1].rows == scanRows then sources[1].rows = kept end
+        if openSource and openSource.rows == scanRows then openSource.rows = kept end
         scanRows = kept
         rebuild()
     end
