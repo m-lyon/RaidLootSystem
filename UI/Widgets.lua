@@ -83,7 +83,8 @@ end
 -- Levels are re-assigned from a back-to-front stack rather than simply incremented,
 -- because frame levels are capped on this client and a night of clicking would walk
 -- a window off the top. Nine windows at LEVEL_STEP apart stay well inside the cap,
--- and each window keeps LEVEL_STEP levels of headroom for its own descendants.
+-- and each window keeps LEVEL_STEP levels of headroom for its own descendants: a
+-- window whose subtree nests deeper than that overlaps the next window's base level.
 --
 -- Strata stays "DIALOG" for every window: StaticPopup and dropdown lists live above
 -- it, and a confirmation the player cannot see is worse than any layering bug.
@@ -93,9 +94,16 @@ local LEVEL_STEP = 12
 local stack = {}                    -- windows, back to front
 
 local function shiftLevels(frame, delta)
-    frame:SetFrameLevel(math.max(0, frame:GetFrameLevel() + delta))
+    frame:SetFrameLevel(frame:GetFrameLevel() + delta)
     local children = { frame:GetChildren() }
     for i = 1, #children do shiftLevels(children[i], delta) end
+end
+
+local function minLevel(frame)
+    local low = frame:GetFrameLevel()
+    local children = { frame:GetChildren() }
+    for i = 1, #children do low = math.min(low, minLevel(children[i])) end
+    return low
 end
 
 --- Bring `frame` and everything inside it to the front of the addon's windows.
@@ -114,6 +122,8 @@ function Widgets.Raise(frame)
         local window = stack[i]
         local target = BASE_LEVEL + (i - 1) * LEVEL_STEP
         local delta = target - window:GetFrameLevel()
+        -- Never below 0: clamping per frame would flatten the subtree's offsets.
+        delta = math.max(delta, -minLevel(window))
         if delta ~= 0 then shiftLevels(window, delta) end
     end
 end

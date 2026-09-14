@@ -439,6 +439,24 @@ function RollWindow.SetupActive(isHost, requested, candidates, roundState, outst
     return true
 end
 
+--- How many of a closed round's awards still hold the window on its results?
+--
+-- Only an award the host can still make from it: AWAITING, with its slot still on the
+-- open corpse. A LOST or FAILED record, or one from a corpse no longer open, would
+-- otherwise keep every later corpse's setup list away until a new round opened.
+--
+-- @param records   the round's outstanding award records
+-- @param slotHolds function(record) -> does the open corpse still hold its item?
+function RollWindow.SetupBlockingAwards(records, slotHolds)
+    local n = 0
+    for _, record in ipairs(records or {}) do
+        if record.delivery == C.DELIVERY.AWAITING and record.lootSlot and slotHolds(record) then
+            n = n + 1
+        end
+    end
+    return n
+end
+
 --- May the host's window close itself now that the round is over (section 2)?
 --
 -- Every item has a decision AND nothing is waiting to be handed over. An award
@@ -1261,6 +1279,7 @@ local autoClosedRoundId              -- the round the window already closed itse
 local autoCloseAt                    -- when a finished round's results may close
 local AUTO_CLOSE_LINGER = 5          -- seconds a finished round's results stay readable
 local closeLootForRoundId            -- a closed round whose corpse awards are still owed
+local lastClosedRoundId              -- the round whose close was already handled
 
 --- The records in `list` that belong to round `roundId`.
 local function recordsOfRound(list, roundId)
@@ -1842,12 +1861,16 @@ end
 
 --- The host opened a corpse with something worth rolling for (spec 004 section 2).
 -- Auto-shown for the master looter only; a client's window is untouched by loot.
+-- Returns false when the list is not what ends up on screen, so the caller's chat
+-- line still tells the host this corpse has something on it.
 function RollWindow.ShowSetup()
     if not ns.Round.IsHost() then return false end
     if #ns.LootDetect.candidates == 0 then return false end
+    local state = (currentRound() or {}).state
+    if state == C.ROUND_STATE.OPEN or state == C.ROUND_STATE.RESOLVING then return false end
     setupRequested = true
     RollWindow.Show()
-    return true
+    return RollWindow.InSetup()
 end
 
 --- Outstanding award records of one round, optionally only those still on the corpse.
@@ -1865,8 +1888,12 @@ end
 --- Is the window currently on the host's candidate list?
 function RollWindow.InSetup()
     local round = currentRound() or {}
+    local blocking = RollWindow.SetupBlockingAwards(outstandingFor(round.id), function(record)
+        return ns.LootDetect.windowOpen
+            and ns.LootDetect.SlotHolds(record.lootSlot, record.itemString)
+    end)
     return RollWindow.SetupActive(ns.Round.IsHost(), setupRequested,
-        #ns.LootDetect.candidates, round.state, #outstandingFor(round.id))
+        #ns.LootDetect.candidates, round.state, blocking)
 end
 
 --- Shut the host's loot frame once the closed round owes the corpse nothing:
@@ -1934,13 +1961,18 @@ local function onClientChanged(round)
             RollWindow.Show()
         end
     elseif round.state == C.ROUND_STATE.CLOSED then
-        setupRequested = false
-        -- The corpse has nothing left to offer this round, so the host's loot window
-        -- is dismissed for them -- but only once every award from it has been made
-        -- (section 2).
-        if ns.Round.IsHost() and closeLootForRoundId ~= round.id then
-            closeLootForRoundId = round.id
-            closeLootIfDone()
+        -- Only on the transition into CLOSED: a CFG, RESULT or ROLLS for the same
+        -- closed round must not drop a later corpse's list or re-shut its loot frame.
+        if lastClosedRoundId ~= round.id then
+            lastClosedRoundId = round.id
+            setupRequested = false
+            -- The corpse has nothing left to offer this round, so the host's loot
+            -- window is dismissed for them -- but only once every award from it has
+            -- been made (section 2).
+            if ns.Round.IsHost() then
+                closeLootForRoundId = round.id
+                closeLootIfDone()
+            end
         end
         if round.results and not RollWindow.IsShown() then RollWindow.Show() end
     elseif round.state == C.ROUND_STATE.ABORTED then

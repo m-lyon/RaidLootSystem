@@ -38,6 +38,12 @@ local function run(input, ns)
         return RW.SetupActive(input.isHost, input.requested, input.candidates,
             input.roundState, input.outstanding)
 
+    elseif input.op == "setupawards" then
+        local blocking = RW.SetupBlockingAwards(input.records, function(record)
+            return input.slotHolds
+        end)
+        return RW.SetupActive(true, true, 2, "CLOSED", blocking)
+
     elseif input.op == "autoclose" then
         return RW.CanAutoClose(input.round, input.awards, input.pending)
 
@@ -567,6 +573,22 @@ return {
         { name = "a closed round with an award still to make keeps its results in the window",
           input = { op = "setup", isHost = true, requested = true, candidates = 2,
                     roundState = "CLOSED", outstanding = 1 },
+          expected = false },
+        { name = "a closed round whose only outstanding award is LOST does not block setup",
+          input = { op = "setupawards", slotHolds = true,
+                    records = { { delivery = "LOST", lootSlot = 1 } } },
+          expected = true },
+        { name = "nor does a FAILED one",
+          input = { op = "setupawards", slotHolds = true,
+                    records = { { delivery = "FAILED", lootSlot = 1 } } },
+          expected = true },
+        { name = "an AWAITING award whose slot is no longer on the open corpse does not either",
+          input = { op = "setupawards", slotHolds = false,
+                    records = { { delivery = "AWAITING", lootSlot = 1 } } },
+          expected = true },
+        { name = "an AWAITING award still on the open corpse keeps the results up",
+          input = { op = "setupawards", slotHolds = true,
+                    records = { { delivery = "AWAITING", lootSlot = 1 } } },
           expected = false },
         { name = "a host who has not opened a corpse is not dragged into setup",
           input = { op = "setup", isHost = true, requested = false, candidates = 3 },
