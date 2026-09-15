@@ -1286,7 +1286,6 @@ local autoClosedRoundId              -- the round the window already closed itse
 local autoCloseAt                    -- when a finished round's results may close
 local AUTO_CLOSE_LINGER = 5          -- seconds a finished round's results stay readable
 local closeLootPending = {}          -- closed round id -> the corpse its awards are still owed on
-local lastClosedRoundId              -- the round whose close was already handled
 local lastHostClosedRoundId          -- the host round whose loot-frame close was already handled
 local lastResultsShownRoundId        -- the closed round whose results already opened the window
 
@@ -1946,8 +1945,11 @@ local function closeLootIfDone()
         if ns.LootDetect.SourceOpen(source) then
             local owed = false
             for _, record in ipairs(outstandingFor(roundId, true)) do
-                -- A LOST record stays outstanding for good; it must not hold the frame open.
-                if record.delivery == C.DELIVERY.AWAITING or record.delivery == C.DELIVERY.FAILED then
+                -- A LOST record, or a FAILED one that is not retryable (e.g. its trade
+                -- window expired), stays outstanding for good; it must not hold the
+                -- frame open. Same test as SetupBlockingAwards.
+                if record.delivery == C.DELIVERY.AWAITING
+                    or (record.delivery == C.DELIVERY.FAILED and ns.Award.Retryable(record)) then
                     owed = true
                     break
                 end
@@ -2023,12 +2025,6 @@ local function onClientChanged(round)
             RollWindow.Show()
         end
     elseif round.state == C.ROUND_STATE.CLOSED then
-        -- Only on the transition into CLOSED: a CFG, RESULT or ROLLS for the same
-        -- closed round must not drop a later corpse's list or re-shut its loot frame.
-        if lastClosedRoundId ~= round.id then
-            lastClosedRoundId = round.id
-            setupRequested = false
-        end
         -- Not for a window the host closed, or one that closed itself, on this round.
         if round.results and not RollWindow.IsShown() and autoClosedRoundId ~= round.id
             and lastResultsShownRoundId ~= round.id then
@@ -2044,11 +2040,14 @@ local function onClientChanged(round)
 end
 
 --- The host's own round closed. Read off Round, not the echoed mirror: an echo the
--- server drops would otherwise leave the loot frame open and the source bound.
+-- server drops would otherwise leave the loot frame open and the source bound, and
+-- an echo delayed by the send throttle would otherwise clobber a later corpse's
+-- setup list that started after this round closed but before the echo arrived.
 local function onRoundChanged(round)
     if not (round and round.state == C.ROUND_STATE.CLOSED) then return end
     if lastHostClosedRoundId == round.id then return end
     lastHostClosedRoundId = round.id
+    setupRequested = false
     -- The corpse has nothing left to offer this round, so the host's loot
     -- window is dismissed for them -- but only once every award from it has
     -- been made (section 2).
