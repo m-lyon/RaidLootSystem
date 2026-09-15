@@ -462,6 +462,29 @@ return {
             expected = false,
         },
         {
+            -- A partial scan checked against every remembered corpse is a false reopen
+            -- waiting to happen; only the last scan gets the benefit of the doubt.
+            name = "an unresolved row matches only the last source, not an older one",
+            input = { op = "matchsource", new = { { lootSlot = 1, info = TOKEN }, { lootSlot = 2 } },
+                      sources = {
+                          { rows = { { lootSlot = 1, info = MOUNT } } },
+                          { rows = { { lootSlot = 1, info = TOKEN },
+                                     { lootSlot = 2, info = EPIC_CHEST } } },
+                      } },
+            expected = 0,
+        },
+        {
+            name = "an agreeing GUID matches an older source despite an unresolved row",
+            input = { op = "matchsource", guid = "0xF130000005",
+                      new = { { lootSlot = 1, info = TOKEN }, { lootSlot = 2 } },
+                      sources = {
+                          { rows = { { lootSlot = 1, info = MOUNT } } },
+                          { guid = "0xF130000005", rows = { { lootSlot = 1, info = TOKEN },
+                                     { lootSlot = 2, info = EPIC_CHEST } } },
+                      } },
+            expected = 2,
+        },
+        {
             name = "a corpse matching no remembered source is a new source",
             input = { op = "matchsource", new = { { lootSlot = 1, info = MOUNT } },
                       sources = { { rows = { { lootSlot = 1, info = TOKEN } } } } },

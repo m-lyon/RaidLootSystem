@@ -413,16 +413,14 @@ function Round.Open(items)
     else
         round.source = "Item link"
     end
-    Round.current = round
-    if ns.LootDetect then ns.LootDetect.BindRound(round.id, items) end
-    if ns.Award then ns.Award.Snapshot(round) end     -- spec 007: what the host already had
-
     local body, err = Serialize.encodeOpen(round.campaignId, round.id, tierCount, seconds,
         round.items, round.lootMode)
     if not body then
-        Round.current = nil
         return false, "this loot could not be encoded (" .. tostring(err) .. ")."
     end
+    Round.current = round
+    if ns.LootDetect then ns.LootDetect.BindRound(round.id, items) end
+    if ns.Award then ns.Award.Snapshot(round) end     -- spec 007: what the host already had
     sendOpen(round)
     -- The list follows OPEN, never inside it (spec 010 section 8).
     if round.lootMode == C.LOOT_MODE.SK and ns.Priority then ns.Priority.Broadcast() end

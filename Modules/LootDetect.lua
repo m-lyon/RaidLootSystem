@@ -147,14 +147,23 @@ end
 -- loots a trash mob and goes back to the boss to award must still find the boss's
 -- consumed items out. A dead target's GUID tells two sources apart when both have one;
 -- it never matches on its own, since the looter need not be targeting the corpse.
+-- Newest first, so the most recent match wins. A source older than the last scan is
+-- only matched by contents when every fresh row is resolved, or both GUIDs agree: an
+-- unresolved row could be what tells a new corpse apart, and the older the sources a
+-- partial scan is checked against, the likelier a false reopen.
 --
 -- @param sources array of { guid, rows, consumed }, newest first
 -- @param guid    the dead target's GUID at LOOT_OPENED, or nil
 -- @param newRows the fresh scan's rows
 -- @return index into sources, or nil for a new source
 function LootDetect.MatchSource(sources, guid, newRows)
+    local allResolved = true
+    for _, row in ipairs(newRows or {}) do
+        if not (row.info and row.info.itemId) then allResolved = false break end
+    end
     for i, source in ipairs(sources or {}) do
         if not (guid and source.guid and guid ~= source.guid)
+            and (i == 1 or allResolved or (guid and source.guid == guid))
             and LootDetect.SameSource(source.rows, newRows) then
             return i
         end

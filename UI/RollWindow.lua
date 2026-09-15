@@ -1951,10 +1951,12 @@ function RollWindow.SetupReachable()
     return setupActiveFor(true)
 end
 
---- Does any award record, of any round, name this loot slot?
+--- Does an award record of a round on the corpse open now name this loot slot?
+-- Slot numbers repeat on every corpse, so another corpse's awards must not count.
 local function awardedSlot(lootSlot)
     if not (ns.Award and lootSlot) then return false end
-    for _, awards in pairs(ns.Award.byRound) do
+    for roundId, source in pairs(closeLootPending) do
+        local awards = ns.LootDetect.SourceOpen(source) and ns.Award.byRound[roundId] or {}
         for _, list in pairs(awards) do
             for _, record in ipairs(list) do
                 if record.lootSlot == lootSlot then return true end
