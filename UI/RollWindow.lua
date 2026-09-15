@@ -496,6 +496,78 @@ function RollWindow.CanAutoClose(round, awards, pending)
     return true
 end
 
+--- A skipped drop the host hands out by hand: a pattern, a mount, mats, anything master
+-- looted under the quality bar, or an item a round rolled for that is still on the corpse.
+function RollWindow.HandAddable(skip, threshold)
+    local S = ns.LootDetect.SKIP
+    if skip.reason == S.NOT_EQUIPPABLE or skip.reason == S.ALREADY_ROLLED then return true end
+    return skip.reason == S.BELOW_QUALITY and (skip.quality or 0) >= (threshold or 0)
+end
+
+--- Which closed rounds owe the open corpse nothing, so the host's loot frame may shut?
+--
+-- @param ctx.candidates   LootDetect.candidates: unticked leftovers keep the frame open
+-- @param ctx.skipped      LootDetect.skipped
+-- @param ctx.pending      closed round id -> the loot source its awards are owed on
+-- @param ctx.awards       Award.byRound: round id -> itemIdx -> array of records
+-- @param ctx.outstanding  Award.OutstandingRecords()
+-- @param ctx.sourceOpen   function(source) -> is that corpse the one open now?
+-- @param ctx.threshold    the group's loot threshold
+-- @return sorted array of round ids that are done; empty when the frame stays open
+function RollWindow.LootDone(ctx)
+    local done = {}
+    if not next(ctx.pending or {}) then return done end
+    -- Candidates the host left unticked are still outstanding for a later round.
+    if #(ctx.candidates or {}) > 0 then return done end
+
+    -- Does an award record of a round on the corpse open now name this loot slot?
+    -- Slot numbers repeat on every corpse, so another corpse's awards must not count.
+    local function awardedSlot(lootSlot)
+        if not lootSlot then return false end
+        for roundId, source in pairs(ctx.pending) do
+            local awards = ctx.sourceOpen(source) and (ctx.awards or {})[roundId] or {}
+            for _, list in pairs(awards) do
+                for _, record in ipairs(list) do
+                    if record.lootSlot == lootSlot then return true end
+                end
+            end
+        end
+        return false
+    end
+
+    -- So are the drops the filter skips (patterns, mounts, mats, anything under the
+    -- quality bar but still master-looted): the host hands those out by hand.
+    -- A drop a round rolled for still counts when nobody won it: no award record
+    -- names its slot, so nothing else would keep the frame open for it.
+    for _, skip in ipairs(ctx.skipped or {}) do
+        if skip.reason ~= ns.LootDetect.SKIP.ALREADY_ROLLED then
+            if RollWindow.HandAddable(skip, ctx.threshold) then return done end
+        elseif not awardedSlot(skip.lootSlot) then
+            return done
+        end
+    end
+    for roundId, source in pairs(ctx.pending) do
+        -- Only that round's corpse: another one open in between is not done, and going
+        -- back to the round's corpse to award must still close it (A, B, A).
+        if ctx.sourceOpen(source) then
+            local owed = false
+            for _, record in ipairs(ctx.outstanding or {}) do
+                -- A LOST record, or a FAILED one that is not retryable (e.g. its trade
+                -- window expired), stays outstanding for good; it must not hold the
+                -- frame open.
+                if record.roundId == roundId and record.lootSlot
+                    and RollWindow.AwardOwed(record) then
+                    owed = true
+                    break
+                end
+            end
+            if not owed then done[#done + 1] = roundId end
+        end
+    end
+    table.sort(done, function(a, b) return tostring(a) < tostring(b) end)
+    return done
+end
+
 --------------------------------------------------------------------------------
 -- WoW-facing. Nothing below here runs at file scope.
 --------------------------------------------------------------------------------
@@ -1321,6 +1393,13 @@ local function tickedItems()
     return items
 end
 
+local function hasLootSlot(items)
+    for _, item in ipairs(items) do
+        if item.lootSlot then return true end
+    end
+    return false
+end
+
 local function startRoll()
     local items = tickedItems()
     -- A raid member who is not in this campaign would roll on nothing, so the host
@@ -1459,6 +1538,7 @@ local function refreshSetup()
         roundOpen = round ~= nil and round.state == C.ROUND_STATE.OPEN,
         scanning = LootDetect.scanning,
         ticked = #tickedItems(),
+        staleSlots = not LootDetect.windowOpen and hasLootSlot(tickedItems()),
     })
     if blocker then setupPanel.start:Disable() else setupPanel.start:Enable() end
     Widgets.Tooltip(setupPanel.start, "Start roll",
@@ -1882,13 +1962,8 @@ function RollWindow.Show()
     RollWindow.Refresh()
 end
 
---- A skipped drop the host hands out by hand: a pattern, a mount, mats, anything master
--- looted under the quality bar, or an item a round rolled for that is still on the corpse.
 local function handAddable(skip)
-    local S = ns.LootDetect.SKIP
-    if skip.reason == S.NOT_EQUIPPABLE or skip.reason == S.ALREADY_ROLLED then return true end
-    local threshold = GetLootThreshold and GetLootThreshold() or 0
-    return skip.reason == S.BELOW_QUALITY and (skip.quality or 0) >= threshold
+    return RollWindow.HandAddable(skip, GetLootThreshold and GetLootThreshold() or 0)
 end
 
 --- Does the open corpse give the setup list anything to show: a candidate, or a skipped
@@ -1951,21 +2026,6 @@ function RollWindow.SetupReachable()
     return setupActiveFor(true)
 end
 
---- Does an award record of a round on the corpse open now name this loot slot?
--- Slot numbers repeat on every corpse, so another corpse's awards must not count.
-local function awardedSlot(lootSlot)
-    if not (ns.Award and lootSlot) then return false end
-    for roundId, source in pairs(closeLootPending) do
-        local awards = ns.LootDetect.SourceOpen(source) and ns.Award.byRound[roundId] or {}
-        for _, list in pairs(awards) do
-            for _, record in ipairs(list) do
-                if record.lootSlot == lootSlot then return true end
-            end
-        end
-    end
-    return false
-end
-
 --- Shut the host's loot frame once the closed round owes the corpse nothing:
 -- GiveMasterLoot needs it open, so closing it earlier forces a reopen per award.
 local function closeLootIfDone()
@@ -1973,38 +2033,15 @@ local function closeLootIfDone()
     for roundId, source in pairs(closeLootPending) do
         if not ns.LootDetect.SourceKnown(source) then closeLootPending[roundId] = nil end
     end
-    if not next(closeLootPending) then return end
-    -- Candidates the host left unticked are still outstanding for a later round.
-    if #ns.LootDetect.candidates > 0 then return end
-    -- So are the drops the filter skips (patterns, mounts, mats, anything under the
-    -- quality bar but still master-looted): the host hands those out by hand.
-    -- A drop a round rolled for still counts when nobody won it: no award record
-    -- names its slot, so nothing else would keep the frame open for it.
-    for _, skip in ipairs(ns.LootDetect.skipped) do
-        if skip.reason ~= ns.LootDetect.SKIP.ALREADY_ROLLED then
-            if handAddable(skip) then return end
-        elseif not awardedSlot(skip.lootSlot) then
-            return
-        end
-    end
-    local done = {}
-    for roundId, source in pairs(closeLootPending) do
-        -- Only that round's corpse: another one open in between is not done, and going
-        -- back to the round's corpse to award must still close it (A, B, A).
-        if ns.LootDetect.SourceOpen(source) then
-            local owed = false
-            for _, record in ipairs(outstandingFor(roundId, true)) do
-                -- A LOST record, or a FAILED one that is not retryable (e.g. its trade
-                -- window expired), stays outstanding for good; it must not hold the
-                -- frame open.
-                if RollWindow.AwardOwed(record) then
-                    owed = true
-                    break
-                end
-            end
-            if not owed then done[#done + 1] = roundId end
-        end
-    end
+    local done = RollWindow.LootDone({
+        candidates = ns.LootDetect.candidates,
+        skipped = ns.LootDetect.skipped,
+        pending = closeLootPending,
+        awards = ns.Award and ns.Award.byRound or {},
+        outstanding = ns.Award and ns.Award.OutstandingRecords() or {},
+        sourceOpen = ns.LootDetect.SourceOpen,
+        threshold = GetLootThreshold and GetLootThreshold() or 0,
+    })
     if #done == 0 then return end
     for _, roundId in ipairs(done) do closeLootPending[roundId] = nil end
     if ns.Round.IsHost() and ns.LootDetect.windowOpen then CloseLoot() end
@@ -2064,7 +2101,12 @@ local function onClientChanged(round)
     -- A SYNC resend can bring an aborted mirror back to OPEN (Client.lua); the abort
     -- linger must not then close a live grid.
     if round.state ~= C.ROUND_STATE.ABORTED then abortHideAt = nil end
-    if round.state == C.ROUND_STATE.OPEN then
+    -- The host's echo can land after its own round has already closed and the next
+    -- corpse's setup list opened; only a round still live on Round owns the window.
+    local own = ns.Round.current
+    local stale = ns.Round.IsHost()
+        and not (own and own.id == round.id and own.state == C.ROUND_STATE.OPEN)
+    if round.state == C.ROUND_STATE.OPEN and not stale then
         setupRequested = false          -- the round owns the window now
         if lastShownRoundId ~= round.id then
             -- A new round opens the window (section 2). A resend of the same round
@@ -2100,7 +2142,9 @@ local function onRoundChanged(round)
     -- window is dismissed for them -- but only once every award from it has
     -- been made (section 2).
     -- Only the corpse the round came from: another one open now is not done.
-    if ns.Round.IsHost() and ns.LootDetect.RoundSourceOpen(round.id) then
+    -- Bound whether or not it is open now: a host who closed the frame mid-round and
+    -- reopens the corpse to award still gets it closed; closeLootIfDone checks the source.
+    if ns.Round.IsHost() and ns.LootDetect.RoundSource(round.id) then
         closeLootPending[round.id] = ns.LootDetect.RoundSource(round.id)
         closeLootIfDone()
     end

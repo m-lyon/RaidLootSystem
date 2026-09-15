@@ -44,6 +44,11 @@ local function run(input, ns)
         end)
         return RW.SetupActive(true, true, "CLOSED", blocking)
 
+    elseif input.op == "lootdone" then
+        local ctx = input.ctx
+        ctx.sourceOpen = function(source) return source == input.openSource end
+        return RW.LootDone(ctx)
+
     elseif input.op == "autoclose" then
         return RW.CanAutoClose(input.round, input.awards, input.pending)
 
@@ -592,6 +597,60 @@ return {
           input = { op = "setupawards", slotHolds = true,
                     records = { { delivery = "AWAITING", lootSlot = 1 } } },
           expected = false },
+        ----------------------------------------------------------------------
+        -- Closing the host's loot frame once the corpse is owed nothing (section 2)
+        ----------------------------------------------------------------------
+        { name = "a rolled slot nobody won keeps the loot frame open",
+          input = { op = "lootdone", openSource = "A", ctx = {
+                    pending = { r1 = "A" }, awards = { r1 = {} }, outstanding = {},
+                    skipped = { { reason = "ALREADY_ROLLED", lootSlot = 2 } } } },
+          expected = {} },
+        { name = "a rolled slot that was awarded does not",
+          input = { op = "lootdone", openSource = "A", ctx = {
+                    pending = { r1 = "A" }, outstanding = {},
+                    awards = { r1 = { [1] = { { lootSlot = 2, delivery = "DELIVERED" } } } },
+                    skipped = { { reason = "ALREADY_ROLLED", lootSlot = 2 } } } },
+          expected = { "r1" } },
+        { name = "a hand-addable leftover keeps the loot frame open",
+          input = { op = "lootdone", openSource = "A", ctx = {
+                    pending = { r1 = "A" }, awards = {}, outstanding = {}, threshold = 2,
+                    skipped = { { reason = "NOT_EQUIPPABLE", lootSlot = 3 } } } },
+          expected = {} },
+        { name = "a drop under the master-loot threshold does not",
+          input = { op = "lootdone", openSource = "A", ctx = {
+                    pending = { r1 = "A" }, awards = {}, outstanding = {}, threshold = 2,
+                    skipped = { { reason = "BELOW_QUALITY", quality = 1, lootSlot = 3 } } } },
+          expected = { "r1" } },
+        { name = "an unticked candidate keeps the loot frame open",
+          input = { op = "lootdone", openSource = "A", ctx = {
+                    pending = { r1 = "A" }, awards = {}, outstanding = {}, skipped = {},
+                    candidates = { { lootSlot = 1 } } } },
+          expected = {} },
+        { name = "A, B, A: round A is not done while corpse B is open",
+          input = { op = "lootdone", openSource = "B", ctx = {
+                    pending = { r1 = "A" }, awards = {}, outstanding = {}, skipped = {} } },
+          expected = {} },
+        { name = "A, B, A: back on corpse A with nothing owed, round A is done",
+          input = { op = "lootdone", openSource = "A", ctx = {
+                    pending = { r1 = "A" }, awards = {}, outstanding = {}, skipped = {} } },
+          expected = { "r1" } },
+        { name = "an AWAITING award on the corpse keeps the loot frame open",
+          input = { op = "lootdone", openSource = "A", ctx = {
+                    pending = { r1 = "A" }, awards = {}, skipped = {},
+                    outstanding = { { roundId = "r1", lootSlot = 1, delivery = "AWAITING" } } } },
+          expected = {} },
+        { name = "a round owing only a LOST award is done",
+          input = { op = "lootdone", openSource = "A", ctx = {
+                    pending = { r1 = "A" }, awards = {}, skipped = {},
+                    outstanding = { { roundId = "r1", lootSlot = 1, delivery = "LOST" } } } },
+          expected = { "r1" } },
+        { name = "a round owing only an expired-trade FAILED award is done",
+          input = { op = "lootdone", openSource = "A", ctx = {
+                    pending = { r1 = "A" }, awards = {}, skipped = {},
+                    outstanding = { { roundId = "r1", lootSlot = 1, delivery = "FAILED",
+                                      failure = "TRADE_EXPIRED" } } } },
+          expected = { "r1" } },
+
         { name = "a host who has not opened a corpse is not dragged into setup",
           input = { op = "setup", isHost = true, requested = false },
           expected = false },
