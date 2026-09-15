@@ -1882,10 +1882,6 @@ function RollWindow.Show()
     RollWindow.Refresh()
 end
 
---- The host opened a corpse with something worth rolling for (spec 004 section 2).
--- Auto-shown for the master looter only; a client's window is untouched by loot.
--- Returns false when the list is not what ends up on screen, so the caller's chat
--- line still tells the host this corpse has something on it.
 --- A skipped drop the host hands out by hand: a pattern, a mount, mats, anything master
 -- looted under the quality bar, or an item a round rolled for that is still on the corpse.
 local function handAddable(skip)
@@ -1906,6 +1902,10 @@ local function setupHasContent()
     return false
 end
 
+--- The host opened a corpse with something worth rolling for (spec 004 section 2).
+-- Auto-shown for the master looter only; a client's window is untouched by loot.
+-- Returns false when the list is not what ends up on screen, so the caller's chat
+-- line still tells the host this corpse has something on it.
 function RollWindow.ShowSetup()
     if not ns.Round.IsHost() then return false end
     if not setupHasContent() then return false end

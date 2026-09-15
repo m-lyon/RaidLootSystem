@@ -87,7 +87,9 @@ end
 -- window whose subtree nests deeper than that overlaps the next window's base level.
 --
 -- Strata stays "DIALOG" for every window: StaticPopup and dropdown lists live above
--- it, and a confirmation the player cannot see is worse than any layering bug.
+-- it, and a confirmation the player cannot see is worse than any layering bug. That a
+-- popup still draws above a front window stacked near the top of this range is not yet
+-- confirmed in game; see CLAUDE.md's "Verify, don't recall".
 
 local BASE_LEVEL = 2
 local LEVEL_STEP = 12

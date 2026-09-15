@@ -166,6 +166,11 @@ Add a fixture case for every bug fixed in `Core/`.
   raid-night check.
 - **The exact mod-playerbots `equip` command syntax** (spec 007) is still unconfirmed against
   the server build.
+- **A `StaticPopup` drawing above a raised window is unconfirmed on 3.3.5a.** `Widgets.Raise`
+  stacks windows from `BASE_LEVEL` in `LEVEL_STEP`s, so with several open the front window's
+  subtree sits near level 100, still in strata `DIALOG` -- which is `StaticPopupTemplate`'s strata
+  too. It wants a raid-night check: stack every window, click the front one, and open an award
+  confirmation over it. If the popup draws behind, shrink the span rather than change strata.
 - **Blizzard's `StaticPopupDialogs` `button3` / `OnAlt` is unconfirmed on 3.3.5a.**
   `UI/Campaigns.lua`'s non-members warning uses it for "Open anyway" (deliberately not `button2`,
   so Escape cancels rather than opening the round). ElvUI uses `button3`/`OnAlt` but through its

@@ -79,9 +79,10 @@ local function run(input, ns)
             return byName[name]
         end
         for roundId, name in pairs(input.rounds or {}) do roundSources[roundId] = named(name) end
-        local target, strip = LootDetect.ConsumeTarget(roundSources, named(input.open),
-            input.roundId)
-        return { target = target and target.name or "", strip = strip }
+        local target, strip, heldOnly = LootDetect.ConsumeTarget(roundSources,
+            named(input.open), input.roundId)
+        return { target = target and target.name or "", strip = strip,
+                 heldOnly = heldOnly }
 
     elseif input.op == "prune" then
         local gone = input.gone
@@ -539,17 +540,17 @@ return {
             -- the ids, and the host's additions on B stay put.
             name = "a round bound to another corpse consumes into it and leaves manual rows (A, B, A)",
             input = { op = "consumetarget", rounds = { r1 = "A" }, open = "B", roundId = "r1" },
-            expected = { target = "A", strip = false },
+            expected = { target = "A", strip = false, heldOnly = false },
         },
         {
-            name = "an unbound item-link round consumes no corpse's ids",
+            name = "an unbound item-link round consumes only the ids the open corpse holds",
             input = { op = "consumetarget", rounds = {}, open = "A", roundId = "r2" },
-            expected = { target = "", strip = true },
+            expected = { target = "A", strip = true, heldOnly = true },
         },
         {
             name = "a round bound to the open corpse consumes into it and strips manual rows",
             input = { op = "consumetarget", rounds = { r1 = "A" }, open = "A", roundId = "r1" },
-            expected = { target = "A", strip = true },
+            expected = { target = "A", strip = true, heldOnly = false },
         },
 
         ----------------------------------------------------------------------

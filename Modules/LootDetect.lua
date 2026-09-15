@@ -208,17 +208,21 @@ end
 -- additions.
 --
 -- A round bound to a corpse writes to that corpse's consumed set, which need not be the
--- one open now. A round bound to none (an item-link round) consumes no corpse's ids. The
--- manual additions belong to the corpse open now, so another corpse's round leaves them.
+-- one open now. A round bound to none (an item-link round) consumes into the open source,
+-- but only the ids that source's scan actually holds, so another corpse's set is untouched
+-- and a rolled-by-link corpse item still leaves the setup list. The manual additions belong
+-- to the corpse open now, so another corpse's round leaves them.
 --
 -- @param roundSources round id -> the source that round was opened from
 -- @param openSource   the source of the last scan, or nil
 -- @param roundId      the closing round, or nil for the open source
--- @return the source to consume into (nil for none), and whether to strip manual rows
+-- @return the source to consume into (nil for none), whether to strip manual rows, and
+--         whether to consume only the ids the source's scan holds
 function LootDetect.ConsumeTarget(roundSources, openSource, roundId)
-    if not roundId then return openSource, true end
+    if not roundId then return openSource, true, false end
     local bound = roundSources[roundId]
-    return bound, bound == nil or bound == openSource
+    if bound == nil then return openSource, true, true end
+    return bound, bound == openSource, false
 end
 
 --------------------------------------------------------------------------------
@@ -482,8 +486,16 @@ end
 -- section 3). Called on close, not on open: an aborted round leaves its items in
 -- place so the host can start it again.
 function LootDetect.Consume(items, roundId)
-    local target, stripManual = LootDetect.ConsumeTarget(roundSources, openSource, roundId)
+    local target, stripManual, heldOnly =
+        LootDetect.ConsumeTarget(roundSources, openSource, roundId)
     local set = target and target.consumed
+    local held
+    if set and heldOnly then
+        held = {}
+        for _, row in ipairs(target.rows or {}) do
+            if row.info and row.info.itemId then held[row.info.itemId] = true end
+        end
+    end
     for _, item in ipairs(items or {}) do
         local _, id = ns.ItemInfo.ParseLink(item.itemString)
         if id then
@@ -493,7 +505,7 @@ function LootDetect.Consume(items, roundId)
                 end
                 manualIds[id] = nil
             end
-            if set then set[id] = true end
+            if set and (not held or held[id]) then set[id] = true end
         end
     end
     rebuild()
@@ -702,6 +714,7 @@ local function onEvent(_, event, arg1)
         -- Not fatal: the slot indices survive and the corpse can be reopened (section 3).
         LootDetect.windowOpen = false
         expectedClears = {}
+        fireChanged(false)
     end
 end
 
