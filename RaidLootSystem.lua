@@ -109,6 +109,9 @@ local function lootList()
         ns.Print("  not offered (" .. why .. "): " .. ns.LootDetect.Label(skip)
             .. " - /rls roll <link> to roll for it anyway.")
     end
+    -- Nothing automatic, but a drop the host hands out by hand: the setup list's
+    -- Add item box is where that happens.
+    if #items == 0 and ns.RollWindow then ns.RollWindow.ShowSetup() end
 end
 
 local function startRound()

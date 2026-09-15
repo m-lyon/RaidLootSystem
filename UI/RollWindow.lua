@@ -1440,6 +1440,9 @@ local function refreshSetup()
 
     if LootDetect.scanning then
         setupPanel.hint:SetText("Looking the loot up...")
+    elseif n == 0 and #LootDetect.skipped > 0 then
+        setupPanel.hint:SetText(string.format("Nothing to roll for automatically; %d skipped "
+            .. "(filtered, or already rolled for). Add one below.", #LootDetect.skipped))
     elseif n == 0 then
         setupPanel.hint:SetText("Nothing here is worth rolling for. Open a corpse as master "
             .. "looter, or add an item below.")
@@ -1820,6 +1823,7 @@ local function build()
         countdownAccumulator = 0
 
         local round = currentRound()
+        local ownRound = hostRound()
         if round and round.state == C.ROUND_STATE.OPEN then
             local left = round.endsAt - GetTime()
             local text = RollWindow.FormatCountdown(left)
@@ -1839,13 +1843,13 @@ local function build()
         -- to run and must not hold every later window open. The results linger a few
         -- seconds first, so "nobody wanted X" is seen before it goes.
         if ns.Round.IsHost() and ns.Award and ns.Pending and not RollWindow.InSetup()
-            and round and autoClosedRoundId ~= round.id
-            and RollWindow.CanAutoClose(round,
-                recordsOfRound(ns.Award.OutstandingRecords(), round.id),
-                recordsOfRound(ns.Pending.OutstandingRecords(), round.id)) then
+            and ownRound and autoClosedRoundId ~= ownRound.id
+            and RollWindow.CanAutoClose(ownRound,
+                recordsOfRound(ns.Award.OutstandingRecords(), ownRound.id),
+                recordsOfRound(ns.Pending.OutstandingRecords(), ownRound.id)) then
             autoCloseAt = autoCloseAt or GetTime() + AUTO_CLOSE_LINGER
             if GetTime() >= autoCloseAt then
-                autoClosedRoundId = round.id
+                autoClosedRoundId = ownRound.id
                 autoCloseAt = nil
                 frame:Hide()
             end
@@ -1862,7 +1866,7 @@ local function build()
         autoCloseAt = nil
         setupRequested = false
         -- Closed by hand counts too: a reopen of these results is on purpose.
-        local round = currentRound()
+        local round = hostRound()
         if round and round.state == C.ROUND_STATE.CLOSED then autoClosedRoundId = round.id end
     end)
 end
@@ -1882,9 +1886,29 @@ end
 -- Auto-shown for the master looter only; a client's window is untouched by loot.
 -- Returns false when the list is not what ends up on screen, so the caller's chat
 -- line still tells the host this corpse has something on it.
+--- A skipped drop the host hands out by hand: a pattern, a mount, mats, anything master
+-- looted under the quality bar, or an item a round rolled for that is still on the corpse.
+local function handAddable(skip)
+    local S = ns.LootDetect.SKIP
+    if skip.reason == S.NOT_EQUIPPABLE or skip.reason == S.ALREADY_ROLLED then return true end
+    local threshold = GetLootThreshold and GetLootThreshold() or 0
+    return skip.reason == S.BELOW_QUALITY and (skip.quality or 0) >= threshold
+end
+
+--- Does the open corpse give the setup list anything to show: a candidate, or a skipped
+-- drop the Add item box is there for?
+local function setupHasContent()
+    if #ns.LootDetect.candidates > 0 then return true end
+    if not ns.LootDetect.windowOpen then return false end
+    for _, skip in ipairs(ns.LootDetect.skipped) do
+        if handAddable(skip) then return true end
+    end
+    return false
+end
+
 function RollWindow.ShowSetup()
     if not ns.Round.IsHost() then return false end
-    if #ns.LootDetect.candidates == 0 then return false end
+    if not setupHasContent() then return false end
     local state = (hostRound() or {}).state
     if state == C.ROUND_STATE.OPEN or state == C.ROUND_STATE.RESOLVING then return false end
     setupRequested = true
@@ -1923,8 +1947,21 @@ end
 -- corpse still open must be able to bring it back from the button and a bare /rls.
 function RollWindow.SetupReachable()
     if RollWindow.InSetup() then return true end
-    if not ns.LootDetect.windowOpen or #ns.LootDetect.candidates == 0 then return false end
+    if not ns.LootDetect.windowOpen or not setupHasContent() then return false end
     return setupActiveFor(true)
+end
+
+--- Does any award record, of any round, name this loot slot?
+local function awardedSlot(lootSlot)
+    if not (ns.Award and lootSlot) then return false end
+    for _, awards in pairs(ns.Award.byRound) do
+        for _, list in pairs(awards) do
+            for _, record in ipairs(list) do
+                if record.lootSlot == lootSlot then return true end
+            end
+        end
+    end
+    return false
 end
 
 --- Shut the host's loot frame once the closed round owes the corpse nothing:
@@ -1939,10 +1976,12 @@ local function closeLootIfDone()
     if #ns.LootDetect.candidates > 0 then return end
     -- So are the drops the filter skips (patterns, mounts, mats, anything under the
     -- quality bar but still master-looted): the host hands those out by hand.
-    local threshold = GetLootThreshold and GetLootThreshold() or 0
+    -- A drop a round rolled for still counts when nobody won it: no award record
+    -- names its slot, so nothing else would keep the frame open for it.
     for _, skip in ipairs(ns.LootDetect.skipped) do
-        if skip.reason == ns.LootDetect.SKIP.NOT_EQUIPPABLE
-            or (skip.reason == ns.LootDetect.SKIP.BELOW_QUALITY and (skip.quality or 0) >= threshold) then
+        if skip.reason ~= ns.LootDetect.SKIP.ALREADY_ROLLED then
+            if handAddable(skip) then return end
+        elseif not awardedSlot(skip.lootSlot) then
             return
         end
     end

@@ -654,6 +654,13 @@ local function onEvent(_, event, arg1)
                     if skip.reason == LootDetect.SKIP.ALREADY_ROLLED then rolled = rolled + 1 end
                     if skip.reason == LootDetect.SKIP.NOT_EQUIPPABLE then handAdd = handAdd + 1 end
                 end
+                -- Once per source: the host reopens a corpse after every award, and a
+                -- trash mob's mats say the same thing each time.
+                local hint = rolled .. ":" .. handAdd
+                if openSource then
+                    if openSource.hint == hint then return end
+                    openSource.hint = hint
+                end
                 if rolled > 0 then
                     ns.Print(string.format("%d item(s) here were already rolled for. "
                         .. "/rls loot to list them.", rolled))
