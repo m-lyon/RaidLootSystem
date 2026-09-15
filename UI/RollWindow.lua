@@ -436,6 +436,14 @@ function RollWindow.SetupActive(isHost, requested, roundState, outstanding)
     return true
 end
 
+--- Can the host still make this award? AWAITING, or FAILED and retryable. A LOST
+-- record, or a FAILED one that cannot be retried, stays outstanding for good and must
+-- not hold the window, the setup list or the loot frame open.
+function RollWindow.AwardOwed(record)
+    return record.delivery == C.DELIVERY.AWAITING
+        or (record.delivery == C.DELIVERY.FAILED and ns.Award.Retryable(record))
+end
+
 --- How many of a closed round's awards still hold the window on its results?
 --
 -- Only an award the host can still make from it: AWAITING, or a FAILED one that can be
@@ -448,9 +456,7 @@ end
 function RollWindow.SetupBlockingAwards(records, slotHolds)
     local n = 0
     for _, record in ipairs(records or {}) do
-        local owed = record.delivery == C.DELIVERY.AWAITING
-            or (record.delivery == C.DELIVERY.FAILED and ns.Award.Retryable(record))
-        if owed and record.lootSlot and slotHolds(record) then
+        if RollWindow.AwardOwed(record) and record.lootSlot and slotHolds(record) then
             n = n + 1
         end
     end
@@ -483,7 +489,9 @@ function RollWindow.CanAutoClose(round, awards, pending)
         if not decided[item.idx] then return false end
     end
 
-    if #(awards or {}) > 0 then return false end
+    for _, record in ipairs(awards or {}) do
+        if RollWindow.AwardOwed(record) then return false end
+    end
     if #(pending or {}) > 0 then return false end
     return true
 end
@@ -1947,9 +1955,8 @@ local function closeLootIfDone()
             for _, record in ipairs(outstandingFor(roundId, true)) do
                 -- A LOST record, or a FAILED one that is not retryable (e.g. its trade
                 -- window expired), stays outstanding for good; it must not hold the
-                -- frame open. Same test as SetupBlockingAwards.
-                if record.delivery == C.DELIVERY.AWAITING
-                    or (record.delivery == C.DELIVERY.FAILED and ns.Award.Retryable(record)) then
+                -- frame open.
+                if RollWindow.AwardOwed(record) then
                     owed = true
                     break
                 end
