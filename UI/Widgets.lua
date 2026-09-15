@@ -125,7 +125,7 @@ function Widgets.Raise(frame)
         local target = BASE_LEVEL + (i - 1) * LEVEL_STEP
         local delta = target - window:GetFrameLevel()
         -- Never below 0: clamping per frame would flatten the subtree's offsets.
-        delta = math.max(delta, -minLevel(window))
+        if delta < 0 then delta = math.max(delta, -minLevel(window)) end
         if delta ~= 0 then shiftLevels(window, delta) end
     end
 end

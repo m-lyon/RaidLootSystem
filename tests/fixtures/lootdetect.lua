@@ -79,8 +79,10 @@ local function run(input, ns)
             return byName[name]
         end
         for roundId, name in pairs(input.rounds or {}) do roundSources[roundId] = named(name) end
+        local linkSources = {}
+        for roundId, name in pairs(input.links or {}) do linkSources[roundId] = named(name) end
         local target, strip, heldOnly = LootDetect.ConsumeTarget(roundSources,
-            named(input.open), input.roundId)
+            named(input.open), input.roundId, linkSources)
         return { target = target and target.name or "", strip = strip,
                  heldOnly = heldOnly }
 
@@ -543,9 +545,24 @@ return {
             expected = { target = "A", strip = false, heldOnly = false },
         },
         {
-            name = "an unbound item-link round consumes only the ids the open corpse holds",
-            input = { op = "consumetarget", rounds = {}, open = "A", roundId = "r2" },
+            name = "an item-link round consumes only the ids its opening corpse holds",
+            input = { op = "consumetarget", rounds = {}, links = { r2 = "A" }, open = "A",
+                      roundId = "r2" },
             expected = { target = "A", strip = true, heldOnly = true },
+        },
+        {
+            -- Rolled from bags on boss A, trash B looted before close: B's drops and
+            -- the host's additions on B are untouched.
+            name = "an item-link round leaves the corpse open at close alone (A, B)",
+            input = { op = "consumetarget", rounds = {}, links = { r2 = "A" }, open = "B",
+                      roundId = "r2" },
+            expected = { target = "A", strip = false, heldOnly = true },
+        },
+        {
+            -- Nothing open when it opened, or a simulated round.
+            name = "an unbound round consumes into nothing",
+            input = { op = "consumetarget", rounds = {}, open = "B", roundId = "r3" },
+            expected = { target = "", strip = false, heldOnly = false },
         },
         {
             name = "a round bound to the open corpse consumes into it and strips manual rows",

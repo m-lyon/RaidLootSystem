@@ -208,21 +208,26 @@ end
 -- additions.
 --
 -- A round bound to a corpse writes to that corpse's consumed set, which need not be the
--- one open now. A round bound to none (an item-link round) consumes into the open source,
--- but only the ids that source's scan actually holds, so another corpse's set is untouched
--- and a rolled-by-link corpse item still leaves the setup list. The manual additions belong
--- to the corpse open now, so another corpse's round leaves them.
+-- one open now. A round with no loot-slot items (an item-link round) consumes into the
+-- source that was open when it opened, but only the ids that source's scan actually holds,
+-- so a rolled-by-link corpse item still leaves the setup list and nothing else is marked.
+-- A round bound to neither (nothing open when it opened, or a simulation) consumes into
+-- nothing. The manual additions belong to the corpse open now, so another corpse's round
+-- leaves them.
 --
 -- @param roundSources round id -> the source that round was opened from
 -- @param openSource   the source of the last scan, or nil
 -- @param roundId      the closing round, or nil for the open source
+-- @param linkSources  round id -> the source open when an item-link round opened
 -- @return the source to consume into (nil for none), whether to strip manual rows, and
 --         whether to consume only the ids the source's scan holds
-function LootDetect.ConsumeTarget(roundSources, openSource, roundId)
+function LootDetect.ConsumeTarget(roundSources, openSource, roundId, linkSources)
     if not roundId then return openSource, true, false end
     local bound = roundSources[roundId]
-    if bound == nil then return openSource, true, true end
-    return bound, bound == openSource, false
+    if bound ~= nil then return bound, bound == openSource, false end
+    local held = linkSources and linkSources[roundId]
+    if held == nil then return nil, false, false end
+    return held, held == openSource, true
 end
 
 --------------------------------------------------------------------------------
@@ -353,6 +358,7 @@ local removedIds = {}          -- ids withdrawn by hand
 local consumedIds = {}         -- ids a closed round rolled for; the open source's set
 local sources = {}             -- remembered loot sources, newest first: { guid, rows, consumed }
 local roundSources = {}        -- round id -> the source that round was opened from
+local linkSources = {}         -- round id -> the source open when an item-link round opened
 local openSource = nil         -- the last scan's source, remembered or not
 local MAX_SOURCES = 10
 
@@ -487,7 +493,7 @@ end
 -- place so the host can start it again.
 function LootDetect.Consume(items, roundId)
     local target, stripManual, heldOnly =
-        LootDetect.ConsumeTarget(roundSources, openSource, roundId)
+        LootDetect.ConsumeTarget(roundSources, openSource, roundId, linkSources)
     local set = target and target.consumed
     local held
     if set and heldOnly then
@@ -512,16 +518,20 @@ function LootDetect.Consume(items, roundId)
 end
 
 --- Tie a round to the loot source open when it started, for Consume.
--- Only a round with loot-slot items. Those came from the last scan, whether or not its
--- loot window is still open, so the round is bound to that scan's source regardless.
+-- A round with loot-slot items took them from the last scan, whether or not its loot
+-- window is still open, so it is bound to that scan's source regardless. A round with none
+-- is bound only to a source actually open now. A simulated round is bound to nothing, so
+-- it cannot mark a real corpse's drops rolled for.
 function LootDetect.BindRound(roundId, items)
     if not roundId then return end
+    if ns.Simulate and ns.Simulate.active then return end
     for _, item in ipairs(items or {}) do
         if item.lootSlot then
             roundSources[roundId] = openSource
             return
         end
     end
+    if LootDetect.SourceOpen(openSource) then linkSources[roundId] = openSource end
 end
 
 --- Is the loot source round `roundId` was bound to the one open now?
@@ -554,7 +564,10 @@ end
 
 --- Forget a round's source once its close or abort has been handled.
 function LootDetect.ReleaseRound(roundId)
-    if roundId then roundSources[roundId] = nil end
+    if roundId then
+        roundSources[roundId] = nil
+        linkSources[roundId] = nil
+    end
 end
 
 --------------------------------------------------------------------------------
