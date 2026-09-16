@@ -1370,6 +1370,8 @@ local setupRows = {}
 local autoClosedRoundId              -- the round the window already closed itself for
 local autoCloseAt                    -- when a finished round's results may close
 local AUTO_CLOSE_LINGER = 5          -- seconds a finished round's results stay readable
+local openingRetryAt                 -- when a host still waiting on its own OPEN resends it
+local OPENING_RETRY_SECONDS = 5
 local closeLootPending = {}          -- closed round id -> the corpse its awards are still owed on
 local lastHostClosedRoundId          -- the host round whose loot-frame close was already handled
 local lastResultsShownRoundId        -- the closed round whose results already opened the window
@@ -1581,6 +1583,7 @@ function RollWindow.Refresh()
         frame.banner:SetText("")
         entryPanel:Hide()
         resultsPanel:Hide()
+        openingRetryAt = nil
         setupPanel:Show()
         refreshSetup()
         return
@@ -1598,9 +1601,23 @@ function RollWindow.Refresh()
         frame.counter:SetText("")
         entryPanel:Hide()
         resultsPanel:Hide()
-        frame.banner:SetText("Opening round...")
+        frame:SetWidth(420)
+        frame:SetHeight(120)
+        -- The echo can be dropped by the server. Past a few seconds, send OPEN again
+        -- rather than leave the host locked out of their own round.
+        local now = GetTime()
+        openingRetryAt = openingRetryAt or now + OPENING_RETRY_SECONDS
+        if now >= openingRetryAt then
+            openingRetryAt = now + OPENING_RETRY_SECONDS
+            ns.Round.ResendOpen()
+            frame.banner:SetText("Opening round... (no echo yet, resending)")
+        else
+            frame.banner:SetText("Opening round...")
+        end
         return
     end
+
+    openingRetryAt = nil
 
     if not round then
         frame.titleText:SetText("Raid Loot System - no round")
@@ -1932,6 +1949,7 @@ local function build()
 
         local round = currentRound()
         local ownRound = hostRound()
+        if openingRetryAt and GetTime() >= openingRetryAt then RollWindow.Refresh() end
         if round and round.state == C.ROUND_STATE.OPEN then
             local left = round.endsAt - GetTime()
             local text = RollWindow.FormatCountdown(left)

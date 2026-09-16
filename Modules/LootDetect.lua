@@ -455,6 +455,21 @@ end
 -- matches a skipped loot slot joins with that slot, so the award still goes through
 -- master loot; anything else joins as an item-link row and will be traded.
 -- @param callback optional, called with true once it is in the list
+--- With no loot window open, hand edits must not write into the last corpse's tables:
+-- that corpse would bring them back on a reopen. Copy them once; the next scan replaces
+-- the copies with the scanned source's own.
+local function detach()
+    if LootDetect.windowOpen or not openSource or manualRows ~= openSource.manualRows then
+        return
+    end
+    local ids, rows, removed, consumed = {}, {}, {}, {}
+    for k, v in pairs(manualIds) do ids[k] = v end
+    for i, row in ipairs(manualRows) do rows[i] = { quantity = row.quantity, info = row.info } end
+    for k, v in pairs(removedIds) do removed[k] = v end
+    for k, v in pairs(consumedIds) do consumed[k] = v end
+    manualIds, manualRows, removedIds, consumedIds = ids, rows, removed, consumed
+end
+
 function LootDetect.AddCandidate(link, callback)
     local itemString, itemId = ns.ItemInfo.ParseLink(link)
     if not itemString then
@@ -462,6 +477,7 @@ function LootDetect.AddCandidate(link, callback)
         if callback then callback(false) end
         return false
     end
+    detach()
     removedIds[itemId] = nil            -- adding it back undoes a withdrawal
     consumedIds[itemId] = nil
 
@@ -495,6 +511,7 @@ end
 -- until a new corpse is scanned or an explicit "Add item" on the same link.
 function LootDetect.RemoveCandidate(itemId)
     if not itemId then return end
+    detach()
     for i = #manualRows, 1, -1 do
         if manualRows[i].info.itemId == itemId then table.remove(manualRows, i) end
     end
@@ -526,7 +543,10 @@ function LootDetect.Consume(items, roundId)
                 end
                 manualIds[id] = nil
             end
-            if set and (not held or held[id]) then set[id] = true end
+            if set and (not held or held[id]) then
+                set[id] = true
+                if target == openSource then consumedIds[id] = true end
+            end
         end
     end
     rebuild()
@@ -577,6 +597,9 @@ end
 --- Forget a round's source once its close or abort has been handled.
 function LootDetect.ReleaseRound(roundId)
     if roundId then
+        -- A restarted round on the same corpse may leave nothing again; say so again.
+        local source = roundSources[roundId] or linkSources[roundId]
+        if source then source.hint = nil end
         roundSources[roundId] = nil
         linkSources[roundId] = nil
         simulatedRounds[roundId] = nil
@@ -700,7 +723,7 @@ local function onEvent(_, event, arg1)
                 for _, skip in ipairs(LootDetect.skipped) do
                     if skip.reason == LootDetect.SKIP.ALREADY_ROLLED then rolled = rolled + 1 end
                     if skip.reason ~= LootDetect.SKIP.ALREADY_ROLLED
-                        and ns.RollWindow.HandAddable(skip, GetLootThreshold()) then
+                        and ns.RollWindow and ns.RollWindow.HandAddable(skip, GetLootThreshold()) then
                         handAdd = handAdd + 1
                     end
                 end

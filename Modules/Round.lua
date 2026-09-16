@@ -434,6 +434,16 @@ function Round.Open(items)
     return true
 end
 
+--- Send the open round's OPEN again, for a host whose own echo never came back.
+function Round.ResendOpen()
+    local round = Round.current
+    if not Round.IsHost() or not round or round.state ~= C.ROUND_STATE.OPEN then
+        return false
+    end
+    sendOpen(round)
+    return true
+end
+
 --- Add time to the open round (spec 006 section 3, "Extend"). Clients learn the new
 -- deadline from a same-id OPEN carrying the seconds left.
 function Round.Extend(seconds)

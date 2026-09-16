@@ -108,6 +108,13 @@ local function minLevel(frame)
     return low
 end
 
+local function maxLevel(frame)
+    local high = frame:GetFrameLevel()
+    local children = { frame:GetChildren() }
+    for i = 1, #children do high = math.max(high, maxLevel(children[i])) end
+    return high
+end
+
 --- Bring `frame` and everything inside it to the front of the addon's windows.
 function Widgets.Raise(frame)
     if not frame then return end
@@ -120,13 +127,16 @@ function Widgets.Raise(frame)
     end
     stack[#stack + 1] = frame
 
+    -- Each subtree starts above the top of the one behind it, and never below 0: a
+    -- window pushed up by that pushes the windows in front of it up too.
+    local top = -1
     for i = 1, #stack do
         local window = stack[i]
-        local target = BASE_LEVEL + (i - 1) * LEVEL_STEP
-        local delta = target - window:GetFrameLevel()
-        -- Never below 0: clamping per frame would flatten the subtree's offsets.
-        if delta < 0 then delta = math.max(delta, -minLevel(window)) end
-        if delta ~= 0 then shiftLevels(window, delta) end
+        local level = window:GetFrameLevel()
+        local offset = level - minLevel(window)
+        local target = math.max(BASE_LEVEL + (i - 1) * LEVEL_STEP, top + 1 + offset)
+        if target ~= level then shiftLevels(window, target - level) end
+        top = maxLevel(window)
     end
 end
 
