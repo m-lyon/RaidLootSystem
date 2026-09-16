@@ -405,6 +405,29 @@ local function rebuild(newScan, reopened)
     fireChanged(newScan, reopened)
 end
 
+--- Whether the detached hand-edit tables hold anything the last corpse's own do not.
+-- A copy a closed round has since consumed from is not an edit that a new scan drops.
+local function heldEdits()
+    local src = openSource
+    for id in pairs(manualIds) do
+        if not (src.manualIds and src.manualIds[id]) then return true end
+    end
+    for id in pairs(removedIds) do
+        if not (src.removedIds and src.removedIds[id]) then return true end
+    end
+    for _, row in ipairs(manualRows) do
+        local found
+        for _, old in ipairs(src.manualRows or {}) do
+            if old.info.itemId == row.info.itemId and old.quantity >= row.quantity then
+                found = true
+                break
+            end
+        end
+        if not found then return true end
+    end
+    return false
+end
+
 --- Scan the open loot window. Asynchronous, because an uncached item takes up to five
 -- seconds to resolve and a round must not open on a half-classified list.
 -- @param callback optional, called with the candidate array
@@ -433,7 +456,7 @@ function LootDetect.Scan(callback)
         -- host added or removed, even with other corpses opened in between.
         local source, match = LootDetect.RememberSource(sources, LootDetect.sourceGuid,
             slots, MAX_SOURCES)
-        if openSource and manualRows ~= openSource.manualRows then
+        if openSource and manualRows ~= openSource.manualRows and heldEdits() then
             ns.Print("Add item / Remove edits made with no corpse open were dropped; redo them if still wanted.")
         end
         openSource = source
