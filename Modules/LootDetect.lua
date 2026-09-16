@@ -433,6 +433,9 @@ function LootDetect.Scan(callback)
         -- host added or removed, even with other corpses opened in between.
         local source, match = LootDetect.RememberSource(sources, LootDetect.sourceGuid,
             slots, MAX_SOURCES)
+        if openSource and manualRows ~= openSource.manualRows then
+            ns.Print("Add item / Remove edits made with no corpse open were dropped; redo them if still wanted.")
+        end
         openSource = source
         source.manualIds = source.manualIds or {}
         source.manualRows = source.manualRows or {}

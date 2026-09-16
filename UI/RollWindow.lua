@@ -1373,6 +1373,7 @@ local AUTO_CLOSE_LINGER = 5          -- seconds a finished round's results stay 
 local openingRetryAt                 -- when a host still waiting on its own OPEN resends it
 local OPENING_RETRY_SECONDS = 5
 local closeLootPending = {}          -- closed round id -> the corpse its awards are still owed on
+local roundCorpses = {}              -- closed round id -> its corpse; outlives ReleaseRound
 local lastHostClosedRoundId          -- the host round whose loot-frame close was already handled
 local lastResultsShownRoundId        -- the closed round whose results already opened the window
 
@@ -2008,7 +2009,8 @@ end
 
 function RollWindow.Show()
     if not frame then build() end
-    frame:RestorePosition()
+    -- A routine echo on a window already up must not yank it forward or back into place.
+    if not frame:IsShown() then frame:RestorePosition() end
     frame:Show()
     RollWindow.Refresh()
 end
@@ -2062,7 +2064,8 @@ end
 local function setupActiveFor(requested)
     local round = hostRound() or {}
     local blocking = RollWindow.SetupBlockingAwards(outstandingFor(round.id), function(record)
-        return ns.LootDetect.windowOpen
+        -- Slot numbers repeat on every corpse: only the round's own corpse can hold it.
+        return ns.LootDetect.SourceOpen(roundCorpses[record.roundId])
             and ns.LootDetect.SlotHolds(record.lootSlot, record.itemString)
     end)
     return RollWindow.SetupActive(ns.Round.IsHost(), requested, round.state, blocking)
@@ -2197,6 +2200,7 @@ local function onRoundChanged(round)
     if lastHostClosedRoundId == round.id then return end
     lastHostClosedRoundId = round.id
     setupRequested = false
+    roundCorpses[round.id] = ns.LootDetect.RoundSource(round.id)
     -- The corpse has nothing left to offer this round, so the host's loot
     -- window is dismissed for them -- but only once every award from it has
     -- been made (section 2).
