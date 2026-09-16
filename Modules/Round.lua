@@ -774,6 +774,12 @@ function Round.Close()
     if ns.LootDetect then ns.LootDetect.Consume(round.items, round.id) end
 
     fireChanged()
+    -- And the round's own bookkeeping goes with it, here rather than only from the roll
+    -- window's listener: a host whose UI never initialised, or whose earlier listener
+    -- errored, would otherwise leak sources for the rest of the session. After the
+    -- listeners, not before -- the roll window reads RoundSource to know which corpse to
+    -- close, and releases the round itself once it has.
+    if ns.LootDetect then ns.LootDetect.ReleaseRound(round.id) end
     return true
 end
 

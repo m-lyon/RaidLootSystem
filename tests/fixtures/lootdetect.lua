@@ -64,9 +64,16 @@ local function run(input, ns)
         -- Each scan in turn; the source each one lands on, numbered by first sighting.
         local sources, seen, out = {}, {}, {}
         for i, scan in ipairs(input.scans) do
-            local source = LootDetect.RememberSource(sources, scan.guid, scan.rows, 10)
-            seen[source] = seen[source] or i
-            out[i] = seen[source]
+            local source = LootDetect.RememberSource(sources, scan.guid, scan.rows,
+                input.max or 10)
+            -- A round consumed from each corpse, so an evicted one coming back empty is
+            -- visible as well as renumbered.
+            if seen[source] then out[i] = seen[source] .. (next(source.consumed) and "" or "!")
+            else
+                seen[source] = i
+                out[i] = i
+            end
+            source.consumed[i] = true
         end
         return table.concat(out, ",")
 
@@ -447,6 +454,31 @@ return {
                 { rows = { { lootSlot = 1, info = TOKEN } } },
             } },
             expected = "1,2,3,4,5,6,7,8,9,10,11,1",
+        },
+        {
+            -- The eviction boundary: `max` real corpses and one more drops the oldest,
+            -- so reopening it is a new source with an empty consumed set -- its rolled
+            -- loot comes back as candidates, which is the boundary the cap trades away.
+            name = "the oldest source is evicted once max real corpses are open",
+            input = { op = "remember", max = 3, scans = {
+                { guid = "0xF1300000A1", rows = { { lootSlot = 1, info = TOKEN } } },
+                { guid = "0xF1300000A2", rows = { { lootSlot = 1, info = EPIC_CHEST } } },
+                { guid = "0xF1300000A3", rows = { { lootSlot = 1, info = MOUNT } } },
+                { guid = "0xF1300000A4", rows = { { lootSlot = 1, info = GREEN } } },
+                { guid = "0xF1300000A1", rows = { { lootSlot = 1, info = TOKEN } } },
+            } },
+            expected = "1,2,3,4,5",
+        },
+        {
+            -- Under the cap the same corpse reopens onto its own source, consumed set
+            -- and all -- the "2" is a match, and it is not flagged empty.
+            name = "a corpse within max reopens with its consumed set",
+            input = { op = "remember", max = 3, scans = {
+                { guid = "0xF1300000B1", rows = { { lootSlot = 1, info = TOKEN } } },
+                { guid = "0xF1300000B2", rows = { { lootSlot = 1, info = EPIC_CHEST } } },
+                { guid = "0xF1300000B1", rows = { { lootSlot = 1, info = TOKEN } } },
+            } },
+            expected = "1,2,1",
         },
         {
             -- An item the cache has not resolved yet must not make a reopened corpse a

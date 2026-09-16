@@ -597,6 +597,14 @@ return {
           input = { op = "setupawards", slotHolds = true,
                     records = { { delivery = "AWAITING", lootSlot = 1 } } },
           expected = false },
+        { name = "an item-link round's slotless AWAITING award keeps the results up too",
+          input = { op = "setupawards", slotHolds = false,
+                    records = { { delivery = "AWAITING" } } },
+          expected = false },
+        { name = "a slotless LOST award does not block setup",
+          input = { op = "setupawards", slotHolds = false,
+                    records = { { delivery = "LOST" } } },
+          expected = true },
         ----------------------------------------------------------------------
         -- Closing the host's loot frame once the corpse is owed nothing (section 2)
         ----------------------------------------------------------------------

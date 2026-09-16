@@ -449,14 +449,16 @@ end
 -- Only an award the host can still make from it: AWAITING, or a FAILED one that can be
 -- retried, with its slot still on the open corpse. A LOST record, or one from a corpse
 -- no longer open, would otherwise keep every later corpse's setup list away until a new
--- round opened.
+-- round opened. An award with no loot slot at all -- an item-link round's, which goes
+-- down the trade path -- has no corpse to have moved on from, so it always blocks: the
+-- results view is still the only place it can be made from.
 --
 -- @param records   the round's outstanding award records
 -- @param slotHolds function(record) -> does the open corpse still hold its item?
 function RollWindow.SetupBlockingAwards(records, slotHolds)
     local n = 0
     for _, record in ipairs(records or {}) do
-        if RollWindow.AwardOwed(record) and record.lootSlot and slotHolds(record) then
+        if RollWindow.AwardOwed(record) and (not record.lootSlot or slotHolds(record)) then
             n = n + 1
         end
     end
@@ -1393,6 +1395,12 @@ local function tickedItems()
     return items
 end
 
+--- The items the host has ticked in the setup list: what Start roll opens on, and
+-- what /rls start must open on too, or the command and the button disagree.
+function RollWindow.TickedItems()
+    return tickedItems()
+end
+
 local function hasLootSlot(items)
     for _, item in ipairs(items) do
         if item.lootSlot then return true end
@@ -1575,6 +1583,21 @@ function RollWindow.Refresh()
         return
     end
     setupPanel:Hide()
+
+    -- The host's own OPEN has to go out through the throttle and come back before the
+    -- mirror moves, which is several hundred milliseconds for a multi-item round. Until
+    -- then the host must not be shown "no round" -- or, worse, the previous round's
+    -- results -- immediately after pressing Start roll.
+    local own = ns.Round.IsHost() and ns.Round.current or nil
+    if own and own.state == C.ROUND_STATE.OPEN and (not round or round.id ~= own.id) then
+        frame.titleText:SetText("Raid Loot System - opening round")
+        frame.status:SetText("")
+        frame.counter:SetText("")
+        entryPanel:Hide()
+        resultsPanel:Hide()
+        frame.banner:SetText("Opening round...")
+        return
+    end
 
     if not round then
         frame.titleText:SetText("Raid Loot System - no round")

@@ -99,7 +99,7 @@ local function lootList()
             ns.Print(string.format("  %d. %s%s%s", i, ns.LootDetect.Label(item),
                 item.count > 1 and (" x" .. item.count) or "", marker))
         end
-        ns.Print("/rls start opens a round on all of them.")
+        ns.Print("/rls start opens a round on the ticked ones.")
         -- And put the window back up: the list is a screen now, not a chat dump.
         if ns.RollWindow then ns.RollWindow.ShowSetup() end
     end
@@ -115,9 +115,11 @@ local function lootList()
 end
 
 local function startRound()
-    local items = ns.LootDetect.candidates
+    -- The same items the roll window's Start roll button opens on: a host who unticked
+    -- rows there must not get them back by typing the command instead.
+    local items = (ns.RollWindow and ns.RollWindow.TickedItems()) or ns.LootDetect.candidates
     if #items == 0 then
-        ns.Print("there are no candidates. /rls loot to see what was found.")
+        ns.Print("there are no ticked candidates. /rls loot to see what was found.")
         return
     end
     -- The same rule the roll window's Start roll button is gated by.
