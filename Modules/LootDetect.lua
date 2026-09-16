@@ -377,8 +377,11 @@ function LootDetect.RegisterListener(fn)
 end
 
 --- @param newScan true when a fresh corpse replaced the list, false for a rebuild
-local function fireChanged(newScan)
-    for _, fn in ipairs(listeners) do fn(LootDetect.candidates, newScan == true) end
+--- @param reopened true when that corpse is a remembered source the host reopened
+local function fireChanged(newScan, reopened)
+    for _, fn in ipairs(listeners) do
+        fn(LootDetect.candidates, newScan == true, reopened == true)
+    end
 end
 
 --------------------------------------------------------------------------------
@@ -391,12 +394,12 @@ local function threshold()
 end
 
 --- Recompute the candidate and skipped lists from the retained scan (Partition).
-local function rebuild(newScan)
+local function rebuild(newScan, reopened)
     local rows, skipped = LootDetect.Partition(scanRows, manualIds, manualRows, threshold(),
         removedIds, consumedIds)
     LootDetect.candidates = LootDetect.Collapse(rows)
     LootDetect.skipped = skipped
-    fireChanged(newScan)
+    fireChanged(newScan, reopened)
 end
 
 --- Scan the open loot window. Asynchronous, because an uncached item takes up to five
@@ -423,15 +426,19 @@ function LootDetect.Scan(callback)
         if token ~= scanToken then return end
         for i = 1, #slots do slots[i].info = infos[i] end
         -- A new corpse: whatever the host added by hand, or took out, was for the
-        -- last one. A reopened one keeps what its closed rounds consumed, even with
-        -- other corpses opened in between.
-        local source = LootDetect.RememberSource(sources, LootDetect.sourceGuid,
+        -- last one. A reopened one keeps what its closed rounds consumed, and what the
+        -- host added or removed, even with other corpses opened in between.
+        local source, match = LootDetect.RememberSource(sources, LootDetect.sourceGuid,
             slots, MAX_SOURCES)
         openSource = source
+        source.manualIds = source.manualIds or {}
+        source.manualRows = source.manualRows or {}
+        source.removedIds = source.removedIds or {}
         consumedIds = source.consumed
-        scanRows, manualIds, manualRows, removedIds = slots, {}, {}, {}
+        scanRows, manualIds, manualRows, removedIds =
+            slots, source.manualIds, source.manualRows, source.removedIds
         LootDetect.scanning = false
-        rebuild(true)
+        rebuild(true, match ~= nil)
         if callback then callback(LootDetect.candidates) end
     end)
 end
@@ -482,7 +489,7 @@ end
 
 --- Take one item out of the candidate list, whatever put it there: an item-link
 -- addition, a skipped row the host promoted, or a plain corpse row. It stays out
--- until the next corpse scan or an explicit "Add item" on the same link.
+-- until a new corpse is scanned or an explicit "Add item" on the same link.
 function LootDetect.RemoveCandidate(itemId)
     if not itemId then return end
     for i = #manualRows, 1, -1 do

@@ -634,6 +634,11 @@ return {
                     pending = { r1 = "A" }, awards = {}, outstanding = {}, skipped = {},
                     candidates = { { lootSlot = 1 } } } },
           expected = {} },
+        { name = "an unticked item-link candidate does not keep the loot frame open",
+          input = { op = "lootdone", openSource = "A", ctx = {
+                    pending = { r1 = "A" }, awards = {}, outstanding = {}, skipped = {},
+                    candidates = { { lootSlots = {} } } } },
+          expected = { "r1" } },
         { name = "A, B, A: round A is not done while corpse B is open",
           input = { op = "lootdone", openSource = "B", ctx = {
                     pending = { r1 = "A" }, awards = {}, outstanding = {}, skipped = {} } },

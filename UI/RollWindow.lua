@@ -519,8 +519,11 @@ end
 function RollWindow.LootDone(ctx)
     local done = {}
     if not next(ctx.pending or {}) then return done end
-    -- Candidates the host left unticked are still outstanding for a later round.
-    if #(ctx.candidates or {}) > 0 then return done end
+    -- Candidates the host left unticked are still outstanding for a later round. An
+    -- item-link row is a bag item, not on the corpse, so it does not hold the frame.
+    for _, item in ipairs(ctx.candidates or {}) do
+        if item.lootSlot or (item.lootSlots and #item.lootSlots > 0) then return done end
+    end
 
     -- Does an award record of a round on the corpse open now name this loot slot?
     -- Slot numbers repeat on every corpse, so another corpse's awards must not count.
@@ -2190,10 +2193,10 @@ function RollWindow.Init()
     ns.Client.RegisterListener(onClientChanged)
     ns.Round.RegisterListener(onRoundChanged)
     ns.Roster.RegisterListener(function() RollWindow.Refresh() end)
-    ns.LootDetect.RegisterListener(function(_, newScan)
+    ns.LootDetect.RegisterListener(function(_, newScan, reopened)
         -- A new corpse means a fresh set of ticks; a rebuild of the same one (a manual
-        -- add, a lost slot, a moved quality bar) keeps what the host unticked.
-        if newScan then ticked = {} end
+        -- add, a lost slot, a moved quality bar) or a reopen keeps what the host unticked.
+        if newScan and not reopened then ticked = {} end
         -- A corpse with nothing worth rolling for does not keep an older list up.
         if newScan and #ns.LootDetect.candidates == 0 then setupRequested = false end
         -- Removing the last leftover candidate finishes the corpse.
