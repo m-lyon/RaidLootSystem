@@ -1607,7 +1607,12 @@ function RollWindow.Refresh()
         -- rather than leave the host locked out of their own round.
         local now = GetTime()
         openingRetryAt = openingRetryAt or now + OPENING_RETRY_SECONDS
-        if now >= openingRetryAt then
+        if now >= openingRetryAt and ns.Comms.QueueLength() > 0 then
+            -- The first OPEN may still be waiting behind the throttle; another copy
+            -- behind it would only delay the echo further.
+            openingRetryAt = now + OPENING_RETRY_SECONDS
+            frame.banner:SetText("Opening round...")
+        elseif now >= openingRetryAt then
             openingRetryAt = now + OPENING_RETRY_SECONDS
             ns.Round.ResendOpen()
             frame.banner:SetText("Opening round... (no echo yet, resending)")
@@ -2215,7 +2220,11 @@ function RollWindow.Init()
         -- add, a lost slot, a moved quality bar) or a reopen keeps what the host unticked.
         if newScan and not reopened then ticked = {} end
         -- A corpse with nothing worth rolling for does not keep an older list up.
-        if newScan and #ns.LootDetect.candidates == 0 then setupRequested = false end
+        if newScan and #ns.LootDetect.candidates == 0 then
+            local wasSetup = frame and frame:IsShown() and RollWindow.InSetup()
+            setupRequested = false
+            if wasSetup then frame:Hide() end
+        end
         -- Removing the last leftover candidate finishes the corpse.
         if not newScan then closeLootIfDone() end
         RollWindow.Refresh()
