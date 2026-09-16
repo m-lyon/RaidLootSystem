@@ -1793,10 +1793,12 @@ local function buildEntryPanel(parent)
     -- "unsent changes" sits between the left-hand buttons and Submit. Anchored only
     -- by its right edge it grew leftwards *under* Full list and Pass all and read as
     -- clipped text; the left anchor is what stops it, and the fixed height keeps it on
-    -- the one footer row the height arithmetic below allows for. Full list is hidden
-    -- under ROLL but keeps its point, so the anchor resolves either way.
+    -- the one footer row the height arithmetic below allows for. The anchor is Pass
+    -- all, not Full list: at the 420px minimum width a Full list anchor leaves ~66px,
+    -- narrower than the text, which then wraps to two lines and clips inside the
+    -- one-row height.
     panel.dirty = Widgets.Label(panel, "", "GameFontHighlightSmall")
-    panel.dirty:SetPoint("LEFT", panel.fullList, "RIGHT", 8, 0)
+    panel.dirty:SetPoint("LEFT", panel.pass, "RIGHT", 8, 0)
     panel.dirty:SetPoint("RIGHT", panel.submit, "LEFT", -8, 0)
     panel.dirty:SetHeight(BUTTON_H)
     panel.dirty:SetJustifyH("RIGHT")
@@ -2071,6 +2073,11 @@ local function closeLootIfDone()
     })
     if #done == 0 then return end
     for _, roundId in ipairs(done) do closeLootPending[roundId] = nil end
+    -- Two rounds on one corpse is a normal flow, so another round may still owe this
+    -- same source an award. Closing now would force exactly the reopen this prevents.
+    for _, source in pairs(closeLootPending) do
+        if ns.LootDetect.SourceOpen(source) then return end
+    end
     if ns.Round.IsHost() and ns.LootDetect.windowOpen then CloseLoot() end
 end
 
