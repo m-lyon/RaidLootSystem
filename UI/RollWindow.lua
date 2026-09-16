@@ -1601,7 +1601,8 @@ function RollWindow.Refresh()
     local own = ns.Round.IsHost() and ns.Round.current or nil
     local noEcho = own and own.state == C.ROUND_STATE.OPEN and (not round or round.id ~= own.id)
     if noEcho and openingGaveUpId == own.id then
-        -- Past the resend cap: draw the host's own round rather than lock them out of it.
+        -- Past the resend cap: adopt the host's own round rather than lock them out of it.
+        if ns.Client.AdoptOwnRound(own) then return RollWindow.Refresh() end
         round = own
     elseif noEcho then
         frame.titleText:SetText("Raid Loot System - opening round")
@@ -2105,6 +2106,9 @@ local function closeLootIfDone()
     -- A corpse that has aged out of the remembered sources can never be reopened as itself.
     for roundId, source in pairs(closeLootPending) do
         if not ns.LootDetect.SourceKnown(source) then closeLootPending[roundId] = nil end
+    end
+    for roundId, source in pairs(roundCorpses) do
+        if not ns.LootDetect.SourceKnown(source) then roundCorpses[roundId] = nil end
     end
     local done = RollWindow.LootDone({
         candidates = ns.LootDetect.candidates,

@@ -163,6 +163,16 @@ local function onOpen(sender, body)
     fireChanged()
 end
 
+--- Seed the client copy from the host's own round, for a host whose OPEN echo never
+-- came back: Submit, the countdown and the campaign label all read Client.round.
+-- @return true once Client.round is that round
+function Client.AdoptOwnRound(round)
+    local body = Serialize.encodeOpen(round.campaignId, round.id, round.tierCount,
+        math.max(0, round.endsAt - GetTime()), round.items, round.lootMode)
+    if body then onOpen(UnitName("player"), body) end
+    return Client.round ~= nil and Client.round.id == round.id
+end
+
 --------------------------------------------------------------------------------
 -- STATE (section 7)
 --------------------------------------------------------------------------------
