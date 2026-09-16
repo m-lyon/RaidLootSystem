@@ -1372,6 +1372,9 @@ local autoCloseAt                    -- when a finished round's results may clos
 local AUTO_CLOSE_LINGER = 5          -- seconds a finished round's results stay readable
 local openingRetryAt                 -- when a host still waiting on its own OPEN resends it
 local OPENING_RETRY_SECONDS = 5
+local OPENING_MAX_RESENDS = 3
+local openingResends = 0              -- OPEN resends spent on the round still opening
+local openingGaveUpId                 -- the host round whose echo was given up on
 local closeLootPending = {}          -- closed round id -> the corpse its awards are still owed on
 local roundCorpses = {}              -- closed round id -> its corpse; outlives ReleaseRound
 local lastHostClosedRoundId          -- the host round whose loot-frame close was already handled
@@ -1596,7 +1599,11 @@ function RollWindow.Refresh()
     -- then the host must not be shown "no round" -- or, worse, the previous round's
     -- results -- immediately after pressing Start roll.
     local own = ns.Round.IsHost() and ns.Round.current or nil
-    if own and own.state == C.ROUND_STATE.OPEN and (not round or round.id ~= own.id) then
+    local noEcho = own and own.state == C.ROUND_STATE.OPEN and (not round or round.id ~= own.id)
+    if noEcho and openingGaveUpId == own.id then
+        -- Past the resend cap: draw the host's own round rather than lock them out of it.
+        round = own
+    elseif noEcho then
         frame.titleText:SetText("Raid Loot System - opening round")
         frame.status:SetText("")
         frame.counter:SetText("")
@@ -1613,8 +1620,14 @@ function RollWindow.Refresh()
             -- behind it would only delay the echo further.
             openingRetryAt = now + OPENING_RETRY_SECONDS
             frame.banner:SetText("Opening round...")
+        elseif now >= openingRetryAt and openingResends >= OPENING_MAX_RESENDS then
+            openingRetryAt, openingResends, openingGaveUpId = nil, 0, own.id
+            ns.Print("Your own OPEN never came back after "
+                .. OPENING_MAX_RESENDS .. " resends; check comms. Showing your round as the host holds it.")
+            return RollWindow.Refresh()
         elseif now >= openingRetryAt then
             openingRetryAt = now + OPENING_RETRY_SECONDS
+            openingResends = openingResends + 1
             ns.Round.ResendOpen()
             frame.banner:SetText("Opening round... (no echo yet, resending)")
         else
@@ -1624,6 +1637,7 @@ function RollWindow.Refresh()
     end
 
     openingRetryAt = nil
+    if not noEcho then openingResends = 0 end
 
     if not round then
         frame.titleText:SetText("Raid Loot System - no round")
@@ -2009,8 +2023,9 @@ end
 
 function RollWindow.Show()
     if not frame then build() end
-    -- A routine echo on a window already up must not yank it forward or back into place.
-    if not frame:IsShown() then frame:RestorePosition() end
+    -- A routine echo on a window already up must not yank it back into place, but a
+    -- window behind another one still comes to the front.
+    if not frame:IsShown() then frame:RestorePosition() else Widgets.Raise(frame) end
     frame:Show()
     RollWindow.Refresh()
 end
