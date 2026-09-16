@@ -451,10 +451,6 @@ function LootDetect.Rescan()
     if #scanRows > 0 then rebuild() end
 end
 
---- Add an item the filter excluded (spec 006 section 3, "Add item"). A link that
--- matches a skipped loot slot joins with that slot, so the award still goes through
--- master loot; anything else joins as an item-link row and will be traded.
--- @param callback optional, called with true once it is in the list
 --- With no loot window open, hand edits must not write into the last corpse's tables:
 -- that corpse would bring them back on a reopen. Copy them once; the next scan replaces
 -- the copies with the scanned source's own.
@@ -470,6 +466,10 @@ local function detach()
     manualIds, manualRows, removedIds, consumedIds = ids, rows, removed, consumed
 end
 
+--- Add an item the filter excluded (spec 006 section 3, "Add item"). A link that
+-- matches a skipped loot slot joins with that slot, so the award still goes through
+-- master loot; anything else joins as an item-link row and will be traded.
+-- @param callback optional, called with true once it is in the list
 function LootDetect.AddCandidate(link, callback)
     local itemString, itemId = ns.ItemInfo.ParseLink(link)
     if not itemString then
