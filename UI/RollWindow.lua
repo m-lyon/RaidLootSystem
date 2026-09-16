@@ -2090,10 +2090,7 @@ end
 
 function RollWindow.Toggle()
     if frame and frame:IsShown() then
-        -- The button promised the candidate list when it is one click away.
-        if RollWindow.InSetup() or not (RollWindow.SetupReachable() and RollWindow.ShowSetup()) then
-            frame:Hide()
-        end
+        frame:Hide()
     elseif not (RollWindow.SetupReachable() and RollWindow.ShowSetup()) then
         RollWindow.Show()
     end
@@ -2123,6 +2120,8 @@ function RollWindow.HasContent()
     -- The host's candidate list is content too: it is now the first screen of the
     -- loot journey, and the button has to be able to bring it back.
     -- Only while the corpse is open, though: a stale list's slot indices are no use.
+    -- SetupReachable alone is true for a window still in setup with no corpse open;
+    -- the windowOpen test is what keeps that stale list from counting as content.
     if RollWindow.SetupReachable() and ns.LootDetect.windowOpen then return true end
     local round = currentRound()
     if not round then return false end

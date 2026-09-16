@@ -699,7 +699,10 @@ local function onEvent(_, event, arg1)
                 local rolled, handAdd = 0, 0
                 for _, skip in ipairs(LootDetect.skipped) do
                     if skip.reason == LootDetect.SKIP.ALREADY_ROLLED then rolled = rolled + 1 end
-                    if skip.reason == LootDetect.SKIP.NOT_EQUIPPABLE then handAdd = handAdd + 1 end
+                    if skip.reason ~= LootDetect.SKIP.ALREADY_ROLLED
+                        and ns.RollWindow.HandAddable(skip, GetLootThreshold()) then
+                        handAdd = handAdd + 1
+                    end
                 end
                 -- Once per source: the host reopens a corpse after every award, and a
                 -- trash mob's mats say the same thing each time.
@@ -713,8 +716,8 @@ local function onEvent(_, event, arg1)
                         .. "/rls loot to list them.", rolled))
                 end
                 if handAdd > 0 then
-                    ns.Print(string.format("%d item(s) here are not equippable and can be "
-                        .. "added by hand. /rls loot to list them.", handAdd))
+                    ns.Print(string.format("%d item(s) here are not automatic candidates and "
+                        .. "can be added by hand. /rls loot to list them.", handAdd))
                 end
                 return
             end
