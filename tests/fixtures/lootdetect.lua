@@ -82,7 +82,7 @@ local function run(input, ns)
         local linkSources = {}
         for roundId, name in pairs(input.links or {}) do linkSources[roundId] = named(name) end
         local target, strip, heldOnly = LootDetect.ConsumeTarget(roundSources,
-            named(input.open), input.roundId, linkSources)
+            named(input.open), input.roundId, linkSources, input.simulated)
         return { target = target and target.name or "", strip = strip,
                  heldOnly = heldOnly }
 
@@ -559,9 +559,16 @@ return {
             expected = { target = "A", strip = false, heldOnly = true },
         },
         {
-            -- Nothing open when it opened, or a simulated round.
-            name = "an unbound round consumes into nothing",
+            -- Rolled from bags with no corpse open: no consumed set takes the ids, but
+            -- the hand-added rows still go, or Start roll offers them again.
+            name = "an unbound round consumes into nothing and still strips manual rows",
             input = { op = "consumetarget", rounds = {}, open = "B", roundId = "r3" },
+            expected = { target = "", strip = true, heldOnly = false },
+        },
+        {
+            name = "a simulated round touches nothing at all",
+            input = { op = "consumetarget", rounds = {}, open = "B", roundId = "r3",
+                      simulated = { r3 = true } },
             expected = { target = "", strip = false, heldOnly = false },
         },
         {

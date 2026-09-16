@@ -1981,9 +1981,13 @@ end
 -- Auto-shown for the master looter only; a client's window is untouched by loot.
 -- Returns false when the list is not what ends up on screen, so the caller's chat
 -- line still tells the host this corpse has something on it.
-function RollWindow.ShowSetup()
+--
+-- `force` opens the list with nothing on it: an explicit /rls window from the host is
+-- content in itself, because Add item and Start roll are how a bag item is rolled for
+-- and there is no corpse behind them.
+function RollWindow.ShowSetup(force)
     if not ns.Round.IsHost() then return false end
-    if not setupHasContent() then return false end
+    if not (force or setupHasContent()) then return false end
     local state = (hostRound() or {}).state
     if state == C.ROUND_STATE.OPEN or state == C.ROUND_STATE.RESOLVING then return false end
     setupRequested = true

@@ -211,22 +211,26 @@ end
 -- one open now. A round with no loot-slot items (an item-link round) consumes into the
 -- source that was open when it opened, but only the ids that source's scan actually holds,
 -- so a rolled-by-link corpse item still leaves the setup list and nothing else is marked.
--- A round bound to neither (nothing open when it opened, or a simulation) consumes into
--- nothing. The manual additions belong to the corpse open now, so another corpse's round
--- leaves them.
+-- A round bound to neither -- nothing was open when it opened, so it was rolled from bags
+-- -- consumes into no corpse, but still strips the manual rows: leaving them there invites
+-- a second round on loot already awarded (spec 006 section 3). Only a simulated round
+-- touches nothing at all. The manual additions belong to the corpse open now, so another
+-- corpse's round leaves them.
 --
 -- @param roundSources round id -> the source that round was opened from
 -- @param openSource   the source of the last scan, or nil
 -- @param roundId      the closing round, or nil for the open source
 -- @param linkSources  round id -> the source open when an item-link round opened
+-- @param simulated    round id -> true for a simulated round
 -- @return the source to consume into (nil for none), whether to strip manual rows, and
 --         whether to consume only the ids the source's scan holds
-function LootDetect.ConsumeTarget(roundSources, openSource, roundId, linkSources)
+function LootDetect.ConsumeTarget(roundSources, openSource, roundId, linkSources, simulated)
     if not roundId then return openSource, true, false end
+    if simulated and simulated[roundId] then return nil, false, false end
     local bound = roundSources[roundId]
     if bound ~= nil then return bound, bound == openSource, false end
     local held = linkSources and linkSources[roundId]
-    if held == nil then return nil, false, false end
+    if held == nil then return nil, true, false end
     return held, held == openSource, true
 end
 
@@ -359,6 +363,7 @@ local consumedIds = {}         -- ids a closed round rolled for; the open source
 local sources = {}             -- remembered loot sources, newest first: { guid, rows, consumed }
 local roundSources = {}        -- round id -> the source that round was opened from
 local linkSources = {}         -- round id -> the source open when an item-link round opened
+local simulatedRounds = {}     -- round id -> true; a simulation consumes nothing
 local openSource = nil         -- the last scan's source, remembered or not
 local MAX_SOURCES = 10
 
@@ -493,7 +498,7 @@ end
 -- place so the host can start it again.
 function LootDetect.Consume(items, roundId)
     local target, stripManual, heldOnly =
-        LootDetect.ConsumeTarget(roundSources, openSource, roundId, linkSources)
+        LootDetect.ConsumeTarget(roundSources, openSource, roundId, linkSources, simulatedRounds)
     local set = target and target.consumed
     local held
     if set and heldOnly then
@@ -524,7 +529,10 @@ end
 -- it cannot mark a real corpse's drops rolled for.
 function LootDetect.BindRound(roundId, items)
     if not roundId then return end
-    if ns.Simulate and ns.Simulate.active then return end
+    if ns.Simulate and ns.Simulate.active then
+        simulatedRounds[roundId] = true
+        return
+    end
     for _, item in ipairs(items or {}) do
         if item.lootSlot then
             roundSources[roundId] = openSource
@@ -532,12 +540,6 @@ function LootDetect.BindRound(roundId, items)
         end
     end
     if LootDetect.SourceOpen(openSource) then linkSources[roundId] = openSource end
-end
-
---- Is the loot source round `roundId` was bound to the one open now?
-function LootDetect.RoundSourceOpen(roundId)
-    local source = roundId and roundSources[roundId]
-    return source ~= nil and LootDetect.SourceOpen(source)
 end
 
 --- The loot source round `roundId` was bound to, or nil.
@@ -567,6 +569,7 @@ function LootDetect.ReleaseRound(roundId)
     if roundId then
         roundSources[roundId] = nil
         linkSources[roundId] = nil
+        simulatedRounds[roundId] = nil
     end
 end
 

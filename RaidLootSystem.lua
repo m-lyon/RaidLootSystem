@@ -268,7 +268,10 @@ local function dispatch(input)
             ns.HierarchyEditor.Toggle()
         end
     elseif command == "window" then
-        if not (ns.RollWindow.SetupReachable() and ns.RollWindow.ShowSetup()) then
+        -- A host with nothing else on screen gets the setup list even with no corpse
+        -- open, so Add item and Start roll stay reachable from the UI.
+        local wantSetup = ns.RollWindow.SetupReachable() or not ns.RollWindow.HasContent()
+        if not (wantSetup and ns.RollWindow.ShowSetup(true)) then
             ns.RollWindow.Show()
         end
     elseif command == "hierarchy" then
