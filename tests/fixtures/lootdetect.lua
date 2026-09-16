@@ -551,10 +551,19 @@ return {
             },
         },
         {
-            -- Add item undoes consumption: the host asked for it by hand.
-            name = "a consumed item the host added by hand is offered again",
+            -- Added by hand on A, rolled for, closed while trash B was open: A's manual mark
+            -- survives, but the item must not come back when A is reopened. Add item clears
+            -- consumption, so a real re-add never reaches Partition in this state.
+            name = "a consumed item with a leftover manual mark stays already rolled (A, B, A)",
             input = { op = "partition", threshold = 4, consumedIds = { [40616] = true },
                       manualIds = { [40616] = true },
+                      scanRows = { { lootSlot = 1, quantity = 1, quality = 4, info = TOKEN } } },
+            expected = { candidates = {}, skipped = { "1:ALREADY_ROLLED" } },
+        },
+        {
+            -- Add item undoes consumption: the host asked for it by hand.
+            name = "a consumed item the host added back by hand is offered again",
+            input = { op = "partition", threshold = 4, manualIds = { [40616] = true },
                       scanRows = { { lootSlot = 1, quantity = 1, quality = 4, info = TOKEN } } },
             expected = {
                 candidates = { { idx = 1, itemString = "item:40616:0:0:0:0:0:0:0:0",

@@ -95,11 +95,14 @@ function LootDetect.Partition(scanRows, manualIds, manualRows, threshold, remove
     for _, row in ipairs(scanRows or {}) do
         local id = row.info and row.info.itemId
         local ok, reason = LootDetect.IsCandidate(row.info, row.quality, threshold)
-        if id and consumedIds[id] then
+        -- Consumed beats a manual mark: "Add item" clears consumption, so a mark still
+        -- standing beside it is left over from before the round, possibly on another corpse.
+        local consumed = id and consumedIds[id]
+        if consumed then
             ok, reason = false, LootDetect.SKIP.ALREADY_ROLLED
         end
         if id and removedIds[id] then                    -- withdrawn: neither list
-        elseif ok or (id and manualIds[id]) then
+        elseif ok or (id and manualIds[id] and not consumed) then
             rows[#rows + 1] = row
         else
             skipped[#skipped + 1] = { lootSlot = row.lootSlot, info = row.info,
