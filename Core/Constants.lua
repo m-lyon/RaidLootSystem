@@ -294,6 +294,22 @@ C.CAMPAIGN_DEFAULTS = {
     hierarchy = {},               -- THIS client's ordering, for this campaign
 }
 
+-- The host settings the campaign owns for every member (spec 012 section 9): carried
+-- on CFG and CSTATE, applied by Campaign.ApplyHostSettings, and broadcast and
+-- announced by Round.ChangeSetting. One table so the three cannot drift apart.
+--   frozen   refused while a round is open
+--   announce the Announce kind, and `arg` the field its formatter reads
+-- `lockHierarchy` is not frozen: unlocking is the escape hatch, and a host who needs
+-- it needs it now (spec 014). `qualityThreshold` is deliberately absent: it only
+-- steers the master looter's own loot scan, so it rides on CSTATE for whoever holds
+-- master looter next but is never broadcast on a change or announced.
+C.SHARED_HOST_SETTINGS = {
+    tierCount     = { frozen = true,  announce = "TIER_COUNT",     arg = "tierCount" },
+    timerSeconds  = { frozen = true,  announce = "TIMER",          arg = "seconds" },
+    lootMode      = { frozen = true,  announce = "LOOT_MODE",      arg = "lootMode" },
+    lockHierarchy = { frozen = false, announce = "HIERARCHY_LOCK", arg = "locked" },
+}
+
 C.DEFAULTS = {
     schema = C.SCHEMA,
     roster = {

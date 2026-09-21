@@ -363,18 +363,9 @@ local function onConfig(sender, body)
     -- looped-back CFG carries the simulation's settings, not the campaign's.
     local campaign = not ns.Comms.IsSelf(sender) and ns.Campaign.Get(msg.campaignId)
     if campaign then
-        local host = ns.Campaign.Normalise(campaign).host
-        host.tierCount = msg.tierCount or host.tierCount
-        host.timerSeconds = msg.timerSeconds or host.timerSeconds
-        host.lootMode = msg.lootMode or host.lootMode
-        -- Always assigned, never `or`-defaulted: false is a real value here and the
-        -- idiom cannot carry one, so an unlock would never reach anybody.
-        if msg.lockHierarchy ~= nil then host.lockHierarchy = msg.lockHierarchy end
-        -- One-way: a campaign that has run a round never un-runs it, and a host who
-        -- joined late and has not seen one must not clear it for the group.
-        if msg.started then host.started = true end
+        ns.Campaign.ApplyHostSettings(ns.Campaign.Normalise(campaign).host, msg)
         -- The hierarchy editor and the viewers read these too, not only the roll window.
-        if ns.Campaign.FireChanged then ns.Campaign.FireChanged() end
+        ns.Campaign.FireChanged()
     end
     fireChanged()
 end

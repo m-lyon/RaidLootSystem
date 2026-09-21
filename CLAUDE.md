@@ -97,6 +97,9 @@ with the reasoning.
 - **`lockHierarchy` is assigned, never `or`-defaulted, wherever `CFG` / `CSTATE` are applied.**
   `false` is a real value and the `and`/`or` idiom cannot carry one, so an unlock would never
   reach anybody -- the failure that traps a campaign. Same trap as `autoClose` in `Campaign.New`.
+  Both handlers now apply through `Campaign.ApplyHostSettings`, and which keys are shared, which
+  freeze mid-round and how each is announced is `C.SHARED_HOST_SETTINGS` -- add a shared setting
+  there, not to a handler or to `Round.ChangeSetting`.
 - **Recording a `ROSTER` and claiming from it are separate steps.** The record goes to whichever
   campaign the message names, if you are in it; `Roster.claims` is still rebuilt for the *active*
   campaign only, or two players claiming one character in unrelated groups reads as a conflict.

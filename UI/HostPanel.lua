@@ -163,14 +163,6 @@ end
 -- table, so switching snaps them all over.
 --------------------------------------------------------------------------------
 
-local function campaignOptions()
-    local options = {}
-    for i, c in ipairs(ns.Campaign.List()) do
-        options[i] = { value = c.id, text = c.label or c.id }
-    end
-    return options
-end
-
 -- Where the note starts, measured from the panel's top: title, picker, then the two
 -- button rows. The note wraps to an unpredictable number of lines, so the section's
 -- own height is computed from it in refreshCampaign rather than guessed here --
@@ -187,7 +179,7 @@ local function buildCampaign(parent)
     local panel = section(parent, "Campaign", NOTE_TOP + 30)
 
     panel.picker = Widgets.Dropdown(panel, "RaidLootSystemHostCampaign", 150,
-        campaignOptions(), function(value)
+        ns.Campaign.Options(), function(value)
             local ok, why = ns.Campaign.Switch(value)
             if not ok then ns.Print(why) end
             HostPanel.Refresh()
@@ -251,7 +243,7 @@ end
 
 local function refreshCampaign()
     local active = ns.Campaign.Active()
-    campaign.picker:SetOptions(campaignOptions())
+    campaign.picker:SetOptions(ns.Campaign.Options())
     campaign.picker:SetValue(active and active.id or "")
 
     if not active then
@@ -672,8 +664,7 @@ local function refreshAwaiting()
         row.record = record
         row:ClearAllPoints()
         row:SetPoint("TOPLEFT", awaiting.list, "TOPLEFT", 0, -(i - 1) * ROW_H)
-        local info = ns.ItemInfo.Get(record.itemString)
-        row.left:SetText((info.link or info.name or record.itemString) .. " for "
+        row.left:SetText(ns.ItemInfo.Label(record.itemString, "?") .. " for "
             .. record.char .. " |cff888888(" .. tostring(record.owner or "?") .. ")|r")
         -- A plain AWAITING record says nothing: the button already says what to do.
         -- A failed or lost one has to explain itself or the row looks stuck.
@@ -753,8 +744,7 @@ local function refreshPending()
         row.record = record
         row:ClearAllPoints()
         row:SetPoint("TOPLEFT", pending.list, "TOPLEFT", 0, -(i - 1) * ROW_H)
-        local info = ns.ItemInfo.Get(record.itemString)
-        row.left:SetText((info.link or info.name or record.itemString) .. " for "
+        row.left:SetText(ns.ItemInfo.Label(record.itemString, "?") .. " for "
             .. record.winner .. " |cff888888(" .. tostring(record.owner or "?") .. ")|r")
         local left, urgency = ns.Pending.TimeLeft(record, now)
         row.left2:SetText(URGENCY_COLOUR[urgency] .. left .. "|r")

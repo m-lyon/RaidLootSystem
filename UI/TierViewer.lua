@@ -43,14 +43,6 @@ local function campaignOnScreen()
     return ns.Campaign.Get(target)
 end
 
-local function campaignOptions()
-    local options = {}
-    for i, c in ipairs(ns.Campaign.List()) do
-        options[i] = { value = c.id, text = c.label or c.id }
-    end
-    return options
-end
-
 --- Everyone announcing this campaign in HI, plus ourselves when we are in it, which
 -- is who TierRoster.missing measures the stored records against. Empty out of a
 -- raid, so nobody is reported missing merely for being offline.
@@ -100,18 +92,7 @@ local function createRow(index)
 end
 
 local function createBand(index)
-    local band = CreateFrame("Frame", nil, content)
-    band:SetWidth(ROW_WIDTH)
-    band:SetHeight(BAND_H)
-
-    band.text = Widgets.Label(band, "", "GameFontNormalSmall")
-    band.text:SetPoint("BOTTOMLEFT", band, "BOTTOMLEFT", 0, 4)
-
-    band.line = band:CreateTexture(nil, "ARTWORK")
-    band.line:SetHeight(1)
-    band.line:SetPoint("BOTTOMLEFT", band, "BOTTOMLEFT", 0, 1)
-    band.line:SetPoint("BOTTOMRIGHT", band, "BOTTOMRIGHT", 0, 1)
-
+    local band = Widgets.TierBand(content, ROW_WIDTH, BAND_H)
     bands[index] = band
     return band
 end
@@ -124,7 +105,7 @@ function Viewer.Refresh()
     if not frame or not frame:IsShown() then return end
 
     local campaign = campaignOnScreen()
-    frame.picker:SetOptions(campaignOptions())
+    frame.picker:SetOptions(ns.Campaign.Options())
     frame.picker:SetValue(target or "")
 
     for _, row in ipairs(rows) do row:Hide() end
@@ -160,13 +141,7 @@ function Viewer.Refresh()
     for _, group in ipairs(model) do
         bandIndex = bandIndex + 1
         local band = bands[bandIndex] or createBand(bandIndex)
-        band.text:SetText(string.format("|cffe6b422%s|r |cff888888(%d)|r",
-            group.label, #group.rows))
-        band.line:SetTexture(0.5, 0.4, 0.15, 0.7)
-        band:ClearAllPoints()
-        band:SetPoint("TOPLEFT", content, "TOPLEFT", ROW_INSET, -y)
-        band:Show()
-        y = y + BAND_H
+        y = Widgets.PlaceTierBand(band, group, content, ROW_INSET, y)
 
         -- An empty tier is drawn, and says so. A campaign at 3 tiers where nobody
         -- has a third character has an unfilled T3, which is not the same thing as
@@ -234,7 +209,7 @@ local function build()
         "Raid Loot System - Tiers", LIST_WIDTH + 40, WINDOW_HEIGHT)
 
     frame.picker = Widgets.Dropdown(frame, "RaidLootSystemTierViewerCampaign", 150,
-        campaignOptions(), function(value)
+        ns.Campaign.Options(), function(value)
             target = value
             Viewer.Refresh()
         end)

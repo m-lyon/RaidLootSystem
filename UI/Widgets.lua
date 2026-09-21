@@ -409,6 +409,37 @@ function Widgets.Separator(parent, label, heavy)
     return line, text
 end
 
+--- A tier heading for the two read-only viewers, the priority list and the tier
+-- roster (spec 013 section 6). One definition, so the list and the roster that
+-- "cannot disagree" also cannot look different. The hierarchy editor's bands are
+-- a Separator and are not this.
+function Widgets.TierBand(parent, width, height)
+    local band = CreateFrame("Frame", nil, parent)
+    band:SetWidth(width)
+    band:SetHeight(height)
+
+    band.text = Widgets.Label(band, "", "GameFontNormalSmall")
+    band.text:SetPoint("BOTTOMLEFT", band, "BOTTOMLEFT", 0, 4)
+
+    band.line = band:CreateTexture(nil, "ARTWORK")
+    band.line:SetHeight(1)
+    band.line:SetPoint("BOTTOMLEFT", band, "BOTTOMLEFT", 0, 1)
+    band.line:SetPoint("BOTTOMRIGHT", band, "BOTTOMRIGHT", 0, 1)
+    return band
+end
+
+--- Label a tier band for a TierRoster group and place it `y` down `parent`.
+-- @return the y below the band
+function Widgets.PlaceTierBand(band, group, parent, x, y)
+    band.text:SetText(string.format("|cffe6b422%s|r |cff888888(%d)|r",
+        group.label, #group.rows))
+    band.line:SetTexture(0.5, 0.4, 0.15, 0.7)
+    band:ClearAllPoints()
+    band:SetPoint("TOPLEFT", parent, "TOPLEFT", x, -y)
+    band:Show()
+    return y + band:GetHeight()
+end
+
 --- A small coloured dot, used for raid presence.
 function Widgets.Dot(parent, size)
     local t = parent:CreateTexture(nil, "OVERLAY")

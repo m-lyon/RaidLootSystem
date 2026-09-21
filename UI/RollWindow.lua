@@ -289,7 +289,7 @@ function RollWindow.ResultTable(itemIdx, results, rolls, owners, isSK)
     owners = owners or {}
     local out = { unclaimed = false, degraded = false, winners = {}, rows = {} }
 
-    local wonHere = {}
+    local wonHere = {}               -- charName (lower) -> this item's winner rows
     local wonElsewhere = {}          -- charName (lower) -> itemIdx, for "withdrawn (won X)"
     for _, r in ipairs(results or {}) do
         if r.itemIdx == itemIdx then
@@ -298,11 +298,13 @@ function RollWindow.ResultTable(itemIdx, results, rolls, owners, isSK)
             else
                 if r.outcome == C.OUTCOME.DEGRADED then out.degraded = true end
                 local key = (r.winner or ""):lower()
-                wonHere[key] = true
-                out.winners[#out.winners + 1] = {
+                local winner = {
                     char = r.winner, owner = owners[key], tier = r.tier, roll = r.roll,
                     copy = #out.winners + 1,
                 }
+                out.winners[#out.winners + 1] = winner
+                wonHere[key] = wonHere[key] or {}
+                table.insert(wonHere[key], winner)
             end
         elseif r.winner and r.winner ~= "" then
             wonElsewhere[r.winner:lower()] = r.itemIdx
@@ -316,15 +318,11 @@ function RollWindow.ResultTable(itemIdx, results, rolls, owners, isSK)
                 char = r.char, owner = owners[key], tier = r.tier, roll = r.roll,
                 final = finalRoll(r), listIdx = r.listIdx,
                 status = r.status or C.ROLL_STATUS.ROLLED, rerolled = r.rerolled or {},
-                won = wonHere[key] == true,
+                won = wonHere[key] ~= nil,
                 wonItemIdx = wonElsewhere[key],
             }
             out.rows[#out.rows + 1] = row
-            if row.won then
-                for _, w in ipairs(out.winners) do
-                    if w.char:lower() == key then w.listIdx = r.listIdx end
-                end
-            end
+            for _, w in ipairs(wonHere[key] or {}) do w.listIdx = r.listIdx end
         end
     end
 
@@ -353,10 +351,8 @@ function RollWindow.ResultTable(itemIdx, results, rolls, owners, isSK)
             if row.status == C.ROLL_STATUS.ROLLED then
                 seen[row.tier] = (seen[row.tier] or 0) + 1
                 row.tierRank = seen[row.tier]
-                if row.won then
-                    for _, w in ipairs(out.winners) do
-                        if w.char:lower() == row.char:lower() then w.tierRank = row.tierRank end
-                    end
+                for _, w in ipairs(wonHere[row.char:lower()] or {}) do
+                    w.tierRank = row.tierRank
                 end
             end
         end
@@ -369,6 +365,38 @@ end
 -- Not "-> bottom": a suicide lands on the last present index, which is not the
 -- last row when the tail is absent (spec 010 section 6), and the list index that
 -- would qualify it is not shown to players.
+--- A grid cell's tooltip: title, body and the click hint, from its CellState.
+-- @return title, body, hint (hint may be nil)
+function RollWindow.CellTooltip(state, charName, label)
+    local title = charName .. " for " .. label
+    if state.enterable then
+        return title, state.text,
+            state.ticked and "Left-click to withdraw." or "Left-click to enter."
+    end
+    return title, "|cffff6060" .. (state.text or "Not enterable") .. "|r",
+        state.overridable and "Right-click to override the filter for this entry." or nil
+end
+
+--- How a winner's delivery state is drawn (spec 007), and for the host the one
+-- action it allows next. `button` is nil when there is nothing to press: delivered,
+-- or a failure that cannot be retried.
+-- @param retryable  Award.Retryable(record)
+-- @return { colour, action, button }
+function RollWindow.DeliveryView(delivery, retryable)
+    local D = C.DELIVERY
+    local colour = delivery == D.DELIVERED and "|cff66ff66"
+        or delivery == D.PENDING and "|cffffaa00"
+        or (delivery == D.FAILED or delivery == D.LOST) and "|cffff6060"
+        or "|cffaaaaaa"
+    if delivery == D.DELIVERED then
+        return { colour = colour }
+    elseif delivery == D.PENDING then
+        return { colour = colour, action = "deliver", button = "Deliver" }
+    end
+    return { colour = colour, action = "award",
+             button = retryable and (delivery == D.AWAITING and "Award" or "Retry") or nil }
+end
+
 function RollWindow.SuicideText(tierRank)
     return "#" .. tostring(tierRank or "?") .. " -> suicide"
 end
@@ -744,6 +772,8 @@ local function colouredChar(char)
 end
 
 --- Players the host is waiting on: group members running a compatible addon.
+-- Unlike Round's expectedPlayers, which decides auto-close, this counts the viewer
+-- even before their own HI loops back. Kept apart on purpose; see the note there.
 local function expectedPlayers()
     local expected = {}
     for _, member in ipairs(ns.Roster.GroupMembers()) do
@@ -943,35 +973,28 @@ end
 -- Entry mode refresh
 --------------------------------------------------------------------------------
 
-local function refreshEntry(round)
-    local settings = DB().Settings()
-    local sk = isSK(round)
-    local items = round.items
-    local roster = rosterRows(round)
-    local hideIneligible = entryPanel.hideToggle:GetChecked() == 1
-    local visibleCols = math.min(#items, MAX_VISIBLE_COLS)
-
-    -- Which item is selected: keep the selection when it still exists.
-    if not selectedIdx or not itemByIdx(round, selectedIdx) then
-        selectedIdx = items[1] and items[1].idx or nil
-    end
-
-    -- Present characters' list positions, for the SK median, and every character's
-    -- rank inside its tier -- the number the priority viewer draws (spec 013 section
-    -- 6), from the same owner hierarchies the viewer bands by. RollWindow.Ranks keeps
-    -- the grid on the live tier index and the detail panel on the stamped one; see
-    -- the comment above that function for why the two must not be merged.
-    local presentPositions, tierRanks, detailRanks = {}, nil, nil
+--- Present characters' list positions, for the SK median, and every character's
+-- rank inside its tier -- the number the priority viewer draws (spec 013 section
+-- 6), from the same owner hierarchies the viewer bands by. RollWindow.Ranks keeps
+-- the grid on the live tier index and the detail panel on the stamped one; see
+-- the comment above that function for why the two must not be merged.
+-- @return { presentPositions, tierRanks, detailRanks }
+local function entryRanks(round, sk)
+    local ranks = { presentPositions = {} }
     if sk and round.priority then
         for name, position in pairs(round.priority) do
-            if ns.Roster.IsPresent(name) then presentPositions[#presentPositions + 1] = position end
+            if ns.Roster.IsPresent(name) then
+                ranks.presentPositions[#ranks.presentPositions + 1] = position
+            end
         end
         local liveTiers = ns.Campaign.TierIndex(round.tierCount, round.campaignId)
-        tierRanks, detailRanks = RollWindow.Ranks(round.priority, liveTiers, round.entries,
-            round.tierCount)
+        ranks.tierRanks, ranks.detailRanks = RollWindow.Ranks(round.priority, liveTiers,
+            round.entries, round.tierCount)
     end
+    return ranks
+end
 
-    -- Columns.
+local function layoutColumns(round, items)
     for _, column in ipairs(columns) do column:Hide() end
     for c, item in ipairs(items) do
         local column = columns[c]
@@ -990,8 +1013,68 @@ local function refreshEntry(round)
         column:Show()
     end
     colHeaderContent:SetWidth(math.max(#items, 1) * CELL_W)
+end
 
-    -- Rows and cells.
+--- Draw one cell and report whether it can be entered and whether it is ticked.
+local function drawCell(cell, round, item, char, y, c, sk, settings)
+    local info = infoFor(round, item)
+    local tick = getTick(round, item.idx, char.name)
+    local state = RollWindow.CellState(info, char, tick,
+        { filterEnabled = settings.eligibilityFilter })
+    cell.state, cell.itemIdx, cell.charName = state, item.idx, char.name
+
+    cell:ClearAllPoints()
+    cell:SetPoint("TOPLEFT", cellContent, "TOPLEFT", (c - 1) * CELL_W, -y)
+    cell.box:SetAlpha(state.enterable and 1 or 0.3)
+    if state.ticked then cell.check:Show() else cell.check:Hide() end
+    if state.override then cell.border:Show() else cell.border:Hide() end
+    if sk and state.ticked then
+        cell.star:Show()
+        cell.star.icon:SetAlpha(state.star and 1 or 0.25)
+    else
+        cell.star:Hide()
+    end
+
+    cell.tooltipTitle, cell.tooltipBody, cell.tooltipHint =
+        RollWindow.CellTooltip(state, char.name, itemLabel(round, item))
+    return state.enterable, state.ticked
+end
+
+local function drawRowHeader(row, round, char, y, sk, ranks)
+    row:ClearAllPoints()
+    row:SetPoint("TOPLEFT", rowHeaders, "TOPLEFT", 0, -y)
+    local tierLabel = ns.Tiers.label(char.tier, round.tierCount)
+    local rest = ns.Tiers.isRest(char.tier, round.tierCount)
+    row.badge:SetText((rest and "|cffe6b422" or "|cffaaaaaa") .. tierLabel .. "|r")
+    local name = Widgets.ColorName(char.name, char.class)
+    if char.isSelf then name = name .. " |cff888888*|r" end
+    row.name:SetText(name)
+    Widgets.SetDotPresent(row.dot, char.present)
+    row:SetAlpha(char.present and 1 or 0.5)
+    if sk then
+        -- The rank is drawn; the colour stays the list-wide near-the-top
+        -- signal, as in the viewer.
+        local position = round.priority and round.priority[char.name] or nil
+        local rank = ranks.tierRanks and ranks.tierRanks[char.name] or "?"
+        if not position then
+            row.position:SetText("|cff888888?|r")
+        elseif RollWindow.AboveMedian(position, ranks.presentPositions) then
+            row.position:SetText("|cff66ff66#" .. rank .. "|r")
+        else
+            row.position:SetText("|cffaaaaaa#" .. rank .. "|r")
+        end
+    else
+        row.position:SetText("")
+    end
+    row:Show()
+end
+
+--- Rows and cells.
+-- @return the grid's height
+local function layoutGrid(round, items, roster, sk, ranks)
+    local settings = DB().Settings()
+    local hideIneligible = entryPanel.hideToggle:GetChecked() == 1
+
     for _, row in ipairs(rows) do row:Hide() end
     for _, line in ipairs(cells) do
         for _, cell in ipairs(line) do cell:Hide() end
@@ -1013,74 +1096,23 @@ local function refreshEntry(round)
                 cell = createCell()
                 cells[r][c] = cell
             end
-            local info = infoFor(round, item)
-            local tick = getTick(round, item.idx, char.name)
-            local state = RollWindow.CellState(info, char, tick,
-                { filterEnabled = settings.eligibilityFilter })
-            cell.state, cell.itemIdx, cell.charName = state, item.idx, char.name
-            if state.enterable then rowEnterable = true end
-            if state.ticked then rowTicked = true end
-
-            cell:ClearAllPoints()
-            cell:SetPoint("TOPLEFT", cellContent, "TOPLEFT", (c - 1) * CELL_W, -y)
-            cell.box:SetAlpha(state.enterable and 1 or 0.3)
-            if state.ticked then cell.check:Show() else cell.check:Hide() end
-            if state.override then cell.border:Show() else cell.border:Hide() end
-            if sk and state.ticked then
-                cell.star:Show()
-                cell.star.icon:SetAlpha(state.star and 1 or 0.25)
-            else
-                cell.star:Hide()
-            end
-
-            local label = itemLabel(round, item)
-            if state.enterable then
-                cell.tooltipTitle = char.name .. " for " .. label
-                cell.tooltipBody = state.text
-                cell.tooltipHint = state.ticked and "Left-click to withdraw."
-                    or "Left-click to enter."
-            else
-                cell.tooltipTitle = char.name .. " for " .. label
-                cell.tooltipBody = "|cffff6060" .. (state.text or "Not enterable") .. "|r"
-                cell.tooltipHint = state.overridable
-                    and "Right-click to override the filter for this entry." or nil
-            end
+            local enterable, ticked = drawCell(cell, round, item, char, y, c, sk, settings)
+            if enterable then rowEnterable = true end
+            if ticked then rowTicked = true end
         end
 
-        local show = not hideIneligible or rowEnterable or rowTicked
-        if show then
-            row:ClearAllPoints()
-            row:SetPoint("TOPLEFT", rowHeaders, "TOPLEFT", 0, -y)
-            local tierLabel = ns.Tiers.label(char.tier, round.tierCount)
-            local rest = ns.Tiers.isRest(char.tier, round.tierCount)
-            row.badge:SetText((rest and "|cffe6b422" or "|cffaaaaaa") .. tierLabel .. "|r")
-            local name = Widgets.ColorName(char.name, char.class)
-            if char.isSelf then name = name .. " |cff888888*|r" end
-            row.name:SetText(name)
-            Widgets.SetDotPresent(row.dot, char.present)
-            row:SetAlpha(char.present and 1 or 0.5)
-            if sk then
-                -- The rank is drawn; the colour stays the list-wide near-the-top
-                -- signal, as in the viewer.
-                local position = round.priority and round.priority[char.name] or nil
-                local rank = tierRanks and tierRanks[char.name] or "?"
-                if not position then
-                    row.position:SetText("|cff888888?|r")
-                elseif RollWindow.AboveMedian(position, presentPositions) then
-                    row.position:SetText("|cff66ff66#" .. rank .. "|r")
-                else
-                    row.position:SetText("|cffaaaaaa#" .. rank .. "|r")
-                end
-            else
-                row.position:SetText("")
-            end
-            row:Show()
+        if not hideIneligible or rowEnterable or rowTicked then
+            drawRowHeader(row, round, char, y, sk, ranks)
             for c = 1, #items do cells[r][c]:Show() end
             y = y + ROW_H
         end
     end
+    return math.max(y, ROW_H)
+end
 
-    local gridH = math.max(y, ROW_H)
+--- Size the scroll areas to the grid, and show the horizontal slider only when the
+-- columns overflow.
+local function sizeGrid(items, gridH, visibleCols)
     rowHeaders:SetHeight(gridH)
     cellContent:SetHeight(gridH)
     cellContent:SetWidth(math.max(#items, 1) * CELL_W)
@@ -1088,7 +1120,6 @@ local function refreshEntry(round)
     cellScroll:SetWidth(visibleCols * CELL_W)
     colHeaderScroll:SetWidth(visibleCols * CELL_W)
 
-    -- The horizontal slider only when the columns overflow.
     if #items > MAX_VISIBLE_COLS then
         hslider:SetMinMaxValues(0, (#items - MAX_VISIBLE_COLS) * CELL_W)
         hslider:SetWidth(visibleCols * CELL_W)
@@ -1098,38 +1129,41 @@ local function refreshEntry(round)
         hslider:Hide()
         setHorizontalScroll(0)
     end
+end
 
-    -- Detail panel: who the host has accepted for the selected item (STATE only).
+--- Detail panel: who the host has accepted for the selected item (STATE only).
+local function renderDetail(round, sk, detailRanks)
     local item = selectedIdx and itemByIdx(round, selectedIdx)
-    if item then
-        local lines = { "Selected: " .. itemLabel(round, item) }
-        local detail = RollWindow.DetailRows(round.entries[item.idx], sk, round.priority, detailRanks)
-        if #detail == 0 then
-            lines[#lines + 1] = "|cff888888No entries accepted yet.|r"
-        else
-            local parts = {}
-            for _, d in ipairs(detail) do
-                local text = ns.Tiers.label(d.tier, round.tierCount) .. "  "
-                    .. colouredChar(d.char) .. " (" .. tostring(d.owner or "?") .. ")"
-                if sk then
-                    text = text .. " |cff888888#" .. tostring(d.listIdx and d.tierRank or "?") .. "|r"
-                end
-                parts[#parts + 1] = text
-            end
-            lines[#lines + 1] = table.concat(parts, "     ")
-        end
-        if sk and not round.priority then
-            lines[#lines + 1] = "|cffff8800List positions unknown: the host's list has not arrived.|r"
-        end
-        entryPanel.detail:SetText(table.concat(lines, "\n"))
-    else
+    if not item then
         entryPanel.detail:SetText("")
+        return
     end
+    local lines = { "Selected: " .. itemLabel(round, item) }
+    local detail = RollWindow.DetailRows(round.entries[item.idx], sk, round.priority, detailRanks)
+    if #detail == 0 then
+        lines[#lines + 1] = "|cff888888No entries accepted yet.|r"
+    else
+        local parts = {}
+        for _, d in ipairs(detail) do
+            local text = ns.Tiers.label(d.tier, round.tierCount) .. "  "
+                .. colouredChar(d.char) .. " (" .. tostring(d.owner or "?") .. ")"
+            if sk then
+                text = text .. " |cff888888#" .. tostring(d.listIdx and d.tierRank or "?") .. "|r"
+            end
+            parts[#parts + 1] = text
+        end
+        lines[#lines + 1] = table.concat(parts, "     ")
+    end
+    if sk and not round.priority then
+        lines[#lines + 1] = "|cffff8800List positions unknown: the host's list has not arrived.|r"
+    end
+    entryPanel.detail:SetText(table.concat(lines, "\n"))
+end
 
-    -- Footer.
+local function renderFooter(round, sk)
     if sk then entryPanel.fullList:Show() else entryPanel.fullList:Hide() end
     local myName = me()
-    local localEntries = RollWindow.LocalEntries(scratchFor(round), items)
+    local localEntries = RollWindow.LocalEntries(scratchFor(round), round.items)
     local accepted = RollWindow.AcceptedFor(round.entries, myName)
     local submitted = round.submitted[myName] == true or lastSentRoundId == round.id
     entryPanel.submit:SetText(submitted and "Revise" or
@@ -1156,16 +1190,38 @@ local function refreshEntry(round)
     else
         entryPanel.warning:SetText("")
     end
+end
 
-    -- Window size follows the grid. The terms are the entry panel's anchors, top to
-    -- bottom: column header, grid, the gap holding the slider, the toggle, the detail
-    -- panel, the warning line, the button row. BUTTON_H covers the whole footer row --
-    -- Pass all, Full list, the dirty indicator and Submit all sit on it at that height.
+--- Window size follows the grid. The terms are the entry panel's anchors, top to
+-- bottom: column header, grid, the gap holding the slider, the toggle, the detail
+-- panel, the warning line, the button row. BUTTON_H covers the whole footer row --
+-- Pass all, Full list, the dirty indicator and Submit all sit on it at that height.
+-- A change to the panel's anchors in its builder has to change this sum with it.
+local function sizeEntryWindow(gridH, visibleCols)
     local width = PAD * 2 + HEADER_W + visibleCols * CELL_W + 8
     local height = 70 + COL_HEADER_H + gridH + TOGGLE_GAP + TOGGLE_H + 4 + DETAIL_H
         + 2 + WARN_H + 6 + BUTTON_H + PAD
     frame:SetWidth(math.max(width, 420))
     frame:SetHeight(height)
+end
+
+local function refreshEntry(round)
+    local sk = isSK(round)
+    local items = round.items
+    local visibleCols = math.min(#items, MAX_VISIBLE_COLS)
+
+    -- Which item is selected: keep the selection when it still exists.
+    if not selectedIdx or not itemByIdx(round, selectedIdx) then
+        selectedIdx = items[1] and items[1].idx or nil
+    end
+
+    local ranks = entryRanks(round, sk)
+    layoutColumns(round, items)
+    local gridH = layoutGrid(round, items, rosterRows(round), sk, ranks)
+    sizeGrid(items, gridH, visibleCols)
+    renderDetail(round, sk, ranks.detailRanks)
+    renderFooter(round, sk)
+    sizeEntryWindow(gridH, visibleCols)
 end
 
 --------------------------------------------------------------------------------
@@ -1278,36 +1334,28 @@ function RollWindow.RenderResults(content, pool, view)
             if record then
                 -- The delivery state (spec 007), and for the host the one action it
                 -- allows next. Nobody else sees the control.
-                local D = C.DELIVERY
-                local colour = record.delivery == D.DELIVERED and "|cff66ff66"
-                    or record.delivery == D.PENDING and "|cffffaa00"
-                    or (record.delivery == D.FAILED or record.delivery == D.LOST) and "|cffff6060"
-                    or "|cffaaaaaa"
-                row.status:SetText(colour .. ns.Award.StatusText(record) .. "|r")
+                local shown = RollWindow.DeliveryView(record.delivery,
+                    ns.Award.Retryable(record))
+                local status = shown.colour .. ns.Award.StatusText(record) .. "|r"
                 if view.host then
                     row.right:Hide()
                     row.award.roundId, row.award.itemIdx, row.award.copy =
                         view.roundId, item.idx, w.copy
-                    if record.delivery == D.DELIVERED then
-                        row.award:Hide()
-                    elseif record.delivery == D.PENDING then
-                        row.award.action = "deliver"
-                        row.award:SetText("Deliver")
-                        row.award:Show()
-                    else
-                        row.award.action = "award"
-                        row.award:SetText(record.delivery == D.AWAITING and "Award" or "Retry")
-                        if ns.Award.Retryable(record) then row.award:Show() else row.award:Hide() end
-                    end
+                    row.status:SetText(status)
                     row.status:ClearAllPoints()
-                    row.status:SetPoint("RIGHT", row.award:IsShown() and row.award or row, "LEFT", -6, 0)
-                    if not row.award:IsShown() then
+                    if shown.button then
+                        row.award.action = shown.action
+                        row.award:SetText(shown.button)
+                        row.award:Show()
+                        row.status:SetPoint("RIGHT", row.award, "LEFT", -6, 0)
+                    else
+                        row.award:Hide()
                         row.status:SetPoint("RIGHT", row, "RIGHT", -4, 0)
                     end
+                    row.status:Show()
                 else
-                    row.right:SetText(right .. "  " .. colour .. ns.Award.StatusText(record) .. "|r")
+                    row.right:SetText(right .. "  " .. status)
                 end
-                if view.host then row.status:Show() end
             end
         end
         for _, r in ipairs(table_.rows) do

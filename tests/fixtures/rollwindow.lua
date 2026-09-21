@@ -9,7 +9,13 @@ local ns = ...
 local function run(input, ns)
     local RW = ns.RollWindow
 
-    if input.op == "cell" then
+    if input.op == "tooltip" then
+        local title, body, hint = RW.CellTooltip(input.state, input.char, input.label)
+        return { title = title, body = body or "", hint = hint or "" }
+    elseif input.op == "delivery" then
+        local v = RW.DeliveryView(input.delivery, input.retryable)
+        return { colour = v.colour, action = v.action or "", button = v.button or "" }
+    elseif input.op == "cell" then
         local state = RW.CellState(input.info, input.char, input.tick, input.config)
         return {
             enterable = state.enterable, ticked = state.ticked, override = state.override,
@@ -715,5 +721,38 @@ return {
         { name = "no round at all is not a reason to close",
           input = { op = "autoclose", awards = {}, pending = {} },
           expected = false },
+        { name = "an enterable, unticked cell says left-click to enter",
+          input = { op = "tooltip", char = "Bonk", label = "Sword",
+                    state = { enterable = true, ticked = false, text = "Plate" } },
+          expected = { title = "Bonk for Sword", body = "Plate", hint = "Left-click to enter." } },
+        { name = "a ticked cell says left-click to withdraw",
+          input = { op = "tooltip", char = "Bonk", label = "Sword",
+                    state = { enterable = true, ticked = true, text = "Plate" } },
+          expected = { title = "Bonk for Sword", body = "Plate",
+                       hint = "Left-click to withdraw." } },
+        { name = "a filtered cell that can be overridden says how",
+          input = { op = "tooltip", char = "Bonk", label = "Sword",
+                    state = { enterable = false, overridable = true, text = "Wrong armour" } },
+          expected = { title = "Bonk for Sword", body = "|cffff6060Wrong armour|r",
+                       hint = "Right-click to override the filter for this entry." } },
+        { name = "a cell that cannot be entered or overridden has no hint",
+          input = { op = "tooltip", char = "Bonk", label = "Sword",
+                    state = { enterable = false } },
+          expected = { title = "Bonk for Sword", body = "|cffff6060Not enterable|r", hint = "" } },
+        { name = "an awaiting award offers Award",
+          input = { op = "delivery", delivery = "AWAITING", retryable = true },
+          expected = { colour = "|cffaaaaaa", action = "award", button = "Award" } },
+        { name = "a retryable failure offers Retry",
+          input = { op = "delivery", delivery = "FAILED", retryable = true },
+          expected = { colour = "|cffff6060", action = "award", button = "Retry" } },
+        { name = "an expired trade offers nothing to press",
+          input = { op = "delivery", delivery = "FAILED", retryable = false },
+          expected = { colour = "|cffff6060", action = "award", button = "" } },
+        { name = "a pending item offers Deliver",
+          input = { op = "delivery", delivery = "PENDING", retryable = true },
+          expected = { colour = "|cffffaa00", action = "deliver", button = "Deliver" } },
+        { name = "a delivered item offers nothing",
+          input = { op = "delivery", delivery = "DELIVERED", retryable = false },
+          expected = { colour = "|cff66ff66", action = "", button = "" } },
     },
 }

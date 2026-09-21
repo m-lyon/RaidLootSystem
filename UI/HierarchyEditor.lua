@@ -59,12 +59,7 @@ local function targetList()
 end
 
 local function targetOptions()
-    local options = {}
-    for i, c in ipairs(ns.Campaign.List()) do
-        options[i] = { value = c.id, text = c.label or c.id }
-    end
-    options[#options + 1] = { value = ns.Roster.DEFAULT_TARGET, text = "Default (template)" }
-    return options
+    return ns.Campaign.Options({ value = ns.Roster.DEFAULT_TARGET, text = "Default (template)" })
 end
 
 --------------------------------------------------------------------------------

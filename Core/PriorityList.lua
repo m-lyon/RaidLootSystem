@@ -12,9 +12,7 @@ local PriorityList = ns.PriorityList
 
 local Util = ns.Util
 
-local function keyOf(name)
-    return type(name) == "string" and name:lower() or name
-end
+local keyOf = Util.nameKey
 
 --------------------------------------------------------------------------------
 -- The seeded generator (section 5)

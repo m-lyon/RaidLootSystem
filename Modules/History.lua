@@ -42,16 +42,12 @@ local function outcomeOf(round)
     return "ABORTED"
 end
 
---- The host's record (section 2): every entry with its submission timestamps, every
--- award with its delivery state, loot slots included.
---
--- @param round  the host round after Close or Abort
--- @param ctx      { now, zone, source, raid, timerSeconds, qualityThreshold, simulated }
-function History.FromHost(round, ctx)
-    ctx = ctx or {}
-    local record = {
+--- The fields every record carries, host or client (section 2). `settings` is the
+-- only part that differs: the host adds the timer and the quality threshold.
+local function recordHeader(round, ctx, recordedAsHost, settings)
+    return {
         roundId = round.id,
-        recordedAsHost = true,
+        recordedAsHost = recordedAsHost,
         timestamp = round.openedAt or ctx.now,
         closedAt = round.closedAt or ctx.now,
         zone = ctx.zone,
@@ -61,12 +57,7 @@ function History.FromHost(round, ctx)
         -- view. The label rides along so a deleted campaign still renders a name.
         campaignId = round.campaignId,
         campaignLabel = round.campaignLabel or ctx.campaignLabel,
-        settings = {
-            tierCount = round.tierCount,
-            timerSeconds = ctx.timerSeconds,
-            qualityThreshold = ctx.qualityThreshold,
-            lootMode = round.lootMode or C.LOOT_MODE.ROLL,
-        },
+        settings = settings,
         priorityAtOpen = copyOrder(round.priorityAtOpen),
         raid = Util.copy(ctx.raid or {}),
         outcome = outcomeOf(round),
@@ -74,43 +65,94 @@ function History.FromHost(round, ctx)
         simulated = ctx.simulated or nil,
         items = {},
     }
+end
+
+--- One entry's shape, with its defaults filled in one place so the four ways of
+-- building one cannot drift apart on a field.
+local function entryRecord(f)
+    return {
+        char = f.char, owner = f.owner, tier = f.tier,
+        listIdx = f.listIdx or 0,
+        star = f.star and true or false,
+        override = f.override and true or false,
+        rolled = f.rolled and true or false,
+        roll = f.roll or 0,
+        rerolled = Util.copy(f.rerolled or {}),
+        withdrawn = f.withdrawn and true or false,
+        reason = f.reason,
+        submittedAt = f.submittedAt, revisedAt = f.revisedAt,
+    }
+end
+
+--- The entries of an item that never resolved: what was submitted, none of it rolled.
+-- @param keepSubmission  the host's copy carries stars, overrides and timestamps
+local function unrolledEntries(list, keepSubmission)
+    local entries = {}
+    for _, e in ipairs(list or {}) do
+        entries[#entries + 1] = entryRecord({
+            char = e.char, owner = e.owner, tier = e.tier,
+            star = keepSubmission and e.star, override = keepSubmission and e.override,
+            submittedAt = keepSubmission and e.submittedAt or nil,
+            revisedAt = keepSubmission and e.revisedAt or nil,
+        })
+    end
+    return entries
+end
+
+local function itemRecord(item, itemInfo, fields)
+    local itemLevel, quality, equipLoc = itemFields(itemInfo)
+    return {
+        itemIdx = item.idx,
+        itemString = item.itemString,
+        count = item.count or 1,
+        lootSlot = fields.lootSlot,
+        unclaimed = fields.unclaimed or false,
+        degraded = fields.degraded or false,
+        itemLevel = itemLevel, quality = quality, equipLoc = equipLoc,
+        entries = fields.entries,
+        awards = fields.awards,
+    }
+end
+
+--- The host's record (section 2): every entry with its submission timestamps, every
+-- award with its delivery state, loot slots included.
+--
+-- @param round  the host round after Close or Abort
+-- @param ctx      { now, zone, source, raid, timerSeconds, qualityThreshold, simulated }
+function History.FromHost(round, ctx)
+    ctx = ctx or {}
+    local record = recordHeader(round, ctx, true, {
+        tierCount = round.tierCount,
+        timerSeconds = ctx.timerSeconds,
+        qualityThreshold = ctx.qualityThreshold,
+        lootMode = round.lootMode or C.LOOT_MODE.ROLL,
+    })
 
     local resultByIdx = {}
     for _, r in ipairs(round.results or {}) do resultByIdx[r.itemIdx] = r end
 
     for i, item in ipairs(round.items) do
         local result = resultByIdx[item.idx]
-        local itemLevel, quality, equipLoc = itemFields(item.info)
-        local submitted = {}
-        for _, e in ipairs(round.entries and round.entries[item.idx] or {}) do
-            submitted[e.char:lower()] = e
-        end
+        local submittedList = round.entries and round.entries[item.idx] or {}
 
-        local entries = {}
+        local entries
         if result then
+            local submitted = {}
+            for _, e in ipairs(submittedList) do submitted[e.char:lower()] = e end
+            entries = {}
             for _, e in ipairs(result.record or {}) do
                 local sub = submitted[e.char:lower()] or {}
-                entries[#entries + 1] = {
+                entries[#entries + 1] = entryRecord({
                     char = e.char, owner = e.owner or sub.owner, tier = e.tier,
-                    listIdx = e.listIdx or 0, star = sub.star and true or false,
-                    override = sub.override and true or false,
-                    rolled = e.rolled and true or false, roll = e.roll or 0,
-                    rerolled = Util.copy(e.rerolled or {}),
-                    withdrawn = e.reason == C.NOT_ROLLED.WITHDRAWN,
-                    reason = e.reason,
+                    listIdx = e.listIdx, star = sub.star, override = sub.override,
+                    rolled = e.rolled, roll = e.roll, rerolled = e.rerolled,
+                    withdrawn = e.reason == C.NOT_ROLLED.WITHDRAWN, reason = e.reason,
                     submittedAt = sub.submittedAt, revisedAt = sub.revisedAt,
-                }
+                })
             end
         else
-            -- Aborted before resolution: what was submitted, none of it rolled.
-            for _, e in ipairs(round.entries and round.entries[item.idx] or {}) do
-                entries[#entries + 1] = {
-                    char = e.char, owner = e.owner, tier = e.tier, listIdx = 0,
-                    star = e.star and true or false, override = e.override and true or false,
-                    rolled = false, roll = 0, rerolled = {}, withdrawn = false,
-                    submittedAt = e.submittedAt, revisedAt = e.revisedAt,
-                }
-            end
+            -- Aborted before resolution.
+            entries = unrolledEntries(submittedList, true)
         end
 
         local awards = {}
@@ -118,13 +160,10 @@ function History.FromHost(round, ctx)
         if result and not result.unclaimed then
             for copy, a in ipairs(result.awards) do
                 local rec = records[copy] or {}
-                local listIdx = 0
-                for _, e in ipairs(result.record or {}) do
-                    if e.char == a.char then listIdx = e.listIdx or 0 end
-                end
                 awards[copy] = {
                     copy = copy, char = a.char, owner = a.owner, tier = a.tier,
-                    roll = a.roll or 0, listIdx = listIdx,
+                    roll = a.roll or 0,
+                    listIdx = ns.Resolve.listIdxOf(result.record, a.char) or 0,
                     priorIndex = rec.priorIndex,
                     delivery = rec.delivery or C.DELIVERY.AWAITING,
                     deliveryPath = rec.deliveryPath,
@@ -134,17 +173,12 @@ function History.FromHost(round, ctx)
             end
         end
 
-        record.items[i] = {
-            itemIdx = item.idx,
-            itemString = item.itemString,
-            count = item.count or 1,
+        record.items[i] = itemRecord(item, item.info, {
             lootSlot = item.lootSlot,
-            unclaimed = result and result.unclaimed or false,
-            degraded = result and result.degraded or false,
-            itemLevel = itemLevel, quality = quality, equipLoc = equipLoc,
-            entries = entries,
-            awards = awards,
-        }
+            unclaimed = result and result.unclaimed,
+            degraded = result and result.degraded,
+            entries = entries, awards = awards,
+        })
     end
     return record
 end
@@ -157,27 +191,10 @@ end
 function History.FromClient(round, ctx)
     ctx = ctx or {}
     local infoOf = ctx.infoOf or function() return nil end
-    local record = {
-        roundId = round.id,
-        recordedAsHost = false,
-        timestamp = round.openedAt or ctx.now,
-        closedAt = round.closedAt or ctx.now,
-        zone = ctx.zone,
-        source = ctx.source,
-        host = round.host,
-        campaignId = round.campaignId,
-        campaignLabel = round.campaignLabel or ctx.campaignLabel,
-        settings = {
-            tierCount = round.tierCount,
-            lootMode = round.lootMode or C.LOOT_MODE.ROLL,
-        },
-        priorityAtOpen = copyOrder(round.priorityAtOpen),
-        raid = Util.copy(ctx.raid or {}),
-        outcome = outcomeOf(round),
-        abortReason = round.abortReason,
-        simulated = ctx.simulated or nil,
-        items = {},
-    }
+    local record = recordHeader(round, ctx, false, {
+        tierCount = round.tierCount,
+        lootMode = round.lootMode or C.LOOT_MODE.ROLL,
+    })
 
     -- Owners come from STATE; ROLLS does not carry them.
     local owners = {}
@@ -186,32 +203,24 @@ function History.FromClient(round, ctx)
     end
 
     for i, item in ipairs(round.items) do
-        local itemLevel, quality, equipLoc = itemFields(infoOf(item.itemString))
         local entries = {}
-        local sawRolls = false
         for _, r in ipairs(round.rolls or {}) do
             if r.itemIdx == item.idx then
-                sawRolls = true
                 local status = r.status or C.ROLL_STATUS.ROLLED
-                entries[#entries + 1] = {
+                entries[#entries + 1] = entryRecord({
                     char = r.char, owner = owners[r.char:lower()], tier = r.tier,
-                    listIdx = r.listIdx or 0, star = false, override = false,
-                    rolled = status == C.ROLL_STATUS.ROLLED, roll = r.roll or 0,
-                    rerolled = Util.copy(r.rerolled or {}),
+                    listIdx = r.listIdx,
+                    rolled = status == C.ROLL_STATUS.ROLLED, roll = r.roll,
+                    rerolled = r.rerolled,
                     withdrawn = status == C.ROLL_STATUS.WITHDRAWN,
                     reason = status == C.ROLL_STATUS.NOT_CONSULTED and C.NOT_ROLLED.NOT_CONSULTED
                         or status == C.ROLL_STATUS.WITHDRAWN and C.NOT_ROLLED.WITHDRAWN or nil,
-                }
+                })
             end
         end
-        if not sawRolls then
-            for _, e in ipairs(round.entries and round.entries[item.idx] or {}) do
-                entries[#entries + 1] = {
-                    char = e.char, owner = e.owner, tier = e.tier, listIdx = 0,
-                    star = false, override = false, rolled = false, roll = 0,
-                    rerolled = {}, withdrawn = false,
-                }
-            end
+        if #entries == 0 then
+            -- No ROLLS for this item: aborted, or the RESULT arrived without them.
+            entries = unrolledEntries(round.entries and round.entries[item.idx], false)
         end
 
         local awards, unclaimed, degraded = {}, false, false
@@ -221,28 +230,19 @@ function History.FromClient(round, ctx)
                     unclaimed = true
                 else
                     if r.outcome == C.OUTCOME.DEGRADED then degraded = true end
-                    local listIdx = 0
-                    for _, e in ipairs(entries) do
-                        if e.char == r.winner then listIdx = e.listIdx end
-                    end
                     awards[#awards + 1] = {
                         copy = #awards + 1, char = r.winner, owner = owners[(r.winner or ""):lower()],
-                        tier = r.tier, roll = r.roll or 0, listIdx = listIdx,
+                        tier = r.tier, roll = r.roll or 0,
+                        listIdx = ns.Resolve.listIdxOf(entries, r.winner) or 0,
                     }
                 end
             end
         end
 
-        record.items[i] = {
-            itemIdx = item.idx,
-            itemString = item.itemString,
-            count = item.count or 1,
-            unclaimed = unclaimed,
-            degraded = degraded,
-            itemLevel = itemLevel, quality = quality, equipLoc = equipLoc,
-            entries = entries,
-            awards = awards,
-        }
+        record.items[i] = itemRecord(item, infoOf(item.itemString), {
+            unclaimed = unclaimed, degraded = degraded,
+            entries = entries, awards = awards,
+        })
     end
     return record
 end
@@ -322,6 +322,41 @@ end
 
 local function lower(s) return type(s) == "string" and s:lower() or "" end
 
+--- The record-level tests: simulation, date range and campaign.
+local function recordInScope(r, filter)
+    if r.simulated and not filter.includeSimulated then return false end
+    if filter.since and (r.timestamp or 0) < filter.since then return false end
+    if filter.until_ and (r.timestamp or 0) > filter.until_ then return false end
+    -- The browser defaults to the active campaign, with an All campaigns toggle
+    -- (spec 012 section 13). A record written before campaigns existed has no id
+    -- and only shows under All.
+    if filter.campaignId and r.campaignId ~= filter.campaignId then return false end
+    return true
+end
+
+--- Every lowercased character and owner a record names, across entries and awards.
+local function namesIn(r)
+    local chars, owners = {}, {}
+    for _, it in ipairs(r.items) do
+        for _, list in ipairs({ it.entries, it.awards }) do
+            for _, e in ipairs(list) do
+                chars[lower(e.char)] = true
+                owners[lower(e.owner)] = true
+            end
+        end
+    end
+    return chars, owners
+end
+
+--- Does any item's label or item string contain `item`?
+local function namesItem(r, item, labelOf)
+    for _, it in ipairs(r.items) do
+        local label = lower(labelOf(it.itemString)) .. " " .. lower(it.itemString)
+        if label:find(item, 1, true) then return true end
+    end
+    return false
+end
+
 --- Records matching a filter, newest first.
 -- @param filter { char, owner, item, since, until_, roster (set of lower names),
 --                 includeSimulated, labelOf = function(itemString) -> string }
@@ -332,36 +367,20 @@ function History.Filter(records, filter)
     local out = {}
 
     for _, r in ipairs(records) do
-        local ok = true
-        if r.simulated and not filter.includeSimulated then ok = false end
-        if ok and filter.since and (r.timestamp or 0) < filter.since then ok = false end
-        if ok and filter.until_ and (r.timestamp or 0) > filter.until_ then ok = false end
-        -- The browser defaults to the active campaign, with an All campaigns toggle
-        -- (spec 012 section 13). A record written before campaigns existed has no id
-        -- and only shows under All.
-        if ok and filter.campaignId and r.campaignId ~= filter.campaignId then ok = false end
-
-        if ok and (char ~= "" or owner ~= "" or filter.roster or item ~= "") then
-            local charHit, ownerHit, rosterHit, itemHit = char == "", owner == "",
-                filter.roster == nil, item == ""
-            for _, it in ipairs(r.items) do
-                if not itemHit then
-                    local label = lower(labelOf(it.itemString)) .. " " .. lower(it.itemString)
-                    if label:find(item, 1, true) then itemHit = true end
+        local ok = recordInScope(r, filter)
+        if ok and (char ~= "" or owner ~= "" or filter.roster) then
+            local chars, owners = namesIn(r)
+            if char ~= "" and not chars[char] then ok = false end
+            if owner ~= "" and not owners[owner] then ok = false end
+            if ok and filter.roster then
+                local hit = false
+                for name in pairs(chars) do
+                    if filter.roster[name] then hit = true break end
                 end
-                for _, e in ipairs(it.entries) do
-                    if lower(e.char) == char then charHit = true end
-                    if lower(e.owner) == owner then ownerHit = true end
-                    if filter.roster and filter.roster[lower(e.char)] then rosterHit = true end
-                end
-                for _, a in ipairs(it.awards) do
-                    if lower(a.char) == char then charHit = true end
-                    if lower(a.owner) == owner then ownerHit = true end
-                    if filter.roster and filter.roster[lower(a.char)] then rosterHit = true end
-                end
+                ok = hit
             end
-            ok = charHit and ownerHit and rosterHit and itemHit
         end
+        if ok and item ~= "" then ok = namesItem(r, item, labelOf) end
         if ok then out[#out + 1] = r end
     end
 

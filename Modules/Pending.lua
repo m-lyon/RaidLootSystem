@@ -159,8 +159,7 @@ local tickAccumulator = 0
 local function DB() return ns.Database.Pending() end
 
 local function labelFor(itemString)
-    local info = itemString and ns.ItemInfo.Get(itemString) or nil
-    return (info and (info.link or info.name)) or itemString or "an item"
+    return ns.ItemInfo.Label(itemString, "an item")
 end
 
 local function fireChanged()

@@ -310,6 +310,24 @@ function Roster.ImportLosses(campaigns, chars, activeId)
     return labels
 end
 
+--- What stands when a locked campaign refuses a publish (spec 014): the stored
+-- ordering, and a character table that still describes it. The sender's new table may
+-- no longer name a character the stored ordering ranks, and a row with no entry loses
+-- its class colour, so the stored entry is kept for exactly those names.
+-- @param stored     the ordering in force
+-- @param chars      the character table the refused publish carried
+-- @param previous   the character table stored with `stored`
+-- @return order, chars  fresh copies; neither argument is modified
+function Roster.KeepLockedOrder(stored, chars, previous)
+    local order = Util.copy(stored or {})
+    local kept = Util.copy(chars or {})
+    previous = previous or {}
+    for _, name in ipairs(order) do
+        if kept[name] == nil and previous[name] then kept[name] = Util.copy(previous[name]) end
+    end
+    return order, kept
+end
+
 --------------------------------------------------------------------------------
 -- WoW-facing state. Nothing below here runs at file scope.
 --------------------------------------------------------------------------------
@@ -895,6 +913,46 @@ function Roster.RequestAll()
     ns.Comms.Send(C.OPS.RREQ, "")
 end
 
+--- A publish from a sender no stored record matches, into a locked campaign (spec
+-- 014). No record matches the sender, but one may still rank these characters. That
+-- is either a member publishing from an alt their stored ordering does not name or a
+-- stranger wrongly ranking someone's characters, and nothing here can tell the two
+-- apart. So the publish is not refused: it is recorded, and the stored ordering is
+-- kept in the claim index beside it, so every shared character reads as contested --
+-- loud for either case, instead of silently dropping a roster.
+-- @return the players whose stored ordering the publish would re-rank
+local function lockedOverlaps(campaignId, campaign, sender, order)
+    local players = {}
+    for _, other in ipairs(ns.Campaign.OverlappingOrders(campaign, sender, order)) do
+        local ok, why = Roster.LockedChangeAllowed(other.order, order, campaign.host.tierCount)
+        if not ok then
+            players[#players + 1] = other.player
+            ns.WarnOnce(warnedLocked, sender, string.format("%s published a hierarchy that "
+                .. 'ranks %s\'s characters, but "%s" is locked (%s); the characters they '
+                .. "share are contested.", tostring(sender), other.player,
+                ns.Campaign.LabelFor(campaignId), tostring(why)))
+        end
+    end
+    return players
+end
+
+--- A publish that re-ranks the sender's own stored ordering in a locked campaign is
+-- refused: the stored ordering stands, and `msg` is rewritten to it (spec 014).
+-- @return true when the change was refused
+local function refuseLockedChange(campaign, sender, msg, stored)
+    local ok, why = Roster.LockedChangeAllowed(stored, msg.order, campaign.host.tierCount)
+    if ok then return false end
+    -- Once per sender per login session: a diverged client republishes on every
+    -- roster event, and an unbounded repeat buries the raid's chat (the same rule
+    -- spec 002 section 11 uses).
+    ns.WarnOnce(warnedLocked, sender, string.format("%s changed their hierarchy but "
+        .. "\"%s\" is locked (%s); their ranking is unchanged.", tostring(sender),
+        ns.Campaign.LabelFor(msg.campaignId), tostring(why)))
+    msg.order, msg.chars = Roster.KeepLockedOrder(stored, msg.chars,
+        ns.Campaign.StoredChars(msg.campaignId, sender, stored))
+    return true
+end
+
 local function onRoster(sender, body)
     local msg, why = Serialize.decodeRosterMsg(body)
     if not msg then
@@ -913,6 +971,8 @@ local function onRoster(sender, body)
             .. "are not in", tostring(sender), tostring(msg.campaignId)))
         return
     end
+    local campaign = ns.Campaign.Get(msg.campaignId)
+
     -- The lock is enforced here as well as in the sender's own editor (spec 014).
     -- A member running a build that predates the lock, or one who has edited the
     -- saved variables directly, would otherwise walk straight past it -- and this is
@@ -921,58 +981,12 @@ local function onRoster(sender, body)
     -- rather than dropped quietly.
     local stored = ns.Campaign.StoredOrder(msg.campaignId, sender, msg.order)
     local refused = false
-    local lockedOverlaps = {}
-    if not stored and ns.Campaign.HierarchyLocked(msg.campaignId) then
-        -- No record matches the sender, but one may still rank these characters. That
-        -- is either a member publishing from an alt their stored ordering does not name
-        -- or a stranger wrongly ranking someone's characters, and nothing here can tell
-        -- the two apart. So the publish is not refused: it is recorded, and the stored
-        -- ordering is kept in the claim index beside it, so every shared character reads
-        -- as contested -- loud for either case, instead of silently dropping a roster.
-        local overlaps = ns.Campaign.OverlappingOrders(ns.Campaign.Get(msg.campaignId),
-            sender, msg.order)
-        for _, other in ipairs(overlaps) do
-            local ok, why = Roster.LockedChangeAllowed(other.order, msg.order,
-                ns.Campaign.Get(msg.campaignId).host.tierCount)
-            if not ok then
-                lockedOverlaps[#lockedOverlaps + 1] = other.player
-                local line = string.format("%s published a hierarchy that ranks %s's "
-                    .. 'characters, but "%s" is locked (%s); the characters they share '
-                    .. "are contested.", tostring(sender), other.player,
-                    ns.Campaign.LabelFor(msg.campaignId), tostring(why))
-                if warnedLocked[sender] then ns.Debug(line) else
-                    warnedLocked[sender] = true
-                    ns.Print(line)
-                end
-            end
-        end
-    end
-    if stored and ns.Campaign.HierarchyLocked(msg.campaignId) then
-        local ok, why = Roster.LockedChangeAllowed(stored, msg.order,
-            ns.Campaign.Get(msg.campaignId).host.tierCount)
-        if not ok then
-            -- Once per sender per login session: a diverged client republishes on
-            -- every roster event, and an unbounded repeat buries the raid's chat
-            -- (the same rule spec 002 section 11 uses).
-            local line = string.format("%s changed their hierarchy but \"%s\" is locked (%s); "
-                .. "their ranking is unchanged.", tostring(sender),
-                ns.Campaign.LabelFor(msg.campaignId), tostring(why))
-            if warnedLocked[sender] then ns.Debug(line) else
-                warnedLocked[sender] = true
-                ns.Print(line)
-            end
-            msg.order = Util.copy(stored)
-            -- The stored ordering names characters the sender's new table may no longer
-            -- describe, and a row with no entry loses its class colour. Keep the stored
-            -- entries for exactly those names.
-            local previous = ns.Campaign.StoredChars(msg.campaignId, sender, stored) or {}
-            msg.chars = Util.copy(msg.chars or {})
-            for _, name in ipairs(msg.order) do
-                if msg.chars[name] == nil and previous[name] then
-                    msg.chars[name] = Util.copy(previous[name])
-                end
-            end
-            refused = true
+    local overlaps = {}
+    if ns.Campaign.HierarchyLocked(msg.campaignId) then
+        if stored then
+            refused = refuseLockedChange(campaign, sender, msg, stored)
+        else
+            overlaps = lockedOverlaps(msg.campaignId, campaign, sender, msg.order)
         end
     end
 
@@ -992,8 +1006,7 @@ local function onRoster(sender, body)
     -- groups read as a conflict.
     if msg.campaignId ~= ns.Campaign.ActiveId() then return end
     Roster.published[sender] = { order = msg.order, chars = msg.chars }
-    local campaign = ns.Campaign.Get(msg.campaignId)
-    for _, player in ipairs(lockedOverlaps) do
+    for _, player in ipairs(overlaps) do
         local record = campaign.members and campaign.members[player]
         if record and not Roster.published[player] then
             Roster.published[player] = { order = Util.copy(record.order or {}),
@@ -1002,7 +1015,6 @@ local function onRoster(sender, body)
     end
     rebuildClaims()
 end
-
 local function onRosterRequest(sender)
     if ns.Comms.IsSelf(sender) then return end
     Roster.Publish()
