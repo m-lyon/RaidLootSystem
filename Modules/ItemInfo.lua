@@ -236,9 +236,6 @@ function ItemInfo.Get(link)
     })
 end
 
---- Look an item up, retrying while the client fetches it (section 4, "uncached items").
--- 3.3.5a has no GET_ITEM_INFO_RECEIVED, so this is a ticker and not an event.
--- `callback(info)` is called exactly once, immediately when the item is already cached.
 --- What to call an item on screen: its link, else its name, else the item string,
 -- else `fallback`. Local text only -- a line bound for a group channel still leaves
 -- through Announce, whose enqueue decides whether a link may stay (spec 015 section 4).
@@ -247,6 +244,9 @@ function ItemInfo.Label(itemString, fallback)
     return (info and (info.link or info.name)) or itemString or fallback
 end
 
+--- Look an item up, retrying while the client fetches it (section 4, "uncached items").
+-- 3.3.5a has no GET_ITEM_INFO_RECEIVED, so this is a ticker and not an event.
+-- `callback(info)` is called exactly once, immediately when the item is already cached.
 function ItemInfo.Request(link, callback)
     local info = ItemInfo.Get(link)
     if not info.unresolved or not info.itemString then

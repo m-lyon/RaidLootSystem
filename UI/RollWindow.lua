@@ -360,11 +360,6 @@ function RollWindow.ResultTable(itemIdx, results, rolls, owners, isSK)
     return out
 end
 
---- The SK text for a winner: its rank in the tier, and that it suicides.
---
--- Not "-> bottom": a suicide lands on the last present index, which is not the
--- last row when the tail is absent (spec 010 section 6), and the list index that
--- would qualify it is not shown to players.
 --- A grid cell's tooltip: title, body and the click hint, from its CellState.
 -- @return title, body, hint (hint may be nil)
 function RollWindow.CellTooltip(state, charName, label)
@@ -397,6 +392,11 @@ function RollWindow.DeliveryView(delivery, retryable)
              button = retryable and (delivery == D.AWAITING and "Award" or "Retry") or nil }
 end
 
+--- The SK text for a winner: its rank in the tier, and that it suicides.
+--
+-- Not "-> bottom": a suicide lands on the last present index, which is not the
+-- last row when the tail is absent (spec 010 section 6), and the list index that
+-- would qualify it is not shown to players.
 function RollWindow.SuicideText(tierRank)
     return "#" .. tostring(tierRank or "?") .. " -> suicide"
 end

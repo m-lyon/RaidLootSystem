@@ -206,13 +206,6 @@ function Announce.Format(kind, args)
     return format(args or {})
 end
 
---- The lines a resolved round produces at a given verbosity, in the order they are
--- said. Pure, so the exact chat output of a round is fixture-testable.
---
--- @param items     the round items, with `label` already resolved by the caller
--- @param results   Core/Resolve results, parallel to items
--- @param opts      { verbosity, isSK, tierCount }
--- @return array of strings (without the prefix)
 --- Tie groups: entries sharing an original roll that re-rolled, in record order.
 -- @return { { roll, names, rerolls = { { char, roll } } } }
 local function tieGroups(record)
@@ -232,6 +225,13 @@ local function tieGroups(record)
     return order
 end
 
+--- The lines a resolved round produces at a given verbosity, in the order they are
+-- said. Pure, so the exact chat output of a round is fixture-testable.
+--
+-- @param items     the round items, with `label` already resolved by the caller
+-- @param results   Core/Resolve results, parallel to items
+-- @param opts      { verbosity, isSK, tierCount }
+-- @return array of strings (without the prefix)
 function Announce.RoundLines(items, results, opts)
     opts = opts or {}
     local Tiers = ns.Tiers
