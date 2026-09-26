@@ -64,7 +64,7 @@ Data.ARMOR_SUBCLASSES = {
 }
 
 -- Shields and relics are armour-class subclasses, but the permission for them lives in
--- Data.WEAPONS rather than Data.ARMOR -- they are not an armour TYPE a class wears, they
+-- Data.WEAPONS rather than Data.ARMOR_RANK -- they are not an armour TYPE a class wears, they
 -- are a slot a class either has or has not. ItemInfo reports them as `weaponSubclass`
 -- so Core/Eligibility.lua check 7 picks them up; check 6 would never see them anyway,
 -- because INVTYPE_SHIELD and INVTYPE_RELIC are not armour slots.

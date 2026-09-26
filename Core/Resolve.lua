@@ -124,6 +124,19 @@ local function resolveBoundaryTies(bucket, k, rng, maxReroll, rollMin, rollMax)
     end
 end
 
+--- A winner's list index, read off an item result's record: the one lookup the
+-- announcement, the award, and both history builders make. nil when the record does
+-- not name the character, or names it with no index (a roll round); each caller
+-- chooses its own default.
+-- @param record  result.record, or any array of { char, listIdx }
+function Resolve.listIdxOf(record, char)
+    local listIdx
+    for _, e in ipairs(record or {}) do
+        if e.char == char then listIdx = e.listIdx end
+    end
+    return listIdx
+end
+
 --------------------------------------------------------------------------------
 -- One item (spec 003 section 5)
 --------------------------------------------------------------------------------
@@ -256,6 +269,9 @@ end
 -- A round (spec 003 section 7, spec 010 section 7)
 --------------------------------------------------------------------------------
 
+-- Deliberately stricter than Util.nameKey: every char reaching resolution is a
+-- string, and a nil here is a bug that should stop the round loudly rather than
+-- quietly match nothing.
 local function keyOf(name) return name:lower() end
 
 --- Resolve a whole round.

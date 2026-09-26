@@ -9,7 +9,13 @@ local ns = ...
 local function run(input, ns)
     local RW = ns.RollWindow
 
-    if input.op == "cell" then
+    if input.op == "tooltip" then
+        local title, body, hint = RW.CellTooltip(input.state, input.char, input.label)
+        return { title = title, body = body or "", hint = hint or "" }
+    elseif input.op == "delivery" then
+        local v = RW.DeliveryView(input.delivery, input.retryable)
+        return { colour = v.colour, action = v.action or "", button = v.button or "" }
+    elseif input.op == "cell" then
         local state = RW.CellState(input.info, input.char, input.tick, input.config)
         return {
             enterable = state.enterable, ticked = state.ticked, override = state.override,
@@ -33,6 +39,24 @@ local function run(input, ns)
     elseif input.op == "outstanding" then
         local inCount, total, names = RW.Outstanding(input.expected, input.submitted)
         return { inCount = inCount, total = total, outstanding = table.concat(names, ",") }
+
+    elseif input.op == "setup" then
+        return RW.SetupActive(input.isHost, input.requested, input.roundState,
+            input.outstanding)
+
+    elseif input.op == "setupawards" then
+        local blocking = RW.SetupBlockingAwards(input.records, function(record)
+            return input.slotHolds
+        end)
+        return RW.SetupActive(true, true, "CLOSED", blocking)
+
+    elseif input.op == "lootdone" then
+        local ctx = input.ctx
+        ctx.sourceOpen = function(source) return source == input.openSource end
+        return RW.LootDone(ctx)
+
+    elseif input.op == "autoclose" then
+        return RW.CanAutoClose(input.round, input.awards, input.pending)
 
     elseif input.op == "entrytiers" then
         local out = {}
@@ -532,5 +556,203 @@ return {
             input = { op = "median", position = 12, present = { 12, 3, 5, 20, 9 } },
             expected = false,
         },
+
+        ----------------------------------------------------------------------
+        -- The host's setup state (section 2)
+        ----------------------------------------------------------------------
+        { name = "a host with candidates and no round sees the setup list",
+          input = { op = "setup", isHost = true, requested = true },
+          expected = true },
+        { name = "a client never sees it, whatever the corpse holds",
+          input = { op = "setup", isHost = false, requested = true },
+          expected = false },
+        { name = "an open round owns the window instead",
+          input = { op = "setup", isHost = true, requested = true,
+                    roundState = "OPEN" },
+          expected = false },
+        { name = "so does a round still being resolved",
+          input = { op = "setup", isHost = true, requested = true,
+                    roundState = "RESOLVING" },
+          expected = false },
+        { name = "a closed round does not: the next corpse is the host's business",
+          input = { op = "setup", isHost = true, requested = true,
+                    roundState = "CLOSED" },
+          expected = true },
+        { name = "a closed round with an award still to make keeps its results in the window",
+          input = { op = "setup", isHost = true, requested = true,
+                    roundState = "CLOSED", outstanding = 1 },
+          expected = false },
+        { name = "a closed round whose only outstanding award is LOST does not block setup",
+          input = { op = "setupawards", slotHolds = true,
+                    records = { { delivery = "LOST", lootSlot = 1 } } },
+          expected = true },
+        { name = "a retryable FAILED award still on the open corpse keeps the results up",
+          input = { op = "setupawards", slotHolds = true,
+                    records = { { delivery = "FAILED", lootSlot = 1 } } },
+          expected = false },
+        { name = "an expired-trade FAILED award does not: it cannot be retried",
+          input = { op = "setupawards", slotHolds = true,
+                    records = { { delivery = "FAILED", failure = "TRADE_EXPIRED",
+                                  lootSlot = 1 } } },
+          expected = true },
+        { name = "an AWAITING award whose slot is no longer on the open corpse does not either",
+          input = { op = "setupawards", slotHolds = false,
+                    records = { { delivery = "AWAITING", lootSlot = 1 } } },
+          expected = true },
+        { name = "an AWAITING award still on the open corpse keeps the results up",
+          input = { op = "setupawards", slotHolds = true,
+                    records = { { delivery = "AWAITING", lootSlot = 1 } } },
+          expected = false },
+        { name = "an item-link round's slotless AWAITING award keeps the results up too",
+          input = { op = "setupawards", slotHolds = false,
+                    records = { { delivery = "AWAITING" } } },
+          expected = false },
+        { name = "a slotless LOST award does not block setup",
+          input = { op = "setupawards", slotHolds = false,
+                    records = { { delivery = "LOST" } } },
+          expected = true },
+        ----------------------------------------------------------------------
+        -- Closing the host's loot frame once the corpse is owed nothing (section 2)
+        ----------------------------------------------------------------------
+        { name = "a rolled slot nobody won keeps the loot frame open",
+          input = { op = "lootdone", openSource = "A", ctx = {
+                    pending = { r1 = "A" }, awards = { r1 = {} }, outstanding = {},
+                    skipped = { { reason = "ALREADY_ROLLED", lootSlot = 2 } } } },
+          expected = {} },
+        { name = "a rolled slot that was awarded does not",
+          input = { op = "lootdone", openSource = "A", ctx = {
+                    pending = { r1 = "A" }, outstanding = {},
+                    awards = { r1 = { [1] = { { lootSlot = 2, delivery = "DELIVERED" } } } },
+                    skipped = { { reason = "ALREADY_ROLLED", lootSlot = 2 } } } },
+          expected = { "r1" } },
+        { name = "a hand-addable leftover keeps the loot frame open",
+          input = { op = "lootdone", openSource = "A", ctx = {
+                    pending = { r1 = "A" }, awards = {}, outstanding = {}, threshold = 2,
+                    skipped = { { reason = "NOT_EQUIPPABLE", lootSlot = 3 } } } },
+          expected = {} },
+        { name = "a drop under the master-loot threshold does not",
+          input = { op = "lootdone", openSource = "A", ctx = {
+                    pending = { r1 = "A" }, awards = {}, outstanding = {}, threshold = 2,
+                    skipped = { { reason = "BELOW_QUALITY", quality = 1, lootSlot = 3 } } } },
+          expected = { "r1" } },
+        { name = "an unticked candidate keeps the loot frame open",
+          input = { op = "lootdone", openSource = "A", ctx = {
+                    pending = { r1 = "A" }, awards = {}, outstanding = {}, skipped = {},
+                    candidates = { { lootSlot = 1 } } } },
+          expected = {} },
+        { name = "an unticked item-link candidate does not keep the loot frame open",
+          input = { op = "lootdone", openSource = "A", ctx = {
+                    pending = { r1 = "A" }, awards = {}, outstanding = {}, skipped = {},
+                    candidates = { { lootSlots = {} } } } },
+          expected = { "r1" } },
+        { name = "A, B, A: round A is not done while corpse B is open",
+          input = { op = "lootdone", openSource = "B", ctx = {
+                    pending = { r1 = "A" }, awards = {}, outstanding = {}, skipped = {} } },
+          expected = {} },
+        { name = "A, B, A: back on corpse A with nothing owed, round A is done",
+          input = { op = "lootdone", openSource = "A", ctx = {
+                    pending = { r1 = "A" }, awards = {}, outstanding = {}, skipped = {} } },
+          expected = { "r1" } },
+        { name = "an AWAITING award on the corpse keeps the loot frame open",
+          input = { op = "lootdone", openSource = "A", ctx = {
+                    pending = { r1 = "A" }, awards = {}, skipped = {},
+                    outstanding = { { roundId = "r1", lootSlot = 1, delivery = "AWAITING" } } } },
+          expected = {} },
+        { name = "a round owing only a LOST award is done",
+          input = { op = "lootdone", openSource = "A", ctx = {
+                    pending = { r1 = "A" }, awards = {}, skipped = {},
+                    outstanding = { { roundId = "r1", lootSlot = 1, delivery = "LOST" } } } },
+          expected = { "r1" } },
+        { name = "a round owing only an expired-trade FAILED award is done",
+          input = { op = "lootdone", openSource = "A", ctx = {
+                    pending = { r1 = "A" }, awards = {}, skipped = {},
+                    outstanding = { { roundId = "r1", lootSlot = 1, delivery = "FAILED",
+                                      failure = "TRADE_EXPIRED" } } } },
+          expected = { "r1" } },
+
+        { name = "a host who has not opened a corpse is not dragged into setup",
+          input = { op = "setup", isHost = true, requested = false },
+          expected = false },
+
+        ----------------------------------------------------------------------
+        -- Auto-closing a finished round (section 2)
+        ----------------------------------------------------------------------
+        { name = "every item decided and nothing outstanding closes the window",
+          input = { op = "autoclose",
+                    round = { state = "CLOSED", items = { { idx = 1 }, { idx = 2 } },
+                              results = { { itemIdx = 1 }, { itemIdx = 2 } } },
+                    awards = {}, pending = {} },
+          expected = true },
+        { name = "an item with no result yet keeps it open",
+          input = { op = "autoclose",
+                    round = { state = "CLOSED", items = { { idx = 1 }, { idx = 2 } },
+                              results = { { itemIdx = 1 } } },
+                    awards = {}, pending = {} },
+          expected = false },
+        { name = "an award still to be made keeps it open: that is where the button is",
+          input = { op = "autoclose",
+                    round = { state = "CLOSED", items = { { idx = 1 } },
+                              results = { { itemIdx = 1 } } },
+                    awards = { { itemIdx = 1, delivery = "AWAITING" } }, pending = {} },
+          expected = false },
+        { name = "a LOST award does not hold it open: there is nothing left to make",
+          input = { op = "autoclose",
+                    round = { state = "CLOSED", items = { { idx = 1 } },
+                              results = { { itemIdx = 1 } } },
+                    awards = { { itemIdx = 1, delivery = "LOST" } }, pending = {} },
+          expected = true },
+        { name = "a trade the host still owes keeps it open too",
+          input = { op = "autoclose",
+                    round = { state = "CLOSED", items = { { idx = 1 } },
+                              results = { { itemIdx = 1 } } },
+                    awards = {}, pending = { { winner = "Bonk" } } },
+          expected = false },
+        { name = "an open round never auto-closes",
+          input = { op = "autoclose",
+                    round = { state = "OPEN", items = { { idx = 1 } },
+                              results = { { itemIdx = 1 } } },
+                    awards = {}, pending = {} },
+          expected = false },
+        { name = "an aborted round never auto-closes: it lingers and says why",
+          input = { op = "autoclose",
+                    round = { state = "ABORTED", items = { { idx = 1 } } },
+                    awards = {}, pending = {} },
+          expected = false },
+        { name = "no round at all is not a reason to close",
+          input = { op = "autoclose", awards = {}, pending = {} },
+          expected = false },
+        { name = "an enterable, unticked cell says left-click to enter",
+          input = { op = "tooltip", char = "Bonk", label = "Sword",
+                    state = { enterable = true, ticked = false, text = "Plate" } },
+          expected = { title = "Bonk for Sword", body = "Plate", hint = "Left-click to enter." } },
+        { name = "a ticked cell says left-click to withdraw",
+          input = { op = "tooltip", char = "Bonk", label = "Sword",
+                    state = { enterable = true, ticked = true, text = "Plate" } },
+          expected = { title = "Bonk for Sword", body = "Plate",
+                       hint = "Left-click to withdraw." } },
+        { name = "a filtered cell that can be overridden says how",
+          input = { op = "tooltip", char = "Bonk", label = "Sword",
+                    state = { enterable = false, overridable = true, text = "Wrong armour" } },
+          expected = { title = "Bonk for Sword", body = "|cffff6060Wrong armour|r",
+                       hint = "Right-click to override the filter for this entry." } },
+        { name = "a cell that cannot be entered or overridden has no hint",
+          input = { op = "tooltip", char = "Bonk", label = "Sword",
+                    state = { enterable = false } },
+          expected = { title = "Bonk for Sword", body = "|cffff6060Not enterable|r", hint = "" } },
+        { name = "an awaiting award offers Award",
+          input = { op = "delivery", delivery = "AWAITING", retryable = true },
+          expected = { colour = "|cffaaaaaa", action = "award", button = "Award" } },
+        { name = "a retryable failure offers Retry",
+          input = { op = "delivery", delivery = "FAILED", retryable = true },
+          expected = { colour = "|cffff6060", action = "award", button = "Retry" } },
+        { name = "an expired trade offers nothing to press",
+          input = { op = "delivery", delivery = "FAILED", retryable = false },
+          expected = { colour = "|cffff6060", action = "award", button = "" } },
+        { name = "a pending item offers Deliver",
+          input = { op = "delivery", delivery = "PENDING", retryable = true },
+          expected = { colour = "|cffffaa00", action = "deliver", button = "Deliver" } },
+        { name = "a delivered item offers nothing",
+          input = { op = "delivery", delivery = "DELIVERED", retryable = false },
+          expected = { colour = "|cff66ff66", action = "", button = "" } },
     },
 }

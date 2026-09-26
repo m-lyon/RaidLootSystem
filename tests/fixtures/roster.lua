@@ -12,6 +12,9 @@ local function run(input, ns)
         local ok, why = Roster.LockedChangeAllowed(input.stored, input.incoming, input.tierCount)
         return { ok = ok == true, why = why or "" }
 
+    elseif input.kind == "keepLocked" then
+        local order, chars = Roster.KeepLockedOrder(input.stored, input.chars, input.previous)
+        return { order = order, chars = chars, argsUntouched = input.chars.Old == nil }
     elseif input.kind == "lockedAppend" then
         local ok, why = Roster.LockedAppendAllowed(input.stored, input.name, input.tierCount)
         return { ok = ok == true, why = why or "" }
@@ -466,6 +469,18 @@ return {
             input = { kind = "lockedAppend", stored = { "Matt", "Mattbot", "Mattpal" },
                       name = "Mattalt", tierCount = 3 },
             expected = { ok = true, why = "" },
+        },
+        {
+            -- A refused publish keeps the stored ordering, and the stored entry for a
+            -- character the new table dropped, so its row keeps its class colour.
+            name = "a refused locked publish keeps the stored order and its characters",
+            input = { kind = "keepLocked", stored = { "Matt", "Old" },
+                      chars = { Matt = { class = "MAGE" }, New = { class = "ROGUE" } },
+                      previous = { Matt = { class = "PRIEST" }, Old = { class = "WARRIOR" } } },
+            expected = { order = { "Matt", "Old" },
+                         chars = { Matt = { class = "MAGE" }, New = { class = "ROGUE" },
+                                   Old = { class = "WARRIOR" } },
+                         argsUntouched = true },
         },
     },
 }

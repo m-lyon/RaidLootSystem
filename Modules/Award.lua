@@ -39,10 +39,7 @@ function Award.Build(round)
         local list = {}
         if not result.unclaimed then
             for copy, a in ipairs(result.awards) do
-                local listIdx
-                for _, e in ipairs(result.record or {}) do
-                    if e.char == a.char then listIdx = e.listIdx end
-                end
+                local listIdx = ns.Resolve.listIdxOf(result.record, a.char)
                 list[copy] = {
                     roundId = round.id, campaignId = round.campaignId,
                     itemIdx = result.itemIdx, copy = copy,
@@ -240,8 +237,7 @@ local function fireChanged(record)
 end
 
 local function labelFor(record)
-    local info = record.itemString and ns.ItemInfo.Get(record.itemString) or nil
-    return (info and (info.link or info.name)) or record.itemString or "the item"
+    return ns.ItemInfo.Label(record.itemString, "the item")
 end
 
 --------------------------------------------------------------------------------

@@ -26,17 +26,23 @@ local pulseElapsed = 0
 -- results (005 section 2), and ctrl-click reaches it whenever it has something to
 -- show. Nothing else moves: shift is the hierarchy and right is a republish, exactly
 -- as before.
+-- One exception, and it is the common case on a raid night: a host standing over a
+-- corpse with the candidate list up is mid-loot-journey, and the window in front of
+-- them is the one they want back. The host panel is then the ctrl chord.
 -- @return "HOST", "ROLL" or "HIERARCHY"
-function Minimap.PrimaryTarget(isHost, hasContent)
+function Minimap.PrimaryTarget(isHost, hasContent, inSetup)
+    if isHost and inSetup then return "ROLL" end
     if isHost then return "HOST" end
     if hasContent then return "ROLL" end
     return "HIERARCHY"
 end
 
 --- Which window a ctrl-left-click opens, or nil when the chord does nothing.
--- It exists for the one window the host's primary click displaces, so it is offered
--- only when there is a roll window worth opening and something else has the click.
-function Minimap.CtrlTarget(isHost, hasContent)
+-- It exists for the one window the primary click displaces, so it is offered only
+-- when the displaced window is worth opening: the roll window for a host between
+-- corpses, the host panel for a host who is looking at one.
+function Minimap.CtrlTarget(isHost, hasContent, inSetup)
+    if isHost and inSetup then return "HOST" end
     if isHost and hasContent then return "ROLL" end
     return nil
 end
@@ -91,11 +97,12 @@ function Minimap.Init()
                 return
             end
             local isHost, hasContent = ns.Round.IsHost(), ns.RollWindow.HasContent()
+            local inSetup = ns.RollWindow.SetupReachable()
             local target
-            if IsControlKeyDown() then target = Minimap.CtrlTarget(isHost, hasContent) end
+            if IsControlKeyDown() then target = Minimap.CtrlTarget(isHost, hasContent, inSetup) end
             -- Ctrl with nothing behind it falls through rather than doing nothing: a
             -- held modifier should never turn the button into a dead click.
-            if not target then target = Minimap.PrimaryTarget(isHost, hasContent) end
+            if not target then target = Minimap.PrimaryTarget(isHost, hasContent, inSetup) end
             if target == "HOST" then
                 ns.HostPanel.Toggle()
             elseif target == "ROLL" then
@@ -107,15 +114,16 @@ function Minimap.Init()
         OnTooltipShow = function(tooltip)
             tooltip:AddLine("Raid Loot System")
             local isHost, hasContent = ns.Round.IsHost(), ns.RollWindow.HasContent()
+            local inSetup = ns.RollWindow.SetupReachable()
             -- Always says what the click will do right now, rather than listing chords
             -- that may not apply: the primary action changes with your role.
-            tooltip:AddLine("Left-click: " .. LABELS[Minimap.PrimaryTarget(isHost, hasContent)],
-                1, 1, 1)
-            local ctrl = Minimap.CtrlTarget(isHost, hasContent)
+            tooltip:AddLine("Left-click: "
+                .. LABELS[Minimap.PrimaryTarget(isHost, hasContent, inSetup)], 1, 1, 1)
+            local ctrl = Minimap.CtrlTarget(isHost, hasContent, inSetup)
             if ctrl then
                 tooltip:AddLine("Ctrl-click: " .. LABELS[ctrl], 1, 1, 1)
             end
-            if Minimap.PrimaryTarget(isHost, hasContent) ~= "HIERARCHY" then
+            if Minimap.PrimaryTarget(isHost, hasContent, inSetup) ~= "HIERARCHY" then
                 tooltip:AddLine("Shift-click: your hierarchy", 1, 1, 1)
             end
             tooltip:AddLine("Right-click: republish your roster", 1, 1, 1)

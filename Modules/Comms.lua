@@ -112,13 +112,10 @@ function Comms.Receive(prefix, message, channel, sender)
     end
 
     if msg.proto ~= C.PROTO then
-        if not warnedSenders[sender] then
-            warnedSenders[sender] = true
-            ns.Print(string.format(
-                "%s is running a different protocol version (%s, this client speaks %d). "
-                .. "One of you needs to update; their messages are being ignored.",
-                tostring(sender), tostring(msg.proto), C.PROTO))
-        end
+        ns.WarnOnce(warnedSenders, sender, string.format(
+            "%s is running a different protocol version (%s, this client speaks %d). "
+            .. "One of you needs to update; their messages are being ignored.",
+            tostring(sender), tostring(msg.proto), C.PROTO))
         return
     end
 

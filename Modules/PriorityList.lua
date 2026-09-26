@@ -768,13 +768,11 @@ local function onSklist(sender, body)
                     msg.version or 0, stored.version or 0))
                 -- Once per campaign per login session: a behind host sends SKLIST on
                 -- every open, award and SYNC answer.
-                if not warnedStale[msg.campaignId] then
-                    warnedStale[msg.campaignId] = true
-                    ns.Print(string.format("the master looter's priority list for \"%s\" is "
-                        .. "older than yours (version %d, you hold %d) and was not taken. They "
-                        .. "are behind; loot should be mastered by someone holding the newer list.",
-                        ns.Campaign.LabelFor(msg.campaignId), msg.version or 0, stored.version or 0))
-                end
+                ns.WarnOnce(warnedStale, msg.campaignId, string.format("the master looter's "
+                    .. "priority list for \"%s\" is older than yours (version %d, you hold %d) "
+                    .. "and was not taken. They are behind; loot should be mastered by someone "
+                    .. "holding the newer list.",
+                    ns.Campaign.LabelFor(msg.campaignId), msg.version or 0, stored.version or 0))
             else
                 requestState(msg, stored, round)
             end
@@ -812,15 +810,12 @@ local function onCstate(sender, body)
     -- host settings come with it (spec 012 section 9). The hierarchy is on the campaign
     -- too, but it is per member -- it orders this member's own characters -- so the
     -- host holds no copy of it to send and this leaves it alone.
-    campaign.host.tierCount = incoming.host.tierCount
-    campaign.host.timerSeconds = incoming.host.timerSeconds
-    campaign.host.qualityThreshold = incoming.host.qualityThreshold
-    campaign.host.lootMode = incoming.host.lootMode
-    if incoming.host.lockHierarchy ~= nil then
-        campaign.host.lockHierarchy = incoming.host.lockHierarchy
+    ns.Campaign.ApplyHostSettings(campaign.host, incoming.host)
+    -- Not a shared setting (it is never broadcast on a change), but CSTATE carries it
+    -- so whoever holds master looter next scans at the campaign's threshold.
+    if incoming.host.qualityThreshold ~= nil then
+        campaign.host.qualityThreshold = incoming.host.qualityThreshold
     end
-    -- One-way, as on CFG: a campaign that has begun stays begun (spec 014).
-    if incoming.host.started then campaign.host.started = true end
 
     local priority = campaign.priority
     -- An older version of the same list is not an answer to anything: a host who
@@ -858,7 +853,7 @@ local function onCstate(sender, body)
     end
     noticeText = nil
     fireChanged()
-    if ns.Campaign.FireChanged then ns.Campaign.FireChanged() end
+    ns.Campaign.FireChanged()
 end
 
 --- `/rls sk verify`: replay and report (section 8). Anyone may run it. Every member

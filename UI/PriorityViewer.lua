@@ -113,18 +113,7 @@ end
 -- one can still supply a winner, so the top of the list is not the front of the
 -- queue -- the top of T1 is.
 local function createBand(index)
-    local band = CreateFrame("Frame", nil, content)
-    band:SetWidth(ROW_WIDTH)
-    band:SetHeight(BAND_H)
-
-    band.text = Widgets.Label(band, "", "GameFontNormalSmall")
-    band.text:SetPoint("BOTTOMLEFT", band, "BOTTOMLEFT", 0, 4)
-
-    band.line = band:CreateTexture(nil, "ARTWORK")
-    band.line:SetHeight(1)
-    band.line:SetPoint("BOTTOMLEFT", band, "BOTTOMLEFT", 0, 1)
-    band.line:SetPoint("BOTTOMRIGHT", band, "BOTTOMRIGHT", 0, 1)
-
+    local band = Widgets.TierBand(content, ROW_WIDTH, BAND_H)
     bands[index] = band
     return band
 end
@@ -179,13 +168,7 @@ function Viewer.Refresh()
     for _, group in ipairs(groups) do
         bandIndex = bandIndex + 1
         local band = bands[bandIndex] or createBand(bandIndex)
-        band.text:SetText(string.format("|cffe6b422%s|r |cff888888(%d)|r",
-            group.label, #group.rows))
-        band.line:SetTexture(0.5, 0.4, 0.15, 0.7)
-        band:ClearAllPoints()
-        band:SetPoint("TOPLEFT", content, "TOPLEFT", ROW_INSET, -y)
-        band:Show()
-        y = y + BAND_H
+        y = Widgets.PlaceTierBand(band, group, content, ROW_INSET, y)
 
         for _, entry in ipairs(group.rows) do
             rowIndex = rowIndex + 1

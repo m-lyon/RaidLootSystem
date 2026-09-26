@@ -12,6 +12,7 @@
 local ns = ...
 
 local C = ns.Constants
+local Util = ns.Util
 local PL = ns.PriorityList
 
 --------------------------------------------------------------------------------
@@ -95,6 +96,11 @@ local function run(input, ns)
                 row.char, row.included and "" or " out")
         end
         return { rows = out, hierarchy = Campaign.HierarchyOf(rows) }
+
+    elseif input.op == "applyHost" then
+        -- CFG and CSTATE both land through ApplyHostSettings (spec 012 section 9).
+        local host = Campaign.ApplyHostSettings(Util.copy(input.host), input.incoming)
+        return host
 
     elseif input.op == "members" then
         -- Storage of what each member submitted (spec 013 section 3). Starts from a
@@ -776,6 +782,26 @@ return {
                           qualityThreshold = 3, lootMode = "ROLL",
                           hierarchy = "Alt,Steve" },
             },
+        },
+        {
+            name = "host settings: a false lockHierarchy is applied, not defaulted away",
+            input = { op = "applyHost",
+                      host = { tierCount = 3, timerSeconds = 180, qualityThreshold = 4,
+                               lootMode = "ROLL", lockHierarchy = true, started = true },
+                      incoming = { tierCount = 2, timerSeconds = 90, lootMode = "SK",
+                                   lockHierarchy = false, started = false } },
+            -- `started` is one-way; qualityThreshold is not a shared setting.
+            expected = { tierCount = 2, timerSeconds = 90, qualityThreshold = 4,
+                         lootMode = "SK", lockHierarchy = false, started = true },
+        },
+        {
+            name = "host settings: a key the message does not carry is left alone",
+            input = { op = "applyHost",
+                      host = { tierCount = 3, timerSeconds = 180, lootMode = "SK",
+                               lockHierarchy = false, started = false },
+                      incoming = { tierCount = 4, started = true } },
+            expected = { tierCount = 4, timerSeconds = 180, lootMode = "SK",
+                         lockHierarchy = false, started = true },
         },
         {
             name = "a terminal delivery failure after a switch restores the award's campaign",

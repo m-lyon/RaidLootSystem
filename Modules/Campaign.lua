@@ -20,9 +20,7 @@ local Campaign = ns.Campaign
 local C = ns.Constants
 local Util = ns.Util
 
-local function key(name)
-    return type(name) == "string" and name:lower() or nil
-end
+local key = Util.nameKey
 
 --------------------------------------------------------------------------------
 -- Pure: identity (section 5)
@@ -102,6 +100,23 @@ function Campaign.Normalise(campaign)
     campaign.priority = Util.applyDefaults(campaign.priority or {},
         C.CAMPAIGN_DEFAULTS.priority)
     return campaign
+end
+
+--- Apply a host's shared settings, from CFG or CSTATE, onto a campaign's `host`
+-- (spec 012 section 9). The one place both handlers write them, so they cannot
+-- disagree on which keys land or how.
+--
+-- Assigned, never `or`-defaulted: false is a real value for lockHierarchy and the
+-- idiom cannot carry one, so an unlock would never reach anybody. A key the message
+-- does not carry leaves the stored value alone. `started` is one-way: a campaign that
+-- has run a round never un-runs it, and a host who joined late and has not seen one
+-- must not clear it for the group (spec 014).
+function Campaign.ApplyHostSettings(host, incoming)
+    for name in pairs(C.SHARED_HOST_SETTINGS) do
+        if incoming[name] ~= nil then host[name] = incoming[name] end
+    end
+    if incoming.started then host.started = true end
+    return host
 end
 
 --------------------------------------------------------------------------------
@@ -442,6 +457,17 @@ function Campaign.List()
         return tostring(a.id) < tostring(b.id)
     end)
     return out
+end
+
+--- Every campaign as a dropdown option, in List order, so every picker labels a
+-- campaign the same way. `extra`, when given, is appended as the last option.
+function Campaign.Options(extra)
+    local options = {}
+    for i, c in ipairs(Campaign.List()) do
+        options[i] = { value = c.id, text = c.label or c.id }
+    end
+    if extra then options[#options + 1] = extra end
+    return options
 end
 
 function Campaign.Get(campaignId)

@@ -15,8 +15,10 @@ local Data = ns.Data
 --------------------------------------------------------------------------------
 -- Verification status
 --------------------------------------------------------------------------------
--- The armour table is settled: it is the mapping specified in spec 004 section 5 and
--- reviewed in PR #1. The WEAPON table's doubtful rows were checked in game on 2026-09-06
+-- The armour table is a RANK model (spec 003 section 8): each class may take its own armour
+-- type and anything lighter. It supersedes the strict one-type-per-class mapping that spec
+-- 004 section 5 originally gave, which wrongly filtered Shamans and Rogues off cloth.
+-- The WEAPON table's doubtful rows were checked in game on 2026-09-06
 -- (Data/VERIFY.md records what was confirmed); the one wrong row, Hunter thrown, was fixed.
 --
 -- Consequence of an error here is bounded but real: a wrong entry makes one class ineligible
@@ -29,21 +31,36 @@ Data.WEAPONS_VERIFIED = true
 --------------------------------------------------------------------------------
 -- Armour
 --------------------------------------------------------------------------------
--- The armour class each class is expected to WEAR at level 80, not everything it can equip.
--- A Hunter can physically equip leather; it should not be competing for leather in a raid.
+-- Armour types are RANKED, and a class may take its own type and everything below it
+-- (spec 003 section 8). A Shaman competes for mail, and for the leather and cloth a mail
+-- wearer legitimately fills a slot with; a Rogue competes for leather and cloth.
+--
+-- This supersedes the earlier strict rule -- "the armour class this class WEARS at level 80,
+-- nothing else" -- which was wrong in practice. Itemisation does not supply every slot in
+-- every armour type at every tier, and off-pieces one rank down are worn by real characters
+-- for their stats. Filtering a Shaman off cloth filtered them off items they use, which is
+-- the failure the strict rule was supposed to prevent in the other direction.
+--
+-- It stays a filter in one direction: nobody is eligible for armour ABOVE their own rank,
+-- because that is unequippable, not merely unusual.
 --
 -- Only applied to the eight true armour slots. Cloaks, rings, necks and trinkets report an
 -- armour subclass but are wearable by everyone -- see spec 003 section 8, check 6. Getting
 -- that wrong makes every cloak in the game cloth-only.
 
-Data.ARMOR = {
-    CLOTH   = { MAGE = true, PRIEST = true, WARLOCK = true },
-    LEATHER = { ROGUE = true, DRUID = true },
-    MAIL    = { HUNTER = true, SHAMAN = true },
-    PLATE   = { WARRIOR = true, PALADIN = true, DEATHKNIGHT = true },
+Data.ARMOR_RANK = {
+    CLOTH = 1, LEATHER = 2, MAIL = 3, PLATE = 4,
 }
 
--- The eight slots the armour rule applies to. Everything else ignores Data.ARMOR entirely.
+-- The heaviest armour type each class may equip at level 80.
+Data.ARMOR_MAX = {
+    MAGE = 1, PRIEST = 1, WARLOCK = 1,
+    ROGUE = 2, DRUID = 2,
+    HUNTER = 3, SHAMAN = 3,
+    WARRIOR = 4, PALADIN = 4, DEATHKNIGHT = 4,
+}
+
+-- The eight slots the armour rule applies to. Everything else ignores the ranks entirely.
 Data.ARMOR_SLOTS = {
     INVTYPE_HEAD = true, INVTYPE_SHOULDER = true, INVTYPE_CHEST = true,
     INVTYPE_ROBE = true, INVTYPE_WRIST    = true, INVTYPE_HAND  = true,
@@ -114,9 +131,11 @@ Data.WEAPONS = {
 -- class name turns into a whole class being silently ineligible.
 
 function Data.canWearArmor(class, armorSubclass)
-    local t = Data.ARMOR[armorSubclass]
-    if not t then return true end          -- unknown armour subclass: do not filter
-    return t[class] == true
+    local rank = Data.ARMOR_RANK[armorSubclass]
+    if not rank then return true end       -- unknown armour subclass: do not filter
+    local max = Data.ARMOR_MAX[class]
+    if not max then return true end        -- unknown class: do not filter
+    return rank <= max
 end
 
 function Data.canUseWeapon(class, weaponSubclass)

@@ -42,8 +42,7 @@ local filtered = {}
 local function DB() return ns.Database end
 
 local function labelOf(itemString)
-    local info = ns.ItemInfo.Get(itemString)
-    return info.link or info.name or itemString
+    return ns.ItemInfo.Label(itemString)
 end
 
 local function nameOf(itemString)

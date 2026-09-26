@@ -140,6 +140,7 @@ end
 -- Modules print through the addon; the runner has no chat frame.
 ns.Print = function() end
 ns.Debug = function() end
+ns.WarnOnce = function(seen, key) seen[key] = true end
 
 for _, path in ipairs(CORE_FILES) do loadCore(path) end
 for _, path in ipairs(DATA_FILES) do loadCore(path) end

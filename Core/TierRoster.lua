@@ -17,10 +17,9 @@ ns.TierRoster = {}
 local TierRoster = ns.TierRoster
 
 local Tiers = ns.Tiers
+local Util = ns.Util
 
-local function keyOf(name)
-    return type(name) == "string" and name:lower() or nil
-end
+local keyOf = Util.nameKey
 
 --- The tier bands of a campaign.
 --

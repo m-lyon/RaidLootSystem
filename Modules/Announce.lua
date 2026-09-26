@@ -206,6 +206,25 @@ function Announce.Format(kind, args)
     return format(args or {})
 end
 
+--- Tie groups: entries sharing an original roll that re-rolled, in record order.
+-- @return { { roll, names, rerolls = { { char, roll } } } }
+local function tieGroups(record)
+    local groups, order = {}, {}
+    for _, e in ipairs(record or {}) do
+        if #(e.rerolled or {}) > 0 then
+            local key = tostring(e.tier) .. "/" .. tostring(e.roll)
+            if not groups[key] then
+                groups[key] = { roll = e.roll, names = {}, rerolls = {} }
+                order[#order + 1] = groups[key]
+            end
+            local g = groups[key]
+            g.names[#g.names + 1] = e.char
+            g.rerolls[#g.rerolls + 1] = { char = e.char, roll = e.rerolled[#e.rerolled] }
+        end
+    end
+    return order
+end
+
 --- The lines a resolved round produces at a given verbosity, in the order they are
 -- said. Pure, so the exact chat output of a round is fixture-testable.
 --
@@ -236,21 +255,7 @@ function Announce.RoundLines(items, results, opts)
                                       label = label })
                     end
                 end
-                -- Tie groups: entries sharing an original roll that re-rolled.
-                local groups, order = {}, {}
-                for _, e in ipairs(result.record or {}) do
-                    if #(e.rerolled or {}) > 0 then
-                        local key = tostring(e.tier) .. "/" .. tostring(e.roll)
-                        if not groups[key] then
-                            groups[key] = { roll = e.roll, names = {}, rerolls = {} }
-                            order[#order + 1] = key
-                        end
-                        local g = groups[key]
-                        g.names[#g.names + 1] = e.char
-                        g.rerolls[#g.rerolls + 1] = { char = e.char, roll = e.rerolled[#e.rerolled] }
-                    end
-                end
-                for _, key in ipairs(order) do say("TIE", groups[key]) end
+                for _, group in ipairs(tieGroups(result.record)) do say("TIE", group) end
             end
 
             if result.unclaimed then
@@ -258,10 +263,7 @@ function Announce.RoundLines(items, results, opts)
             else
                 local copies = #result.awards
                 for copy, award in ipairs(result.awards) do
-                    local listIdx
-                    for _, e in ipairs(result.record or {}) do
-                        if e.char == award.char then listIdx = e.listIdx end
-                    end
+                    local listIdx = ns.Resolve.listIdxOf(result.record, award.char)
                     say("WIN", { char = award.char, roll = award.roll,
                                  listIdx = opts.isSK and listIdx or nil,
                                  tierLabel = Tiers.label(award.tier, opts.tierCount),

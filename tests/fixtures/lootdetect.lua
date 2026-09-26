@@ -46,13 +46,52 @@ local function run(input, ns)
 
     elseif input.op == "partition" then
         local rows, skipped = LootDetect.Partition(input.scanRows, input.manualIds,
-            input.manualRows, input.threshold, input.removedIds)
+            input.manualRows, input.threshold, input.removedIds, input.consumedIds)
         local candidates = project(LootDetect.Collapse(rows))
         local out = {}
         for i, skip in ipairs(skipped) do
             out[i] = tostring(skip.lootSlot) .. ":" .. skip.reason
         end
         return { candidates = candidates, skipped = out }
+
+    elseif input.op == "samesource" then
+        return LootDetect.SameSource(input.old, input.new)
+
+    elseif input.op == "matchsource" then
+        return LootDetect.MatchSource(input.sources, input.guid, input.new) or 0
+
+    elseif input.op == "remember" then
+        -- Each scan in turn; the source each one lands on, numbered by first sighting.
+        local sources, seen, out = {}, {}, {}
+        for i, scan in ipairs(input.scans) do
+            local source = LootDetect.RememberSource(sources, scan.guid, scan.rows,
+                input.max or 10)
+            -- A round consumed from each corpse, so an evicted one coming back empty is
+            -- visible as well as renumbered.
+            if seen[source] then out[i] = seen[source] .. (next(source.consumed) and "" or "!")
+            else
+                seen[source] = i
+                out[i] = i
+            end
+            source.consumed[i] = true
+        end
+        return table.concat(out, ",")
+
+    elseif input.op == "consumetarget" then
+        -- Sources are named by string so the result can say which one was picked.
+        local byName, roundSources = {}, {}
+        local function named(name)
+            if not name then return nil end
+            byName[name] = byName[name] or { consumed = {}, name = name }
+            return byName[name]
+        end
+        for roundId, name in pairs(input.rounds or {}) do roundSources[roundId] = named(name) end
+        local linkSources = {}
+        for roundId, name in pairs(input.links or {}) do linkSources[roundId] = named(name) end
+        local target, strip, heldOnly = LootDetect.ConsumeTarget(roundSources,
+            named(input.open), input.roundId, linkSources, input.simulated)
+        return { target = target and target.name or "", strip = strip,
+                 heldOnly = heldOnly }
 
     elseif input.op == "prune" then
         local gone = input.gone
@@ -142,6 +181,27 @@ return {
             name = "a tier token is a candidate despite being equippable by nobody",
             input = { op = "candidate", info = TOKEN, quality = 4 },
             expected = { ok = true, reason = "" },
+        },
+        {
+            -- Reopening a corpse to award from it must not bring back what a closed
+            -- round consumed, or the same loot is offered for a second round.
+            name = "a reopened corpse holding a subset of the last scan is the same source",
+            input = { op = "samesource",
+                      old = { { lootSlot = 1, info = TOKEN }, { lootSlot = 2, info = MOUNT } },
+                      new = { { lootSlot = 1, info = TOKEN } } },
+            expected = true,
+        },
+        {
+            name = "a corpse holding anything new is a new source",
+            input = { op = "samesource",
+                      old = { { lootSlot = 1, info = TOKEN } },
+                      new = { { lootSlot = 1, info = TOKEN }, { lootSlot = 2, info = MOUNT } } },
+            expected = false,
+        },
+        {
+            name = "the first scan is a new source",
+            input = { op = "samesource", old = {}, new = { { lootSlot = 1, info = TOKEN } } },
+            expected = false,
         },
         {
             name = "a mount is not auto-added; it is manually addable instead",
@@ -338,6 +398,224 @@ return {
                           { lootSlot = 2, quantity = 1, quality = 4, info = MOUNT },
                       } },
             expected = { candidates = {}, skipped = {} },
+        },
+        {
+            -- A different corpse can hold only ids the last one did and pass SameSource.
+            -- What a closed round consumed is then offered back, never silently dropped.
+            name = "a different corpse sharing an overlapping drop is judged the same source",
+            input = { op = "samesource",
+                      old = { { lootSlot = 1, info = TOKEN }, { lootSlot = 2, info = EPIC_CHEST } },
+                      new = { { lootSlot = 1, info = TOKEN } } },
+            expected = true,
+        },
+        {
+            -- Boss A closed a round, trash B was looted, then A was reopened to award.
+            -- A must still be found, or its consumed items come back as candidates.
+            name = "a corpse reopened after another was looted matches its own source (A, B, A)",
+            input = { op = "matchsource", new = { { lootSlot = 1, info = TOKEN } },
+                      sources = {
+                          { rows = { { lootSlot = 1, info = MOUNT } } },
+                          { rows = { { lootSlot = 1, info = TOKEN },
+                                     { lootSlot = 2, info = EPIC_CHEST } } },
+                      } },
+            expected = 2,
+        },
+        {
+            -- Boss A (no GUID), then trash B holding a subset of A's ids, then A again.
+            -- B's contents match must not overwrite A's rows, or A reopens as a stranger.
+            name = "a subset corpse matched by contents leaves the source it matched intact",
+            input = { op = "remember", scans = {
+                { rows = { { lootSlot = 1, info = TOKEN }, { lootSlot = 2, info = EPIC_CHEST } } },
+                { guid = "0xF130000003", rows = { { lootSlot = 1, info = TOKEN } } },
+                { rows = { { lootSlot = 1, info = TOKEN }, { lootSlot = 2, info = EPIC_CHEST } } },
+            } },
+            expected = "1,1,1",
+        },
+        {
+            -- Awards took the chest; the same GUID reopened holds only the token. The
+            -- source's rows are replaced, so the chest back again reads as another corpse.
+            name = "a same-GUID reopen replaces the matched source's rows",
+            input = { op = "remember", scans = {
+                { guid = "0xF130000004", rows = { { lootSlot = 1, info = TOKEN },
+                                                  { lootSlot = 2, info = EPIC_CHEST } } },
+                { guid = "0xF130000004", rows = { { lootSlot = 1, info = TOKEN } } },
+                { rows = { { lootSlot = 1, info = TOKEN } } },
+                { rows = { { lootSlot = 1, info = TOKEN }, { lootSlot = 2, info = EPIC_CHEST } } },
+            } },
+            expected = "1,1,1,4",
+        },
+        {
+            -- Coin-only corpses can never match; ten of them must not push the boss out.
+            name = "scans with no resolved ids are not remembered",
+            input = { op = "remember", scans = {
+                { rows = { { lootSlot = 1, info = TOKEN } } },
+                { rows = {} }, { rows = {} }, { rows = {} }, { rows = {} }, { rows = {} },
+                { rows = {} }, { rows = {} }, { rows = {} }, { rows = {} }, { rows = {} },
+                { rows = { { lootSlot = 1, info = TOKEN } } },
+            } },
+            expected = "1,2,3,4,5,6,7,8,9,10,11,1",
+        },
+        {
+            -- The eviction boundary: `max` real corpses and one more drops the oldest,
+            -- so reopening it is a new source with an empty consumed set -- its rolled
+            -- loot comes back as candidates, which is the boundary the cap trades away.
+            name = "the oldest source is evicted once max real corpses are open",
+            input = { op = "remember", max = 3, scans = {
+                { guid = "0xF1300000A1", rows = { { lootSlot = 1, info = TOKEN } } },
+                { guid = "0xF1300000A2", rows = { { lootSlot = 1, info = EPIC_CHEST } } },
+                { guid = "0xF1300000A3", rows = { { lootSlot = 1, info = MOUNT } } },
+                { guid = "0xF1300000A4", rows = { { lootSlot = 1, info = GREEN } } },
+                { guid = "0xF1300000A1", rows = { { lootSlot = 1, info = TOKEN } } },
+            } },
+            expected = "1,2,3,4,5",
+        },
+        {
+            -- Under the cap the same corpse reopens onto its own source, consumed set
+            -- and all -- the "2" is a match, and it is not flagged empty.
+            name = "a corpse within max reopens with its consumed set",
+            input = { op = "remember", max = 3, scans = {
+                { guid = "0xF1300000B1", rows = { { lootSlot = 1, info = TOKEN } } },
+                { guid = "0xF1300000B2", rows = { { lootSlot = 1, info = EPIC_CHEST } } },
+                { guid = "0xF1300000B1", rows = { { lootSlot = 1, info = TOKEN } } },
+            } },
+            expected = "1,2,1",
+        },
+        {
+            -- An item the cache has not resolved yet must not make a reopened corpse a
+            -- stranger, or what its closed rounds consumed comes back as candidates.
+            name = "an unresolved row does not stop a reopened corpse matching",
+            input = { op = "samesource",
+                      old = { { lootSlot = 1, info = TOKEN }, { lootSlot = 2, info = EPIC_CHEST } },
+                      new = { { lootSlot = 1, info = TOKEN }, { lootSlot = 2 } } },
+            expected = true,
+        },
+        {
+            name = "a scan with no resolved rows matches nothing",
+            input = { op = "samesource",
+                      old = { { lootSlot = 1, info = TOKEN } },
+                      new = { { lootSlot = 1 } } },
+            expected = false,
+        },
+        {
+            -- A partial scan checked against every remembered corpse is a false reopen
+            -- waiting to happen; only the last scan gets the benefit of the doubt.
+            name = "an unresolved row matches only the last source, not an older one",
+            input = { op = "matchsource", new = { { lootSlot = 1, info = TOKEN }, { lootSlot = 2 } },
+                      sources = {
+                          { rows = { { lootSlot = 1, info = MOUNT } } },
+                          { rows = { { lootSlot = 1, info = TOKEN },
+                                     { lootSlot = 2, info = EPIC_CHEST } } },
+                      } },
+            expected = 0,
+        },
+        {
+            name = "an agreeing GUID matches an older source despite an unresolved row",
+            input = { op = "matchsource", guid = "0xF130000005",
+                      new = { { lootSlot = 1, info = TOKEN }, { lootSlot = 2 } },
+                      sources = {
+                          { rows = { { lootSlot = 1, info = MOUNT } } },
+                          { guid = "0xF130000005", rows = { { lootSlot = 1, info = TOKEN },
+                                     { lootSlot = 2, info = EPIC_CHEST } } },
+                      } },
+            expected = 2,
+        },
+        {
+            name = "a corpse matching no remembered source is a new source",
+            input = { op = "matchsource", new = { { lootSlot = 1, info = MOUNT } },
+                      sources = { { rows = { { lootSlot = 1, info = TOKEN } } } } },
+            expected = 0,
+        },
+        {
+            name = "a different dead target's GUID keeps a same-contents corpse apart",
+            input = { op = "matchsource", guid = "0xF130000001", new = { { lootSlot = 1, info = TOKEN } },
+                      sources = { { guid = "0xF130000002", rows = { { lootSlot = 1, info = TOKEN } } } } },
+            expected = 0,
+        },
+        {
+            name = "an unknown GUID falls back to contents",
+            input = { op = "matchsource", new = { { lootSlot = 1, info = TOKEN } },
+                      sources = { { guid = "0xF130000002", rows = { { lootSlot = 1, info = TOKEN } } } } },
+            expected = 1,
+        },
+        {
+            name = "an item a closed round consumed is skipped as already rolled, not dropped",
+            input = { op = "partition", threshold = 4, consumedIds = { [40616] = true },
+                      scanRows = {
+                          { lootSlot = 1, quantity = 1, quality = 4, info = TOKEN },
+                          { lootSlot = 2, quantity = 1, quality = 4, info = EPIC_CHEST },
+                      } },
+            expected = {
+                candidates = { { idx = 1, itemString = "item:40000:0:0:0:0:0:0:0:0",
+                                 count = 1, slots = "2", units = "2=1" } },
+                skipped = { "1:ALREADY_ROLLED" },
+            },
+        },
+        {
+            -- Added by hand on A, rolled for, closed while trash B was open: A's manual mark
+            -- survives, but the item must not come back when A is reopened. Add item clears
+            -- consumption, so a real re-add never reaches Partition in this state.
+            name = "a consumed item with a leftover manual mark stays already rolled (A, B, A)",
+            input = { op = "partition", threshold = 4, consumedIds = { [40616] = true },
+                      manualIds = { [40616] = true },
+                      scanRows = { { lootSlot = 1, quantity = 1, quality = 4, info = TOKEN } } },
+            expected = { candidates = {}, skipped = { "1:ALREADY_ROLLED" } },
+        },
+        {
+            -- Add item undoes consumption: the host asked for it by hand.
+            name = "a consumed item the host added back by hand is offered again",
+            input = { op = "partition", threshold = 4, manualIds = { [40616] = true },
+                      scanRows = { { lootSlot = 1, quantity = 1, quality = 4, info = TOKEN } } },
+            expected = {
+                candidates = { { idx = 1, itemString = "item:40616:0:0:0:0:0:0:0:0",
+                                 count = 1, slots = "1", units = "1=1" } },
+                skipped = {},
+            },
+        },
+        {
+            name = "a consumed item-link addition is not offered again",
+            input = { op = "partition", threshold = 4, consumedIds = { [50001] = true },
+                      manualRows = { { quantity = 1, info = info(50001) } } },
+            expected = { candidates = {}, skipped = {} },
+        },
+
+        {
+            -- Round on boss A, trash B looted, round closed with B open: A's set takes
+            -- the ids, and the host's additions on B stay put.
+            name = "a round bound to another corpse consumes into it and leaves manual rows (A, B, A)",
+            input = { op = "consumetarget", rounds = { r1 = "A" }, open = "B", roundId = "r1" },
+            expected = { target = "A", strip = false, heldOnly = false },
+        },
+        {
+            name = "an item-link round consumes only the ids its opening corpse holds",
+            input = { op = "consumetarget", rounds = {}, links = { r2 = "A" }, open = "A",
+                      roundId = "r2" },
+            expected = { target = "A", strip = true, heldOnly = true },
+        },
+        {
+            -- Rolled from bags on boss A, trash B looted before close: B's drops and
+            -- the host's additions on B are untouched.
+            name = "an item-link round leaves the corpse open at close alone (A, B)",
+            input = { op = "consumetarget", rounds = {}, links = { r2 = "A" }, open = "B",
+                      roundId = "r2" },
+            expected = { target = "A", strip = false, heldOnly = true },
+        },
+        {
+            -- Rolled from bags with no corpse open: no consumed set takes the ids, but
+            -- the hand-added rows still go, or Start roll offers them again.
+            name = "an unbound round consumes into nothing and still strips manual rows",
+            input = { op = "consumetarget", rounds = {}, open = "B", roundId = "r3" },
+            expected = { target = "", strip = true, heldOnly = false },
+        },
+        {
+            name = "a simulated round touches nothing at all",
+            input = { op = "consumetarget", rounds = {}, open = "B", roundId = "r3",
+                      simulated = { r3 = true } },
+            expected = { target = "", strip = false, heldOnly = false },
+        },
+        {
+            name = "a round bound to the open corpse consumes into it and strips manual rows",
+            input = { op = "consumetarget", rounds = { r1 = "A" }, open = "A", roundId = "r1" },
+            expected = { target = "A", strip = true, heldOnly = false },
         },
 
         ----------------------------------------------------------------------

@@ -18,9 +18,7 @@ local Util = ns.Util
 local Tiers = ns.Tiers
 local Serialize = ns.Serialize
 
-local function key(name)
-    return type(name) == "string" and name:lower() or nil
-end
+local key = Util.nameKey
 
 --------------------------------------------------------------------------------
 -- Pure: constructing a round (section 2)
@@ -413,15 +411,14 @@ function Round.Open(items)
     else
         round.source = "Item link"
     end
-    Round.current = round
-    if ns.Award then ns.Award.Snapshot(round) end     -- spec 007: what the host already had
-
     local body, err = Serialize.encodeOpen(round.campaignId, round.id, tierCount, seconds,
         round.items, round.lootMode)
     if not body then
-        Round.current = nil
         return false, "this loot could not be encoded (" .. tostring(err) .. ")."
     end
+    Round.current = round
+    if ns.LootDetect then ns.LootDetect.BindRound(round.id, items) end
+    if ns.Award then ns.Award.Snapshot(round) end     -- spec 007: what the host already had
     sendOpen(round)
     -- The list follows OPEN, never inside it (spec 010 section 8).
     if round.lootMode == C.LOOT_MODE.SK and ns.Priority then ns.Priority.Broadcast() end
@@ -432,6 +429,16 @@ function Round.Open(items)
     end
     say("OPEN", { labels = labels, seconds = seconds, lootMode = round.lootMode })
     fireChanged()
+    return true
+end
+
+--- Send the open round's OPEN again, for a host whose own echo never came back.
+function Round.ResendOpen()
+    local round = Round.current
+    if not Round.IsHost() or not round or round.state ~= C.ROUND_STATE.OPEN then
+        return false
+    end
+    sendOpen(round)
     return true
 end
 
@@ -534,6 +541,9 @@ end
 local function expectedPlayers()
     -- Raid members running a compatible version, i.e. who have sent HI this
     -- round. Players without the addon never block a close (section 8).
+    -- UI/RollWindow.lua has a near copy that also counts `member.isSelf`. They are
+    -- not merged: whether the host counts as expected is unsettled, so a change to
+    -- either is a decision about both.
     local expected = {}
     for _, member in ipairs(ns.Roster.GroupMembers()) do
         if Round.peers[member.name] then expected[#expected + 1] = member.name end
@@ -625,19 +635,17 @@ local function onSync(sender, body)
             -- This host cannot replay its own log and the asker can: a CSTATE would be
             -- refused anyway, once per window for as long as the raid syncs. Say so
             -- once per session instead.
-            if held and not warnedIncomplete[ask.campaignId] then
-                warnedIncomplete[ask.campaignId] = true
-                ns.Print("members are asking for this campaign's history, but your own "
-                    .. "copy of it is incomplete, so it cannot be sent.")
+            if held then
+                ns.WarnOnce(warnedIncomplete, ask.campaignId, "members are asking for this "
+                    .. "campaign's history, but your own copy of it is incomplete, so it "
+                    .. "cannot be sent.")
             end
         elseif (ask.priorityVersion or 0) > mine and mine > 0 then
             -- The asker is ahead: this host missed rounds, and a CSTATE would only be
             -- thrown away as stale after queueing a whole dump ahead of the round.
-            if not warnedBehind[ask.campaignId] then
-                warnedBehind[ask.campaignId] = true
-                ns.Print("a member holds a newer priority list for this campaign than "
-                    .. "yours; ask the previous master looter to resend it.")
-            end
+            ns.WarnOnce(warnedBehind, ask.campaignId, "a member holds a newer priority "
+                .. "list for this campaign than yours; ask the previous master looter to "
+                .. "resend it.")
         elseif (ask.priorityVersion or 0) == 0 or ask.priorityVersion < mine then
             local now = GetTime()
             local until_ = lastStateSent[ask.campaignId]
@@ -772,9 +780,15 @@ function Round.Close()
     Round.BroadcastConfig("started")
     -- These items have been rolled for; they stop being candidates for the next
     -- round (spec 006 section 3). Abort does not do this, so a retry still has them.
-    if ns.LootDetect then ns.LootDetect.Consume(round.items) end
+    if ns.LootDetect then ns.LootDetect.Consume(round.items, round.id) end
 
     fireChanged()
+    -- And the round's own bookkeeping goes with it, here rather than only from the roll
+    -- window's listener: a host whose UI never initialised, or whose earlier listener
+    -- errored, would otherwise leak sources for the rest of the session. After the
+    -- listeners, not before -- the roll window reads RoundSource to know which corpse to
+    -- close, and releases the round itself once it has.
+    if ns.LootDetect then ns.LootDetect.ReleaseRound(round.id) end
     return true
 end
 
@@ -803,6 +817,7 @@ function Round.Abort(reason)
     end
 
     if ns.History then ns.History.Record(round) end
+    if ns.LootDetect then ns.LootDetect.ReleaseRound(round.id) end
     fireChanged()
     return true
 end
@@ -846,28 +861,25 @@ function Round.ChangeSetting(key, value)
     if not host and not clientOnly then
         return false, "you have no campaign yet. Create or join one first (/rls campaign new)."
     end
-    local shared = (key == "tierCount" or key == "timerSeconds" or key == "lootMode"
-        or key == "lockHierarchy")
+    -- The shared keys, which of them freeze and how each is announced all come from
+    -- C.SHARED_HOST_SETTINGS, the table CFG and CSTATE are applied from.
+    local shared = C.SHARED_HOST_SETTINGS[key]
 
-    if shared and key ~= "lockHierarchy"
+    if shared and shared.frozen
         and Round.current and Round.current.state == C.ROUND_STATE.OPEN then
         return false, "frozen while a round is open; the change applies to the next one."
     end
 
-    local kind
     if key == "tierCount" then
         value = Util.clamp(math.floor(tonumber(value) or 3), C.MIN_TIER_COUNT, C.MAX_TIER_COUNT)
-        kind = "TIER_COUNT"
     elseif key == "timerSeconds" then
         value = Util.clamp(math.floor(tonumber(value) or 180), C.MIN_TIMER_SECONDS,
             C.MAX_TIMER_SECONDS)
-        kind = "TIMER"
     elseif key == "lootMode" then
         if value ~= C.LOOT_MODE.SK then value = C.LOOT_MODE.ROLL end
         if value == C.LOOT_MODE.SK and #ns.Database.Priority().order == 0 then
             return false, "seed the priority list to enable Suicide Kings."
         end
-        kind = "LOOT_MODE"
     elseif key == "qualityThreshold" then
         value = tonumber(value)
         if value ~= 3 and value ~= 4 then
@@ -880,10 +892,10 @@ function Round.ChangeSetting(key, value)
         if not Round.IsHost() then return false, "you are not the master looter." end
         -- Shared, so it broadcasts and is announced: it changes what members are
         -- allowed to do, and a rule nobody was told about is not a rule. Unlike the
-        -- other shared settings it is *not* frozen mid-round -- unlocking is the
-        -- escape hatch, and a host who needs it needs it now.
+        -- other shared settings it is *not* frozen mid-round (`frozen = false` in
+        -- C.SHARED_HOST_SETTINGS) -- unlocking is the escape hatch, and a host who
+        -- needs it needs it now.
         value = value and true or false
-        kind = "HIERARCHY_LOCK"
     elseif key == "autoClose" then
         value = value and true or false
     elseif key == "verbosity" then
@@ -914,7 +926,7 @@ function Round.ChangeSetting(key, value)
     if key == "qualityThreshold" and ns.LootDetect.Rescan then ns.LootDetect.Rescan() end
     if shared and Round.IsHost() then
         Round.BroadcastConfig(key)
-        say(kind, { tierCount = value, seconds = value, lootMode = value, locked = value })
+        say(shared.announce, { [shared.arg] = value })
     end
     if ns.HierarchyEditor then ns.HierarchyEditor.Refresh() end
     fireChanged()

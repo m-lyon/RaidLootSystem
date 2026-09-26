@@ -57,6 +57,11 @@ with the reasoning.
   chokepoint, so a line-level transform like the item-link strip cannot be defeated by a format
   added later -- and it is where the whisper exemption is decided. Spec 015 §4.
 - **Only the host writes to raid chat.** Clients never announce.
+- **Setting a frame's level does not restack the children it already has** on 3.3.5a. Raising a
+  window means walking `GetChildren()` and shifting every descendant by the same delta, which is
+  what `Widgets.Raise` does and why two overlapping windows used to draw half in front of each
+  other and half behind. Every window keeps strata `DIALOG`, so `StaticPopup` and dropdowns stay
+  above them. Spec 000 §8.
 - **Nothing irreversible without a confirmation dialog** — awarding loot, clearing history,
   overwriting a roster on import.
 - **Failures are surfaced, never swallowed.** A silently dropped entry or a silently failed award
@@ -92,6 +97,9 @@ with the reasoning.
 - **`lockHierarchy` is assigned, never `or`-defaulted, wherever `CFG` / `CSTATE` are applied.**
   `false` is a real value and the `and`/`or` idiom cannot carry one, so an unlock would never
   reach anybody -- the failure that traps a campaign. Same trap as `autoClose` in `Campaign.New`.
+  Both handlers now apply through `Campaign.ApplyHostSettings`, and which keys are shared, which
+  freeze mid-round and how each is announced is `C.SHARED_HOST_SETTINGS` -- add a shared setting
+  there, not to a handler or to `Round.ChangeSetting`.
 - **Recording a `ROSTER` and claiming from it are separate steps.** The record goes to whichever
   campaign the message names, if you are in it; `Roster.claims` is still rebuilt for the *active*
   campaign only, or two players claiming one character in unrelated groups reads as a conflict.
@@ -106,6 +114,17 @@ with the reasoning.
   finishes with `Round.ChangeSetting("lootMode", "SK")`. A seeded list left on `ROLL` is
   indistinguishable on screen from a seeded list on `SK`, and the only symptom is that no winner
   ever moves. Spec 010 §5.
+- **The candidate list lives in the roll window, not the host panel.** A master looter who opens
+  a corpse gets the roll window's host-only *setup* state -- tick the items, Add item, Start roll
+  -- and the same frame then becomes the grid, the results and the award controls. The host panel
+  keeps the raid's settings, its health and the live round. The pure rule is
+  `RollWindow.SetupActive`; `HostPanel.StartBlocker` stayed where it is and is called from the
+  roll window. Spec 005 §2, spec 006 §3.
+- **Only the host auto-closes anything.** When a round closes the host's Blizzard loot frame is
+  shut (`CloseLoot()`), and the roll window hides itself once every item has a decision *and*
+  nothing is awaiting an award or a pending trade -- `RollWindow.CanAutoClose`. A client's
+  results stay on screen until they dismiss them, and the abort linger is untouched. Closing over
+  an unmade award would hide the only control that finishes it. Spec 005 §2.
 - **The open announcement leads with the loot mode**, "Rolling:" or "SK:". It is the host's own
   read-back that the mode is what they think it is. Chat abbreviates; panels and dialogs spell
   "Suicide Kings" out. Spec 006 §4.
@@ -150,6 +169,11 @@ Add a fixture case for every bug fixed in `Core/`.
   raid-night check.
 - **The exact mod-playerbots `equip` command syntax** (spec 007) is still unconfirmed against
   the server build.
+- **A `StaticPopup` drawing above a raised window is unconfirmed on 3.3.5a.** `Widgets.Raise`
+  stacks windows from `BASE_LEVEL` in `LEVEL_STEP`s, so with several open the front window's
+  subtree sits near level 100, still in strata `DIALOG` -- which is `StaticPopupTemplate`'s strata
+  too. It wants a raid-night check: stack every window, click the front one, and open an award
+  confirmation over it. If the popup draws behind, shrink the span rather than change strata.
 - **Blizzard's `StaticPopupDialogs` `button3` / `OnAlt` is unconfirmed on 3.3.5a.**
   `UI/Campaigns.lua`'s non-members warning uses it for "Open anyway" (deliberately not `button2`,
   so Escape cancels rather than opening the round). ElvUI uses `button3`/`OnAlt` but through its
@@ -169,8 +193,8 @@ plus `tests/purity.sh`.
 `Modules/{Round,Roster,ItemInfo,LootDetect}.lua` each have a pure half above a "WoW-facing"
 divider; the fixture runner loads all four. Keep new pure logic above that line.
 
-`Round.Open` is reachable now. Until the host panel (006) exists, `/rls loot`, `/rls start`
-and `/rls roll <link>` are the seam that drives it.
+`Round.Open` is reachable now. `/rls loot`, `/rls start` and `/rls roll <link>` remain as the
+scriptable seam that drives it; the screen for it is the roll window's setup state.
 
 Specs 005 through 008 and 010 are built too: `UI/{RollWindow,HostPanel,HistoryBrowser}.lua`,
 `Modules/{Award,Pending,History,PriorityList,Announce}.lua`, `Core/PriorityList.lua`, with the
@@ -204,6 +228,12 @@ Spec 014 adds the hierarchy lock: a campaign setting, on by default, that fixes 
 tier ranking once the campaign has run a round. The rule is `Roster.LockedChangeAllowed` (pure),
 the two gates are the editor's mutators and `onRoster`, and unlocking is the host's escape hatch --
 so it is the one shared setting that is *not* frozen mid-round.
+
+v0.4.0 (issue #26) moves the round candidate list out of `UI/HostPanel.lua` and into the roll
+window's host-only setup state, adds `Widgets.Raise` for window layering, and makes armour a rank
+rule in `Data/ClassArmor.lua` -- a class takes its own armour type and everything lighter.
+Non-equippable drops (recipes, patterns, mounts, mats) are still *not* automatic candidates: the
+host adds them by hand from the setup list, which is the whole point of that list.
 
 Spec 015 adds `plainItemNames`, on by default: group announcements name items instead of linking
 them, because a link in raid chat makes every bot open a trade. A client setting, a tick box in the
