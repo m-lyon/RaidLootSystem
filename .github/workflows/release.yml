@@ -1,0 +1,58 @@
+name: Release
+
+# Pushing a tag like v0.4.0 builds the addon zip and publishes a GitHub release.
+# The tag must match both version holders -- `## Version` in the .toc and
+# C.VERSION in Core/Constants.lua -- or nothing is published.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check tag matches the version holders
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          toc=$(sed -n 's/^## Version: *//p' RaidLootSystem.toc | tr -d '\r')
+          const=$(sed -n 's/^C\.VERSION *= *"\(.*\)".*/\1/p' Core/Constants.lua)
+          echo "tag=$tag toc=$toc constant=$const"
+          if [ "$tag" != "$toc" ] || [ "$tag" != "$const" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match .toc ($toc) and C.VERSION ($const)"
+            exit 1
+          fi
+
+      - name: Install Lua 5.1
+        run: sudo apt-get update && sudo apt-get install -y lua5.1
+
+      - name: Fixture suites
+        run: lua5.1 tests/run.lua
+
+      - name: Purity and locale greps
+        run: ./tests/purity.sh
+
+      - name: Package
+        run: |
+          mkdir -p build/RaidLootSystem
+          cp -r RaidLootSystem.toc RaidLootSystem.lua LICENSE Core Data Libs Modules UI \
+            build/RaidLootSystem/
+          (cd build && zip -r "RaidLootSystem-${GITHUB_REF_NAME}.zip" RaidLootSystem)
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease=""
+          case "$GITHUB_REF_NAME" in v0.*|*-*) prerelease="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" \
+            "build/RaidLootSystem-${GITHUB_REF_NAME}.zip" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            $prerelease
