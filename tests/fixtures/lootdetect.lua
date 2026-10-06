@@ -105,6 +105,9 @@ local function run(input, ns)
         end
         return { kept = project(kept), lost = lostSlots }
 
+    elseif input.op == "corpseslot" then
+        return LootDetect.CorpseSlotFor(input.scan, input.id, input.readable) or 0
+
     elseif input.op == "rebind" then
         local records = input.records or {}
         local kept, lost = LootDetect.Rebind(input.scan, records, input.items or {})
@@ -872,6 +875,31 @@ return {
                       scan = { scanRow(1, 40000), scanRow(2, 40000) },
                       records = { record(40000, 2), record(40000, 3) } },
             expected = { kept = {}, lost = {}, records = "1,2" },
+        },
+        ----------------------------------------------------------------------
+        -- A round started from a link on an item the open corpse holds (0.4.1)
+        ----------------------------------------------------------------------
+        {
+            -- "/rls roll [item]" with the corpse open used to go to the trade path and
+            -- answer "The item is not in your bags."
+            name = "a linked item the open corpse holds takes its slot",
+            input = { op = "corpseslot", id = 40001, readable = true,
+                      scan = { scanRow(1, 40000), scanRow(3, 40001) } },
+            expected = 3,
+        },
+        {
+            name = "a linked item the corpse does not hold has no slot",
+            input = { op = "corpseslot", id = 40002, readable = true,
+                      scan = { scanRow(1, 40000) } },
+            expected = 0,
+        },
+        {
+            -- The last scan is a closed corpse, or one still being read: its slots are
+            -- not the open window's.
+            name = "no slot when the scan is not the corpse open now",
+            input = { op = "corpseslot", id = 40000, readable = false,
+                      scan = { scanRow(1, 40000) } },
+            expected = 0,
         },
     },
 }

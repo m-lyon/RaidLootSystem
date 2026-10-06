@@ -56,7 +56,10 @@ This covers:
 - Anything the corpse scan filtered out
 
 Item-link rounds have **no `lootSlot`**, so the award step goes straight to the trade path
-(007 §5) rather than `GiveMasterLoot`.
+(007 §5) rather than `GiveMasterLoot` -- **unless the open corpse holds the item**. Then the
+round takes that slot (`LootDetect.CorpseSlotFor`) and is a corpse round like any other, the
+same way **Add item** joins a link to a matching skipped slot. Before 0.4.1 a link round on loot
+lying in the open corpse refused its award with "The item is not in your bags."
 
 ## 3. Loot source validity
 

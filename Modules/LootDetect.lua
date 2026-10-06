@@ -429,6 +429,18 @@ function LootDetect.Rebind(scanRows, records, items)
     return kept, lost
 end
 
+--- The open corpse's slot holding `itemId`, for a round started from a link.
+-- @param scanRows  the last scan's rows
+-- @param readable  is that scan the corpse open now (window open, scan landed)?
+-- @return the first matching loot slot, or nil (the item is rolled from bags)
+function LootDetect.CorpseSlotFor(scanRows, itemId, readable)
+    if not (readable and itemId) then return nil end
+    for _, row in ipairs(scanRows or {}) do
+        if row.lootSlot and row.info and row.info.itemId == itemId then return row.lootSlot end
+    end
+    return nil
+end
+
 --- A short name for a message, without needing the item cached.
 function LootDetect.Label(item)
     local info = item and item.info or {}
@@ -775,7 +787,12 @@ function LootDetect.FromLink(link, callback)
     ns.ItemInfo.Request(link, function(info)
         -- No quality bar and no equip test on this path. The host asked for this item by
         -- name; second-guessing them is the one thing the manual path exists to avoid.
-        local items = LootDetect.Collapse({ { quantity = 1, info = info } })
+        -- But if the open corpse holds it, it is that corpse's item: it takes the slot, so
+        -- the award goes through master loot rather than demanding it be in the host's
+        -- bags. "Add item" already joins a link to a matching slot the same way.
+        local slot = LootDetect.CorpseSlotFor(scanRows, info and info.itemId,
+            LootDetect.windowOpen and not LootDetect.scanning)
+        local items = LootDetect.Collapse({ { quantity = 1, info = info, lootSlot = slot } })
         if callback then callback(items) end
     end)
     return true
