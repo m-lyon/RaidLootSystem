@@ -204,10 +204,9 @@ return {
         { name = "the master-loot confirmation names the item and the winner, and no binding",
           input = { op = "confirm", record = CORPSE, label = "[Deathbringer's Will]", path = "MASTER_LOOT" },
           expected = "Give [Deathbringer's Will] to Bonk (Dave)?" },
-        { name = "the trade confirmation says it binds to the host for two hours",
+        { name = "the trade confirmation names the item and the winner, and no binding",
           input = { op = "confirm", record = CORPSE, label = "[Deathbringer's Will]", path = "TRADE" },
-          expected = "Take [Deathbringer's Will] into your bags for Bonk (Dave)?\n\n"
-              .. "It binds to YOU and stays tradeable to kill-eligible characters for 2 hours." },
+          expected = "Take [Deathbringer's Will] into your bags for Bonk (Dave)?" },
 
         -- Failure texts (section 4)
         { name = "NOT_A_CANDIDATE names the winner and says retry",

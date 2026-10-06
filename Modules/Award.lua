@@ -123,9 +123,7 @@ function Award.ConfirmText(record, label, path)
         -- "it binds to X" untrue.
         return string.format("Give %s to %s?", label, who)
     end
-    return string.format("Take %s into your bags for %s?\n\n"
-        .. "It binds to YOU and stays tradeable to kill-eligible characters for 2 hours.",
-        label, who)
+    return string.format("Take %s into your bags for %s?", label, who)
 end
 
 --- The message a failure code shows (section 4).

@@ -155,13 +155,13 @@ award is confirmed with a dialog naming **the item, the winner, and the path**:
 
 > Give **[Deathbringer's Will]** to **Botty** (Dave)?
 
-The master-loot line carries no binding text: "Give" already says it goes straight to the winner,
-and "binds to Botty" was untrue for a bind-on-equip drop (removed in 0.4.1).
-
 or
 
 > Take **[Deathbringer's Will]** into your bags for **Botty** (Dave)?
-> — binds to **you**, tradeable for 2 hours.
+
+Neither carries binding text. "Give" and "Take into your bags" already say which path it is, and
+"binds to Botty" / "binds to you, tradeable for 2 hours" were untrue for a bind-on-equip drop
+(both removed in 0.4.1).
 
 A misclick here hands a raid-defining item to the wrong character permanently, and the whole
 system's credibility rests on that not happening.
