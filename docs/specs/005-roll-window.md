@@ -24,8 +24,10 @@ too big a window for the one question it was being opened to ask.
 Shown when this client is the master looter, `LootDetect` is holding at least one candidate row,
 and no round is open or resolving. It carries what 006 §3 called *Round candidates*: the tickable
 candidate rows, the `x2` and `*` badges, per-row Remove, the **Add item** box with its
-cursor-drop target and its `ChatEdit_InsertLink` hook, the count of what the filter skipped, and
-**Start roll**.
+cursor-drop target and its `ChatEdit_InsertLink` hook, and **Start roll**. A row is the item
+name alone: v0.4.1 dropped the grey quality / loot-slot suffix (the name is already quality
+coloured, and the slot is plumbing) and the "N skipped" count, and narrowed the setup state to
+its own width instead of the grid's.
 
 It opens itself on `LOOT_OPENED` for the host with something worth rolling for. Clients are
 unaffected by loot windows entirely.

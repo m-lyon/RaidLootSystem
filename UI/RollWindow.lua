@@ -619,9 +619,10 @@ local WARN_H = 16
 local BUTTON_H = 22
 local PAD = 16
 local RESULTS_H = 380
--- The setup list's width: the same span the grid occupies, so the window does not
--- jump sideways when a round opens on the loot the host just ticked.
-local SETUP_W = HEADER_W + MAX_VISIBLE_COLS * CELL_W + 8
+-- The setup list's width. Narrower than the grid: it is one column of item names
+-- and the add/start controls, and at the grid's width it was mostly empty space.
+-- The bottom row (add box, Add item, Start roll) is what sets the floor.
+local SETUP_W = 360
 
 local frame
 local entryPanel, resultsPanel, setupPanel
@@ -1438,7 +1439,6 @@ local function recordsOfRound(list, roundId)
 end
 
 local SETUP_ROW_H = 22
-local QUALITY_NAME = { [0] = "poor", "common", "uncommon", "rare", "epic", "legendary" }
 
 local function tickKey(item)
     return (item.info and item.info.itemId) or item.itemString
@@ -1523,7 +1523,7 @@ local function setupRow(i)
 
     row.label = CreateFrame("Button", nil, row)
     row.label:SetPoint("LEFT", row.icon, "RIGHT", 4, 0)
-    row.label:SetWidth(SETUP_W - 180)
+    row.label:SetWidth(SETUP_W - 90)
     row.label:SetHeight(SETUP_ROW_H)
     row.label.text = Widgets.Label(row.label, "", "GameFontHighlightSmall")
     row.label.text:SetAllPoints()
@@ -1545,10 +1545,6 @@ local function setupRow(i)
     row.remove:SetPoint("RIGHT", row, "RIGHT", -2, 0)
     Widgets.Tooltip(row.remove, "Remove",
         "Take this item out of the round. Add it again by link if you change your mind.")
-
-    row.right = Widgets.Label(row, "", "GameFontHighlightSmall")
-    row.right:SetPoint("RIGHT", row.remove, "LEFT", -4, 0)
-    row.right:SetJustifyH("RIGHT")
     setupRows[i] = row
     return row
 end
@@ -1575,9 +1571,6 @@ local function refreshSetup()
         if item.count > 1 then label = label .. " |cffffcc00x" .. item.count .. "|r" end
         if item.info and item.info.special then label = label .. " |cffffcc00*|r" end
         row.label.text:SetText(label)
-        local quality = item.info and item.info.quality
-        local where = item.lootSlot and ("slot " .. item.lootSlot) or "by link"
-        row.right:SetText("|cff888888" .. (QUALITY_NAME[quality] or "?") .. ", " .. where .. "|r")
         row:Show()
     end
     for i = n + 1, #setupRows do setupRows[i]:Hide() end
@@ -1585,15 +1578,12 @@ local function refreshSetup()
     if LootDetect.scanning then
         setupPanel.hint:SetText("Looking the loot up...")
     elseif n == 0 and #LootDetect.skipped > 0 then
-        setupPanel.hint:SetText(string.format("Nothing to roll for automatically; %d skipped "
-            .. "(filtered, or already rolled for). Add one below.", #LootDetect.skipped))
+        setupPanel.hint:SetText("Nothing to roll for automatically. Add an item below.")
     elseif n == 0 then
         setupPanel.hint:SetText("Nothing here is worth rolling for. Open a corpse as master "
             .. "looter, or add an item below.")
     else
-        local skipped = #LootDetect.skipped
-        setupPanel.hint:SetText(skipped > 0 and string.format(
-            "%d skipped (filtered, or already rolled for). Add one below.", skipped) or "")
+        setupPanel.hint:SetText("")
     end
 
     local round = hostRound()
@@ -1912,7 +1902,7 @@ local function buildSetupPanel(parent)
     panel.list:SetWidth(SETUP_W - 20)
     panel.list:SetHeight(1)
 
-    panel.addBox = Widgets.EditBox(panel, 200, 20)
+    panel.addBox = Widgets.EditBox(panel, 150, 20)
     panel.addBox:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 2, 0)
     panel.addBox:SetScript("OnEnterPressed", function(self) addItem(self:GetText()) end)
     panel.addBox:SetScript("OnReceiveDrag", receiveCursorItem)
