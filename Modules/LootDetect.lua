@@ -339,6 +339,108 @@ function LootDetect.Prune(items, isGone)
     return kept, lost
 end
 
+--- Find a reopened corpse's items again by what they are, not where they were.
+--
+-- Slot numbers are only stable while one loot window stays open: taking an item leaves
+-- a gap, but a reopened corpse lists only what is left, so everything after a taken
+-- item can move up. A slot remembered across a close therefore names the wrong item,
+-- and the two failures it caused were an award marked LOST for loot still on the
+-- corpse, and a hand-looted neighbour read as the round's own item disappearing.
+--
+-- Owed award records claim first, one unit each, in the order given; then the open
+-- round's items claim up to their count. Copies of one item id are interchangeable, so
+-- which of two identical slots a record gets does not matter. A stacked slot serves as
+-- many claims as it holds units.
+--
+-- A record nothing matches keeps its old slot, and SlotHolds refuses it at award time --
+-- it really is gone. A round item short of its count loses the shortfall, reported
+-- like Prune's losses so the caller announces it. Unless the scan is complete: a row
+-- with no item id might be the missing copy, and announcing a loss that is not real is
+-- worse than leaving the old slot to SlotHolds.
+--
+-- @param scanRows the fresh scan: { lootSlot, quantity, info }
+-- @param records  owed award records { itemString, lootSlot }; lootSlot updated in place
+-- @param items    the open round's items, as from Collapse; updated in place
+-- @return kept items, lost array of { item, slots, quantity }
+function LootDetect.Rebind(scanRows, records, items)
+    local idOf = function(itemString)
+        local _, id = ns.ItemInfo.ParseLink(itemString)
+        return id
+    end
+
+    local pool, complete = {}, true
+    for _, row in ipairs(scanRows or {}) do
+        local id = row.info and row.info.itemId
+        if id and row.lootSlot then
+            pool[id] = pool[id] or {}
+            table.insert(pool[id], { slot = row.lootSlot, left = row.quantity or 1 })
+        else
+            complete = false
+        end
+    end
+    local function claim(id)
+        for _, entry in ipairs(id and pool[id] or {}) do
+            if entry.left > 0 then
+                entry.left = entry.left - 1
+                return entry.slot
+            end
+        end
+        return nil
+    end
+
+    for _, record in ipairs(records or {}) do
+        if record.lootSlot then
+            local slot = claim(idOf(record.itemString))
+            if slot then record.lootSlot = slot end
+        end
+    end
+
+    local kept, lost = {}, {}
+    for _, item in ipairs(items or {}) do
+        local hadSlots = item.lootSlots or (item.lootSlot and { item.lootSlot }) or {}
+        if #hadSlots == 0 then
+            kept[#kept + 1] = item             -- an item-link round has no slot to move
+        else
+            local id = idOf(item.itemString)
+            local need = item.count or 1
+            local slots, units, found = {}, {}, 0
+            while found < need do
+                local slot = claim(id)
+                if not slot then break end
+                if not units[slot] then slots[#slots + 1] = slot end
+                units[slot] = (units[slot] or 0) + 1
+                found = found + 1
+            end
+            if found < need and not complete then
+                kept[#kept + 1] = item         -- cannot tell; leave it to SlotHolds
+            else
+                if found < need then
+                    lost[#lost + 1] = { item = item, slots = {}, quantity = need - found }
+                end
+                if found > 0 then
+                    item.lootSlots, item.slotQuantities = slots, units
+                    item.lootSlot = slots[1]
+                    item.count = found
+                    kept[#kept + 1] = item
+                end
+            end
+        end
+    end
+    return kept, lost
+end
+
+--- The open corpse's slot holding `itemId`, for a round started from a link.
+-- @param scanRows  the last scan's rows
+-- @param readable  is that scan the corpse open now (window open, scan landed)?
+-- @return the first matching loot slot, or nil (the item is rolled from bags)
+function LootDetect.CorpseSlotFor(scanRows, itemId, readable)
+    if not (readable and itemId) then return nil end
+    for _, row in ipairs(scanRows or {}) do
+        if row.lootSlot and row.info and row.info.itemId == itemId then return row.lootSlot end
+    end
+    return nil
+end
+
 --- A short name for a message, without needing the item cached.
 function LootDetect.Label(item)
     local info = item and item.info or {}
@@ -365,6 +467,7 @@ local removedIds = {}          -- ids withdrawn by hand
 local consumedIds = {}         -- ids a closed round rolled for; the open source's set
 local sources = {}             -- remembered loot sources, newest first: { guid, rows, consumed }
 local roundSources = {}        -- round id -> the source that round was opened from
+local closedSources = {}       -- closed round id -> its source, for the awards still owed on it
 local linkSources = {}         -- round id -> the source open when an item-link round opened
 local simulatedRounds = {}     -- round id -> true; a simulation consumes nothing
 local openSource = nil         -- the last scan's source, remembered or not
@@ -428,6 +531,27 @@ local function heldEdits()
     return false
 end
 
+--- Point the open round and the awards still owed on `source` at where their items
+-- are now (Rebind). Only that corpse's: slot numbers repeat on every corpse.
+local function rebindSource(source, rows)
+    for roundId, known in pairs(closedSources) do
+        if not LootDetect.SourceKnown(known) then closedSources[roundId] = nil end
+    end
+    local records = {}
+    if ns.Award then
+        for _, record in ipairs(ns.Award.OutstandingRecords()) do
+            if record.lootSlot and closedSources[record.roundId] == source then
+                records[#records + 1] = record
+            end
+        end
+    end
+    local round = ns.Round.current
+    local ours = round and round.state == C.ROUND_STATE.OPEN and ns.Round.IsHost()
+        and roundSources[round.id] == source
+    local kept, lost = LootDetect.Rebind(rows, records, ours and round.items or {})
+    if ours and #lost > 0 then ns.Round.LoseItems(kept, lost) end
+end
+
 --- Scan the open loot window. Asynchronous, because an uncached item takes up to five
 -- seconds to resolve and a round must not open on a half-classified list.
 -- @param callback optional, called with the candidate array
@@ -467,6 +591,8 @@ function LootDetect.Scan(callback)
         scanRows, manualIds, manualRows, removedIds =
             slots, source.manualIds, source.manualRows, source.removedIds
         LootDetect.scanning = false
+        -- Before the rebuild: its listeners read award records' slots.
+        if LootDetect.windowOpen then rebindSource(source, slots) end
         rebuild(true, match ~= nil)
         if callback then callback(LootDetect.candidates) end
     end)
@@ -603,6 +729,15 @@ function LootDetect.RoundSource(roundId)
     return roundId and roundSources[roundId]
 end
 
+--- The corpse a round's awards are made from, open or closed, or nil. Outlives
+-- ReleaseRound, until the corpse ages out of the remembered sources.
+function LootDetect.CorpseOf(roundId)
+    if not roundId then return nil end
+    local source = roundSources[roundId] or closedSources[roundId]
+    if source and LootDetect.SourceKnown(source) then return source end
+    return nil
+end
+
 --- Is `source` the loot source open now?
 function LootDetect.SourceOpen(source)
     -- Until a new window's scan lands, openSource is still the last corpse's.
@@ -623,6 +758,8 @@ end
 --- Forget a round's source once its close or abort has been handled.
 function LootDetect.ReleaseRound(roundId)
     if roundId then
+        -- Its awards are still made from that corpse, so they still need re-finding on it.
+        if roundSources[roundId] then closedSources[roundId] = roundSources[roundId] end
         -- A restarted round on the same corpse may leave nothing again; say so again.
         local source = roundSources[roundId] or linkSources[roundId]
         if source then source.hint = nil end
@@ -650,7 +787,12 @@ function LootDetect.FromLink(link, callback)
     ns.ItemInfo.Request(link, function(info)
         -- No quality bar and no equip test on this path. The host asked for this item by
         -- name; second-guessing them is the one thing the manual path exists to avoid.
-        local items = LootDetect.Collapse({ { quantity = 1, info = info } })
+        -- But if the open corpse holds it, it is that corpse's item: it takes the slot, so
+        -- the award goes through master loot rather than demanding it be in the host's
+        -- bags. "Add item" already joins a link to a matching slot the same way.
+        local slot = LootDetect.CorpseSlotFor(scanRows, info and info.itemId,
+            LootDetect.windowOpen and not LootDetect.scanning)
+        local items = LootDetect.Collapse({ { quantity = 1, info = info, lootSlot = slot } })
         if callback then callback(items) end
     end)
     return true
@@ -789,7 +931,8 @@ local function onEvent(_, event, arg1)
     elseif event == "LOOT_SLOT_CLEARED" then
         onSlotCleared(arg1)
     elseif event == "LOOT_CLOSED" then
-        -- Not fatal: the slot indices survive and the corpse can be reopened (section 3).
+        -- Not fatal: the corpse can be reopened, and the scan on reopening re-finds every
+        -- round item and owed award by id, since its slot numbers may have moved (section 3).
         LootDetect.windowOpen = false
         expectedClears = {}
         fireChanged(false)

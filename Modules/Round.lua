@@ -488,6 +488,17 @@ function Round.DropSlots(goneSlots)
 
     local kept, lost = ns.LootDetect.Prune(round.items,
         function(slot) return goneSlots[slot] == true end)
+    return Round.LoseItems(kept, lost)
+end
+
+--- Carry the open round on with `kept`, announcing each of `lost` (Prune's or
+-- Rebind's shape). Shared by a slot emptied under the round and a reopened corpse
+-- that no longer holds every copy.
+-- @return true when the round changed
+function Round.LoseItems(kept, lost)
+    local round = Round.current
+    if not round or round.state ~= C.ROUND_STATE.OPEN then return false end
+    if not Round.IsHost() then return false end
     if #lost == 0 then return false end
 
     round.items = kept

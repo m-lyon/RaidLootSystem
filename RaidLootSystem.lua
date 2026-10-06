@@ -136,10 +136,6 @@ local function startRound()
         return
     end
     -- The same rule the roll window's Start roll button is gated by.
-    local hasLootSlot = false
-    for _, item in ipairs(items) do
-        if item.lootSlot then hasLootSlot = true break end
-    end
     local round = ns.Round.current
     local blocker = ns.HostPanel.StartBlocker({
         isHost = ns.Round.IsHost(),
@@ -147,7 +143,6 @@ local function startRound()
         roundOpen = round ~= nil and round.state == C.ROUND_STATE.OPEN,
         scanning = ns.LootDetect.scanning,
         ticked = #items,
-        staleSlots = not ns.LootDetect.windowOpen and hasLootSlot,
     })
     if blocker then
         ns.Print(blocker)
@@ -251,7 +246,7 @@ local COMMANDS = {
             ns.RollWindow.Show()
         end
     end },
-    { "hierarchy", usage = { { "/rls hierarchy", "open your hierarchy" } },
+    { "tierlist", usage = { { "/rls tierlist", "open your tier list" } },
       run = function() ns.HierarchyEditor.Toggle() end },
     { "host", usage = { { "/rls host", "open the host panel, or left-click the minimap "
         .. "button while you are master looter" } },
@@ -392,12 +387,14 @@ local COMMANDS = {
 
 local COMMAND_BY_NAME = {}
 for _, command in ipairs(COMMANDS) do COMMAND_BY_NAME[command[1]] = command end
+-- The pre-0.4.1 name, kept so macros and habits still work. Not listed in help.
+COMMAND_BY_NAME.hierarchy = COMMAND_BY_NAME.tierlist
 
 local function help()
     ns.Print("commands:")
     ns.Print("  /rls              open the window for your role: the loot window over a "
         .. "corpse or during a round, the host panel as master looter otherwise, "
-        .. "else your hierarchy")
+        .. "else your tier list")
     for _, command in ipairs(COMMANDS) do
         for _, line in ipairs(command.usage) do
             if line[2] then

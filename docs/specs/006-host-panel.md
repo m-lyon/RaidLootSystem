@@ -51,7 +51,7 @@ is unreachable rather than special-cased.
 
 ### Round candidates — moved to the roll window
 
-The candidate list, **Add item**, **Remove**, **Start roll** and the skipped-item count live in
+The candidate list, **Add item**, **Remove** and **Start roll** live in
 the roll window's setup state now (005 §2). The loot journey is one window: pick the items, open
 the round, read the results, award, without the six-section panel opening on every corpse.
 

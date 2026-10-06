@@ -220,7 +220,7 @@ return {
                 { char = "Bob", position = 2, tier = nil },
                 { char = "Cat", position = 3, tier = 1 },
             } },
-            expected = { "T1: Cat#3/1", "T2: -", "Rest: Ann#1/1", "No hierarchy: Bob#2/1" },
+            expected = { "T1: Cat#3/1", "T2: -", "Rest: Ann#1/1", "No tier list: Bob#2/1" },
         },
         {
             -- The roll window holds the list as SKLIST's name -> index map and the
@@ -252,7 +252,7 @@ return {
                 { char = "Fay", position = 6, tier = nil },
             } },
             expected = { "T1: Bob#2/1 Dan#4/2", "Rest: Ann#1/1 Cat#3/2",
-                         "No hierarchy: Eve#5/1 Fay#6/2" },
+                         "No tier list: Eve#5/1 Fay#6/2" },
         },
         {
             -- A character can be third on the list and first in the queue for a T1

@@ -407,7 +407,7 @@ end
 function Campaign.OverwriteText(stored, incoming)
     return string.format("You already have \"%s\". Replace its priority list (version %d, "
         .. "%d characters) with the imported one (version %d, %d characters)? "
-        .. "Your hierarchy is kept. There is no merge; this is a whole replacement.",
+        .. "Your tier list is kept. There is no merge; this is a whole replacement.",
         stored.label or stored.id,
         (stored.priority or {}).version or 0, #((stored.priority or {}).order or {}),
         (incoming.priority or {}).version or 0, #((incoming.priority or {}).order or {}))

@@ -119,12 +119,11 @@ function Award.ConfirmText(record, label, path)
             .. "You won it, so it is delivered the moment it reaches your bags.", label)
     end
     if path == C.DELIVERY_PATH.MASTER_LOOT then
-        return string.format("Give %s to %s?\n\nFrom the corpse. It binds to %s.",
-            label, who, record.char)
+        -- No binding line: the item says how it binds, and a bind-on-equip drop made
+        -- "it binds to X" untrue.
+        return string.format("Give %s to %s?", label, who)
     end
-    return string.format("Take %s into your bags for %s?\n\n"
-        .. "It binds to YOU and stays tradeable to kill-eligible characters for 2 hours.",
-        label, who)
+    return string.format("Take %s into your bags for %s?", label, who)
 end
 
 --- The message a failure code shows (section 4).
@@ -471,12 +470,24 @@ local function candidateIndex(name)
 end
 
 local OPEN_CORPSE = "Open the corpse to award from it, or loot the item yourself and award again."
+local READING_CORPSE = "Still reading the corpse; award again in a moment."
+
+--- Is the corpse open but not yet re-read? Its slot numbers may have moved since it was
+-- last open, and are only re-found once the scan lands (LootDetect.Rebind). Checking a
+-- slot before then would read loot still on the corpse as lost.
+local function corpseUnread()
+    return ns.LootDetect.windowOpen and ns.LootDetect.scanning
+end
 
 local function giveFromCorpse(record)
     local slot = record.lootSlot
     if not ns.LootDetect.windowOpen then
         -- The dialog can outlive the loot window. Nothing has changed; say what to do.
         ns.Print(OPEN_CORPSE)
+        return
+    end
+    if corpseUnread() then
+        ns.Print(READING_CORPSE)
         return
     end
     if not ns.LootDetect.SlotHolds(slot, record.itemString) then
@@ -504,6 +515,10 @@ end
 
 local function takeIntoBags(record)
     local slot = record.lootSlot
+    if slot and corpseUnread() then
+        ns.Print(READING_CORPSE)
+        return
+    end
     if slot and ns.LootDetect.windowOpen and ns.LootDetect.SlotHolds(slot, record.itemString) then
         -- Loot it ourselves. The record turns PENDING only once the slot clears, so a
         -- cancelled bind confirmation or full bags never produce a phantom record.
@@ -557,6 +572,10 @@ function Award.Prompt(roundId, itemIdx, copy, forceTrade)
     if not Award.Retryable(record) then
         ns.Print(labelFor(record) .. " for " .. record.char .. ": "
             .. Award.StatusText(record) .. ".")
+        return false
+    end
+    if record.lootSlot and corpseUnread() then
+        ns.Print(READING_CORPSE)
         return false
     end
     local existing = ns.Pending.Find(record)

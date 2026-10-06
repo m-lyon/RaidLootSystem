@@ -41,7 +41,7 @@ Then `/reload` or restart the client.
 
 ## Quick start
 
-1. **`/rls`** opens the hierarchy editor. Add your own character and each bot you control, then
+1. **`/rls`** opens your tier list. Add your own character and each bot you control, then
    drag them into priority order — the character you most want geared goes at the top.
 2. The **raid leader** sets how many priority tiers count for the raid (default 3) from the host
    panel. Everything below the cut-off shares an equal-chance "Rest" tier.
@@ -62,7 +62,7 @@ For *why* the addon works this way, see [`docs/DESIGN.md`](docs/DESIGN.md) — t
 references below point there.
 
 Typing `/rls` with nothing after it does the useful thing for the moment: it opens the **roll
-window** if a round is open, or your **hierarchy** if nothing is happening right now. `/rls
+window** if a round is open, or your **tier list** if nothing is happening right now. `/rls
 help` (or any command it doesn't recognise) prints the same list you see here, in-game.
 
 ### Every player
@@ -71,9 +71,9 @@ These work for anyone running the addon, whether or not you're the master looter
 
 | Command | What it does |
 |---|---|
-| `/rls` | Roll window if a round is open, otherwise your hierarchy. |
+| `/rls` | Roll window if a round is open, otherwise your tier list. |
 | `/rls window` | Open the roll window directly. |
-| `/rls hierarchy` | Open your hierarchy — add characters and drag them into priority order. See [DESIGN §2](docs/DESIGN.md#2-core-concepts). |
+| `/rls tierlist` | Open your tier list — add characters and drag them into priority order. See [DESIGN §2](docs/DESIGN.md#2-core-concepts). |
 | `/rls history` | Open the history browser — every past round: what dropped, who entered, who won. See [DESIGN §8](docs/DESIGN.md#8-history). |
 | `/rls status` | Print your addon version, roster size, who's hosting, and any roster conflicts. |
 | `/rls publish` | Resend your roster to the raid, in case someone's copy is stale. |
@@ -136,8 +136,8 @@ you'll get an error message back if you're not.
 | `/rls close` | Resolve the open round right now, instead of waiting for the entry timer. |
 | `/rls cancel` | Cancel the open round outright — nothing is awarded. |
 | `/rls links` | Whether raid announcements carry item links. **Off by default**, because a link in raid chat makes your bots open a trade with you. `/rls links on` restores hoverable links if your bots do not do that. Also a tick box in the host panel. |
-| Lock tier hierarchies | A host-panel setting, on by default. Once a campaign has run a round, members can no longer re-rank or remove characters — only add a new one, which joins at the bottom. The master looter unticks it to let people fix a ranking. Announced to the raid either way. |
-| `/rls tiers` | Open the campaign tier roster — who composes T1, T2 and the rest, built from the hierarchies every member of the campaign submitted. Anyone can open this at any time, in or out of a raid. |
+| Lock tier lists | A host-panel setting, on by default. Once a campaign has run a round, members can no longer re-rank or remove characters — only add a new one, which is added to the lowest tier. The master looter unticks it to let people fix a ranking. Announced to the raid either way. |
+| `/rls tiers` | Open the campaign tier roster — who composes T1, T2 and the rest, built from the tier lists every member of the campaign submitted. Anyone can open this at any time, in or out of a raid. |
 | `/rls tiers <0-5>` | Set how many priority tiers count for the raid; everything below shares an equal-chance "Rest" tier. Takes effect on the next round, not the current one. See [DESIGN §2](docs/DESIGN.md#2-core-concepts). |
 | `/rls quality <3\|4>` | Set the quality bar the corpse scan applies — `3` for rare and up, `4` for epic only. |
 

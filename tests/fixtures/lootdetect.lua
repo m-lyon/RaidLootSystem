@@ -104,6 +104,27 @@ local function run(input, ns)
                              quantity = lost[i].quantity }
         end
         return { kept = project(kept), lost = lostSlots }
+
+    elseif input.op == "corpseslot" then
+        return LootDetect.CorpseSlotFor(input.scan, input.id, input.readable) or 0
+
+    elseif input.op == "rebind" then
+        local records = input.records or {}
+        local kept, lost = LootDetect.Rebind(input.scan, records, input.items or {})
+        -- Then a hand-loot of `thenGone`, the way onSlotCleared would prune it.
+        if input.thenGone then
+            local gone = input.thenGone
+            local more
+            kept, more = LootDetect.Prune(kept, function(slot) return gone[slot] == true end)
+            for _, l in ipairs(more) do lost[#lost + 1] = l end
+        end
+        local recordSlots, lostOut = {}, {}
+        for i, record in ipairs(records) do recordSlots[i] = tostring(record.lootSlot) end
+        for i = 1, #lost do
+            lostOut[i] = { idx = lost[i].item.idx, quantity = lost[i].quantity }
+        end
+        return { kept = project(kept), lost = lostOut,
+                 records = table.concat(recordSlots, ",") }
     end
 
     error("unknown op: " .. tostring(input.op))
@@ -118,6 +139,16 @@ local function info(id, fields)
     }
     for k, v in pairs(fields or {}) do out[k] = v end
     return out
+end
+
+--- A fresh scan row: what LootDetect.Scan records per slot.
+local function scanRow(slot, id, quantity)
+    return { lootSlot = slot, quantity = quantity or 1, info = id and info(id) or {} }
+end
+
+--- An owed award record's slot-relevant fields.
+local function record(id, slot)
+    return { itemString = "item:" .. id .. ":0:0:0:0:0:0:0:0", lootSlot = slot }
 end
 
 local EPIC_CHEST = info(40000, { equipLoc = "INVTYPE_CHEST", armorSubclass = "PLATE" })
@@ -732,6 +763,143 @@ return {
                 },
                 lost = { { idx = 1, slots = "3", quantity = 1 } },
             },
+        },
+        ----------------------------------------------------------------------
+        -- Re-finding items on a reopened corpse (section 3, 0.4.1)
+        ----------------------------------------------------------------------
+        {
+            -- Slot 2 was taken and the corpse reopened: what was slot 4 is slot 3 now.
+            name = "a reopened corpse moves a round item to its new slot",
+            input = { op = "rebind",
+                      scan = { scanRow(1, 40000), scanRow(2, 50000), scanRow(3, 40001) },
+                      items = { roundItem(1, 40001, 1, { 4 }) } },
+            expected = {
+                kept = { { idx = 1, itemString = "item:40001:0:0:0:0:0:0:0:0",
+                           count = 1, slots = "3", units = "3=1" } },
+                lost = {}, records = "",
+            },
+        },
+        {
+            -- The bug this exists for: the round's item moved from 4 to 3, and the host
+            -- then hand-loots whatever now sits in slot 4. The round must keep its item.
+            name = "hand-looting a neighbour after a reopen does not drop the round's item",
+            input = { op = "rebind",
+                      scan = { scanRow(1, 40000), scanRow(3, 40001), scanRow(4, 50000) },
+                      items = { roundItem(1, 40001, 1, { 4 }) },
+                      thenGone = { [4] = true } },
+            expected = {
+                kept = { { idx = 1, itemString = "item:40001:0:0:0:0:0:0:0:0",
+                           count = 1, slots = "3", units = "3=1" } },
+                lost = {}, records = "",
+            },
+        },
+        {
+            name = "a round item no longer on the reopened corpse is lost",
+            input = { op = "rebind",
+                      scan = { scanRow(1, 40000) },
+                      items = { roundItem(1, 40000, 1, { 1 }), roundItem(2, 40001, 1, { 2 }) } },
+            expected = {
+                kept = { { idx = 1, itemString = "item:40000:0:0:0:0:0:0:0:0",
+                           count = 1, slots = "1", units = "1=1" } },
+                lost = { { idx = 2, quantity = 1 } }, records = "",
+            },
+        },
+        {
+            name = "two copies with one left on the corpse drop the count, not the item",
+            input = { op = "rebind",
+                      scan = { scanRow(2, 40000) },
+                      items = { roundItem(1, 40000, 2, { 1, 3 }) } },
+            expected = {
+                kept = { { idx = 1, itemString = "item:40000:0:0:0:0:0:0:0:0",
+                           count = 1, slots = "2", units = "2=1" } },
+                lost = { { idx = 1, quantity = 1 } }, records = "",
+            },
+        },
+        {
+            name = "a stacked slot serves every unit it holds",
+            input = { op = "rebind",
+                      scan = { scanRow(1, 40000, 3) },
+                      items = { roundItem(1, 40000, 3, { 2 }, { [2] = 3 }) } },
+            expected = {
+                kept = { { idx = 1, itemString = "item:40000:0:0:0:0:0:0:0:0",
+                           count = 3, slots = "1", units = "1=3" } },
+                lost = {}, records = "",
+            },
+        },
+        {
+            -- A row with no item id could be the missing copy; announcing a loss that is
+            -- not real is worse than leaving the old slot for SlotHolds to judge.
+            name = "an incomplete scan never reports a loss",
+            input = { op = "rebind",
+                      scan = { scanRow(1, 40000), scanRow(2, nil) },
+                      items = { roundItem(1, 40001, 1, { 3 }) } },
+            expected = {
+                kept = { { idx = 1, itemString = "item:40001:0:0:0:0:0:0:0:0",
+                           count = 1, slots = "3", units = "3=1" } },
+                lost = {}, records = "",
+            },
+        },
+        {
+            name = "an item-link round item has no slot to move",
+            input = { op = "rebind",
+                      scan = { scanRow(1, 40000) },
+                      items = { { idx = 1, itemString = "item:40001:0:0:0:0:0:0:0:0",
+                                  count = 1, lootSlots = {}, info = info(40001) } } },
+            expected = {
+                kept = { { idx = 1, itemString = "item:40001:0:0:0:0:0:0:0:0",
+                           count = 1, slots = "", units = "" } },
+                lost = {}, records = "",
+            },
+        },
+        {
+            -- An award still owed from a closed round follows its item; one whose item is
+            -- gone keeps its old slot, and SlotHolds marks it lost at award time.
+            name = "owed awards follow their items, and a gone one keeps its slot",
+            input = { op = "rebind",
+                      scan = { scanRow(1, 40001), scanRow(2, 40000) },
+                      records = { record(40000, 5), record(40002, 3), record(40001, 2) } },
+            expected = { kept = {}, lost = {}, records = "2,3,1" },
+        },
+        {
+            name = "two awards of one item share its stacked slot",
+            input = { op = "rebind",
+                      scan = { scanRow(3, 40000, 2) },
+                      records = { record(40000, 1), record(40000, 2) } },
+            expected = { kept = {}, lost = {}, records = "3,3" },
+        },
+        {
+            -- Two copies on the corpse, two awards owed: each gets its own slot rather
+            -- than both pointing at the first.
+            name = "two awards of one item take one slot each",
+            input = { op = "rebind",
+                      scan = { scanRow(1, 40000), scanRow(2, 40000) },
+                      records = { record(40000, 2), record(40000, 3) } },
+            expected = { kept = {}, lost = {}, records = "1,2" },
+        },
+        ----------------------------------------------------------------------
+        -- A round started from a link on an item the open corpse holds (0.4.1)
+        ----------------------------------------------------------------------
+        {
+            -- "/rls roll [item]" with the corpse open used to go to the trade path and
+            -- answer "The item is not in your bags."
+            name = "a linked item the open corpse holds takes its slot",
+            input = { op = "corpseslot", id = 40001, readable = true,
+                      scan = { scanRow(1, 40000), scanRow(3, 40001) } },
+            expected = 3,
+        },
+        {
+            name = "a linked item the corpse does not hold has no slot",
+            input = { op = "corpseslot", id = 40002, readable = true,
+                      scan = { scanRow(1, 40000) } },
+            expected = 0,
+        },
+        {
+            -- The last scan is a closed corpse, or one still being read: its slots are
+            -- not the open window's.
+            name = "no slot when the scan is not the corpse open now",
+            input = { op = "corpseslot", id = 40000, readable = false,
+                      scan = { scanRow(1, 40000) } },
+            expected = 0,
         },
     },
 }

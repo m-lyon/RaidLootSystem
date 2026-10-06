@@ -157,40 +157,27 @@ end
 -- drops what you want. The lock exists to stop that, not to freeze a roster.
 --
 -- What survives the lock is appending. A character added at the end of your own
--- ordering lands in Rest, below everyone you had already ranked, so it can jump
--- nobody -- and without this a bot rolled mid-campaign could never be brought in at
--- all. Everything else is refused: a reorder is the whole point of the lock, and a
--- removal is a reorder wearing a disguise, because taking out your T1 promotes
--- every character below it by one.
+-- ordering lands in your lowest tier -- the next real tier if you ranked fewer
+-- characters than there are tiers, otherwise Rest -- below everyone you had already
+-- ranked, so it can jump none of your own characters, and without this a bot rolled
+-- mid-campaign could never be brought in at all. Everything else is refused: a
+-- reorder is the whole point of the lock, and a removal is a reorder wearing a
+-- disguise, because taking out your T1 promotes every character below it by one.
 -- @return true, or nil plus a reason
-function Roster.LockedChangeAllowed(storedOrder, incomingOrder, tierCount)
+function Roster.LockedChangeAllowed(storedOrder, incomingOrder)
     storedOrder, incomingOrder = storedOrder or {}, incomingOrder or {}
     -- Nothing submitted yet: there is no ranking to protect (spec 014 section 7).
     if #storedOrder == 0 then return true end
     for i = 1, #storedOrder do
         local was, now = storedOrder[i], incomingOrder[i]
         if now == nil then
-            return nil, "characters cannot be removed from a locked hierarchy"
+            return nil, "characters cannot be removed from a locked tier list"
         end
         if tostring(was):lower() ~= tostring(now):lower() then
-            return nil, "characters cannot be re-ranked in a locked hierarchy"
+            return nil, "characters cannot be re-ranked in a locked tier list"
         end
     end
-    -- An append that would sit above Rest (a member who ranked fewer characters than
-    -- there are tiers) jumps every other member's Rest characters.
-    if #incomingOrder > #storedOrder and (tierCount or 0) > 0
-        and not Tiers.isRest(Tiers.forPosition(#storedOrder + 1, tierCount), tierCount) then
-        return nil, "a character added to a locked hierarchy must land in Rest"
-    end
     return true
-end
-
---- May this character be appended to a locked ordering? The incoming order is the
--- stored one plus the name, built explicitly.
-function Roster.LockedAppendAllowed(storedOrder, name, tierCount)
-    local incoming = Util.copy(storedOrder or {})
-    incoming[#incoming + 1] = name
-    return Roster.LockedChangeAllowed(storedOrder, incoming, tierCount)
 end
 
 --- "contested - Steve and Dave both claim Sneaky" (section 5).
@@ -505,7 +492,7 @@ function Roster.Remove(name)
     -- character is locked (spec 014).
     local campaignId = Roster.LockedRankingOf(stored)
     if campaignId then
-        return nil, string.format("\"%s\" has started and its hierarchies are locked, and "
+        return nil, string.format("\"%s\" has started and its tier lists are locked, and "
             .. "%s is ranked in it. The master looter can unlock them in the host panel.",
             ns.Campaign.LabelFor(campaignId), stored)
     end
@@ -577,7 +564,7 @@ local function lockedReason(target)
     if target == Roster.DEFAULT_TARGET then return nil end
     local campaignId = target or ns.Campaign.ActiveId()
     if not ns.Campaign.HierarchyLocked(campaignId) then return nil end
-    return string.format("\"%s\" has started and its hierarchies are locked. The master "
+    return string.format("\"%s\" has started and its tier lists are locked. The master "
         .. "looter can unlock them in the host panel.", ns.Campaign.LabelFor(campaignId))
 end
 
@@ -606,16 +593,9 @@ function Roster.SetIncludedIn(target, name, included)
 
     local at = Util.indexOf(list, stored)
     if included and not at then
-        -- Allowed even while locked: it appends, so it lands in Rest and jumps
-        -- nobody (spec 014). Without it a character rolled mid-campaign could
-        -- never be brought in at all. Only into Rest, though: a member ranked short
-        -- of the tier count would otherwise add straight into a real tier.
-        if lockedReason(target) then
-            local campaign = ns.Campaign.Get(target or ns.Campaign.ActiveId())
-            local ok, why = Roster.LockedAppendAllowed(list, stored,
-                campaign and campaign.host.tierCount)
-            if not ok then return nil, why end
-        end
+        -- Allowed even while locked: it appends, so it lands in the lowest tier
+        -- and jumps none of your ranked characters (spec 014). Without it a
+        -- character rolled mid-campaign could never be brought in at all.
         list[#list + 1] = stored
     elseif not included and at then
         local locked = lockedReason(target)
@@ -924,10 +904,10 @@ end
 local function lockedOverlaps(campaignId, campaign, sender, order)
     local players = {}
     for _, other in ipairs(ns.Campaign.OverlappingOrders(campaign, sender, order)) do
-        local ok, why = Roster.LockedChangeAllowed(other.order, order, campaign.host.tierCount)
+        local ok, why = Roster.LockedChangeAllowed(other.order, order)
         if not ok then
             players[#players + 1] = other.player
-            ns.WarnOnce(warnedLocked, sender, string.format("%s published a hierarchy that "
+            ns.WarnOnce(warnedLocked, sender, string.format("%s published a tier list that "
                 .. 'ranks %s\'s characters, but "%s" is locked (%s); the characters they '
                 .. "share are contested.", tostring(sender), other.player,
                 ns.Campaign.LabelFor(campaignId), tostring(why)))
@@ -940,12 +920,12 @@ end
 -- refused: the stored ordering stands, and `msg` is rewritten to it (spec 014).
 -- @return true when the change was refused
 local function refuseLockedChange(campaign, sender, msg, stored)
-    local ok, why = Roster.LockedChangeAllowed(stored, msg.order, campaign.host.tierCount)
+    local ok, why = Roster.LockedChangeAllowed(stored, msg.order)
     if ok then return false end
     -- Once per sender per login session: a diverged client republishes on every
     -- roster event, and an unbounded repeat buries the raid's chat (the same rule
     -- spec 002 section 11 uses).
-    ns.WarnOnce(warnedLocked, sender, string.format("%s changed their hierarchy but "
+    ns.WarnOnce(warnedLocked, sender, string.format("%s changed their tier list but "
         .. "\"%s\" is locked (%s); their ranking is unchanged.", tostring(sender),
         ns.Campaign.LabelFor(msg.campaignId), tostring(why)))
     msg.order, msg.chars = Roster.KeepLockedOrder(stored, msg.chars,
@@ -1045,10 +1025,9 @@ function Roster.ApplyImport(order, chars)
     -- pruneHierarchies touches anything, so a refused import changes nothing.
     local activeId = ns.Campaign.ActiveId()
     if ns.Campaign.HierarchyLocked(activeId) then
-        local allowed, why2 = Roster.LockedChangeAllowed(ns.Database.Hierarchy() or {}, order,
-            ns.Campaign.Get(activeId).host.tierCount)
+        local allowed, why2 = Roster.LockedChangeAllowed(ns.Database.Hierarchy() or {}, order)
         if not allowed then
-            return nil, string.format("\"%s\" has started and its hierarchies are locked (%s). "
+            return nil, string.format("\"%s\" has started and its tier lists are locked (%s). "
                 .. "The master looter can unlock them in the host panel.",
                 ns.Campaign.LabelFor(activeId), tostring(why2))
         end
@@ -1065,7 +1044,7 @@ function Roster.ApplyImport(order, chars)
         if ns.Campaign.HierarchyLocked(campaignId) then
             for _, ranked in ipairs(campaign.hierarchy or {}) do
                 if not importedNames[tostring(ranked):lower()] then
-                    return nil, string.format("\"%s\" has started and its hierarchies are "
+                    return nil, string.format("\"%s\" has started and its tier lists are "
                         .. "locked, and this import drops %s, which is ranked in it. The "
                         .. "master looter can unlock them in the host panel.",
                         ns.Campaign.LabelFor(campaignId), ranked)

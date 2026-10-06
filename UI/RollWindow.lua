@@ -109,6 +109,17 @@ function RollWindow.CellState(info, char, tick, config)
     return state
 end
 
+--- Does this character's row offer the priority-pick star (spec 010 section 7)?
+--
+-- Only under SK, and only once it has two or more items ticked: the star decides which
+-- item a character keeps when it would win several, so with one tick it can never do
+-- anything, and a control that does nothing just reads as noise.
+-- @param sk         is the round on Suicide Kings
+-- @param tickCount  how many items this character has ticked
+function RollWindow.StarShown(sk, tickCount)
+    return sk == true and (tickCount or 0) >= 2
+end
+
 --------------------------------------------------------------------------------
 -- Pure: the submission (section 3, "Footer") and the dirty check
 --------------------------------------------------------------------------------
@@ -156,16 +167,22 @@ local function flagSignature(entries)
     return table.concat(keys, ",")
 end
 
---- Do the local ticks differ from what the host has accepted for this player?
+--- Do the local ticks differ from what this player last submitted?
 --
--- (item, character) pairs are compared against STATE, which carries nothing else. The
--- override and star flags are compared against what this client last sent: a moved
--- star is a material change under SK (spec 010 section 7) that STATE cannot reflect.
+-- Against the last SUBMIT when there is one, flags included: a moved star is a material
+-- change under SK (spec 010 section 7) that STATE cannot reflect. Against STATE's
+-- (item, character) pairs only when this client has sent nothing it remembers.
 -- @param lastSent  the entries of the last SUBMIT, or nil before the first
 function RollWindow.IsDirty(localEntries, accepted, lastSent)
-    if pairSignature(localEntries) ~= pairSignature(accepted) then return true end
-    if lastSent and flagSignature(localEntries) ~= flagSignature(lastSent) then return true end
-    return false
+    -- Once this client has sent, "unsent" means unsent: compared against the last SUBMIT,
+    -- not STATE. STATE lags a submit by a round trip, and judged against it every submit
+    -- read as "unsent changes" until the host's answer came back. An entry the host
+    -- refused is not unsent either -- the refusal line names it (section 4).
+    if lastSent then
+        return flagSignature(localEntries) ~= flagSignature(lastSent)
+    end
+    -- Nothing sent this session (a /reload since): STATE is all there is to go on.
+    return pairSignature(localEntries) ~= pairSignature(accepted)
 end
 
 --- This player's entries as the host last reported them.
@@ -610,6 +627,7 @@ local Widgets = ns.Widgets          -- nil under the fixture runner, which never
 local HEADER_W = 150           -- the frozen row header
 local CELL_W = 56
 local ROW_H = 26
+local STAR_ICON = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_1"   -- the priority pick
 local COL_HEADER_H = 40
 local MAX_VISIBLE_COLS = 6     -- past this the columns scroll (section 3)
 local DETAIL_H = 84
@@ -619,9 +637,10 @@ local WARN_H = 16
 local BUTTON_H = 22
 local PAD = 16
 local RESULTS_H = 380
--- The setup list's width: the same span the grid occupies, so the window does not
--- jump sideways when a round opens on the loot the host just ticked.
-local SETUP_W = HEADER_W + MAX_VISIBLE_COLS * CELL_W + 8
+-- The setup list's width. Narrower than the grid: it is one column of item names
+-- and the add/start controls, and at the grid's width it was mostly empty space.
+-- The bottom row (add box, Add item, Start roll) is what sets the floor.
+local SETUP_W = 360
 
 local frame
 local entryPanel, resultsPanel, setupPanel
@@ -863,7 +882,7 @@ local function createCell()
     cell.star:SetHeight(14)
     cell.star:SetPoint("TOPRIGHT", cell, "TOPRIGHT", -2, -1)
     cell.star.icon = cell.star:CreateTexture(nil, "OVERLAY")
-    cell.star.icon:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcon_1")
+    cell.star.icon:SetTexture(STAR_ICON)
     cell.star.icon:SetAllPoints()
     cell.star:SetScript("OnClick", onStarClick)
     Widgets.Tooltip(cell.star, "Priority pick",
@@ -1016,7 +1035,7 @@ local function layoutColumns(round, items)
 end
 
 --- Draw one cell and report whether it can be entered and whether it is ticked.
-local function drawCell(cell, round, item, char, y, c, sk, settings)
+local function drawCell(cell, round, item, char, y, c, starShown, settings)
     local info = infoFor(round, item)
     local tick = getTick(round, item.idx, char.name)
     local state = RollWindow.CellState(info, char, tick,
@@ -1028,7 +1047,7 @@ local function drawCell(cell, round, item, char, y, c, sk, settings)
     cell.box:SetAlpha(state.enterable and 1 or 0.3)
     if state.ticked then cell.check:Show() else cell.check:Hide() end
     if state.override then cell.border:Show() else cell.border:Hide() end
-    if sk and state.ticked then
+    if starShown and state.ticked then
         cell.star:Show()
         cell.star.icon:SetAlpha(state.star and 1 or 0.25)
     else
@@ -1080,7 +1099,7 @@ local function layoutGrid(round, items, roster, sk, ranks)
         for _, cell in ipairs(line) do cell:Hide() end
     end
 
-    local y = 0
+    local y, anyStar = 0, false
     for r, char in ipairs(roster) do
         local row = rows[r]
         if not row then
@@ -1089,6 +1108,12 @@ local function layoutGrid(round, items, roster, sk, ranks)
         end
         cells[r] = cells[r] or {}
 
+        local tickCount = 0
+        for _, item in ipairs(items) do
+            if getTick(round, item.idx, char.name) then tickCount = tickCount + 1 end
+        end
+        local starShown = RollWindow.StarShown(sk, tickCount)
+
         local rowEnterable, rowTicked = false, false
         for c, item in ipairs(items) do
             local cell = cells[r][c]
@@ -1096,17 +1121,20 @@ local function layoutGrid(round, items, roster, sk, ranks)
                 cell = createCell()
                 cells[r][c] = cell
             end
-            local enterable, ticked = drawCell(cell, round, item, char, y, c, sk, settings)
+            local enterable, ticked = drawCell(cell, round, item, char, y, c, starShown, settings)
             if enterable then rowEnterable = true end
             if ticked then rowTicked = true end
         end
 
         if not hideIneligible or rowEnterable or rowTicked then
+            if starShown then anyStar = true end
             drawRowHeader(row, round, char, y, sk, ranks)
             for c = 1, #items do cells[r][c]:Show() end
             y = y + ROW_H
         end
     end
+    -- The key to the star sits above the grid, and only while a star is on screen.
+    if anyStar then entryPanel.starNote:Show() else entryPanel.starNote:Hide() end
     return math.max(y, ROW_H)
 end
 
@@ -1169,7 +1197,6 @@ local function renderFooter(round, sk)
     entryPanel.submit:SetText(submitted and "Revise" or
         string.format("Submit %d entr%s", #localEntries, #localEntries == 1 and "y" or "ies"))
     local dirty = submitted and RollWindow.IsDirty(localEntries, accepted, ns.Client.LastSent())
-    entryPanel.dirty:SetText(dirty and "|cffffaa00unsent changes|r" or "")
 
     -- Read-only: this round belongs to a campaign this client is not in, so there is
     -- nothing to submit (spec 012 section 6). The controls are disabled rather than
@@ -1182,20 +1209,23 @@ local function renderFooter(round, sk)
         entryPanel.pass:Enable()
     end
 
+    -- One full-width line for everything the footer has to say. "unsent changes" used
+    -- to sit squeezed between the buttons, where it ran under Submit.
+    local notes = {}
     if round.lastRejected and #round.lastRejected > 0 then
-        entryPanel.warning:SetText("|cffff6060The host refused: "
-            .. table.concat(round.lastRejected, ", ") .. "|r")
+        notes[#notes + 1] = "|cffff6060The host refused: "
+            .. table.concat(round.lastRejected, ", ") .. "|r"
     elseif round.priorityNotice then
-        entryPanel.warning:SetText("|cffffaa00" .. round.priorityNotice .. "|r")
-    else
-        entryPanel.warning:SetText("")
+        notes[#notes + 1] = "|cffffaa00" .. round.priorityNotice .. "|r"
     end
+    if dirty then notes[#notes + 1] = "|cffffaa00Unsent changes - press Revise.|r" end
+    entryPanel.warning:SetText(table.concat(notes, "  "))
 end
 
 --- Window size follows the grid. The terms are the entry panel's anchors, top to
 -- bottom: column header, grid, the gap holding the slider, the toggle, the detail
--- panel, the warning line, the button row. BUTTON_H covers the whole footer row --
--- Pass all, Full list, the dirty indicator and Submit all sit on it at that height.
+-- panel, the warning line (refusals, notices, unsent changes), the button row. BUTTON_H
+-- covers the whole footer row -- Pass all, Full list and Submit all sit on it.
 -- A change to the panel's anchors in its builder has to change this sum with it.
 local function sizeEntryWindow(gridH, visibleCols)
     local width = PAD * 2 + HEADER_W + visibleCols * CELL_W + 8
@@ -1424,7 +1454,6 @@ local OPENING_MAX_RESENDS = 3
 local openingResends = 0              -- OPEN resends spent on the round still opening
 local openingGaveUpId                 -- the host round whose echo was given up on
 local closeLootPending = {}          -- closed round id -> the corpse its awards are still owed on
-local roundCorpses = {}              -- closed round id -> its corpse; outlives ReleaseRound
 local lastHostClosedRoundId          -- the host round whose loot-frame close was already handled
 local lastResultsShownRoundId        -- the closed round whose results already opened the window
 
@@ -1438,7 +1467,11 @@ local function recordsOfRound(list, roundId)
 end
 
 local SETUP_ROW_H = 22
-local QUALITY_NAME = { [0] = "poor", "common", "uncommon", "rare", "epic", "legendary" }
+-- The setup state has no status line, counter or banner, so its content starts just
+-- under the title instead of at the entry grid's 70.
+local SETUP_TOP = 40
+local SETUP_HINT_H = 26        -- two lines of GameFontDisableSmall
+local SETUP_GAP = 8
 
 local function tickKey(item)
     return (item.info and item.info.itemId) or item.itemString
@@ -1456,13 +1489,6 @@ end
 -- what /rls start must open on too, or the command and the button disagree.
 function RollWindow.TickedItems()
     return tickedItems()
-end
-
-local function hasLootSlot(items)
-    for _, item in ipairs(items) do
-        if item.lootSlot then return true end
-    end
-    return false
 end
 
 local function startRoll()
@@ -1523,7 +1549,7 @@ local function setupRow(i)
 
     row.label = CreateFrame("Button", nil, row)
     row.label:SetPoint("LEFT", row.icon, "RIGHT", 4, 0)
-    row.label:SetWidth(SETUP_W - 180)
+    row.label:SetWidth(SETUP_W - 90)
     row.label:SetHeight(SETUP_ROW_H)
     row.label.text = Widgets.Label(row.label, "", "GameFontHighlightSmall")
     row.label.text:SetAllPoints()
@@ -1545,10 +1571,6 @@ local function setupRow(i)
     row.remove:SetPoint("RIGHT", row, "RIGHT", -2, 0)
     Widgets.Tooltip(row.remove, "Remove",
         "Take this item out of the round. Add it again by link if you change your mind.")
-
-    row.right = Widgets.Label(row, "", "GameFontHighlightSmall")
-    row.right:SetPoint("RIGHT", row.remove, "LEFT", -4, 0)
-    row.right:SetJustifyH("RIGHT")
     setupRows[i] = row
     return row
 end
@@ -1575,9 +1597,6 @@ local function refreshSetup()
         if item.count > 1 then label = label .. " |cffffcc00x" .. item.count .. "|r" end
         if item.info and item.info.special then label = label .. " |cffffcc00*|r" end
         row.label.text:SetText(label)
-        local quality = item.info and item.info.quality
-        local where = item.lootSlot and ("slot " .. item.lootSlot) or "by link"
-        row.right:SetText("|cff888888" .. (QUALITY_NAME[quality] or "?") .. ", " .. where .. "|r")
         row:Show()
     end
     for i = n + 1, #setupRows do setupRows[i]:Hide() end
@@ -1585,15 +1604,12 @@ local function refreshSetup()
     if LootDetect.scanning then
         setupPanel.hint:SetText("Looking the loot up...")
     elseif n == 0 and #LootDetect.skipped > 0 then
-        setupPanel.hint:SetText(string.format("Nothing to roll for automatically; %d skipped "
-            .. "(filtered, or already rolled for). Add one below.", #LootDetect.skipped))
+        setupPanel.hint:SetText("Nothing to roll for automatically. Add an item below.")
     elseif n == 0 then
         setupPanel.hint:SetText("Nothing here is worth rolling for. Open a corpse as master "
             .. "looter, or add an item below.")
     else
-        local skipped = #LootDetect.skipped
-        setupPanel.hint:SetText(skipped > 0 and string.format(
-            "%d skipped (filtered, or already rolled for). Add one below.", skipped) or "")
+        setupPanel.hint:SetText("")
     end
 
     local round = hostRound()
@@ -1603,17 +1619,22 @@ local function refreshSetup()
         roundOpen = round ~= nil and round.state == C.ROUND_STATE.OPEN,
         scanning = LootDetect.scanning,
         ticked = #tickedItems(),
-        staleSlots = not LootDetect.windowOpen and hasLootSlot(tickedItems()),
     })
     if blocker then setupPanel.start:Disable() else setupPanel.start:Enable() end
     Widgets.Tooltip(setupPanel.start, "Start roll",
         blocker or string.format("Open a round on the %d ticked item(s).", #tickedItems()))
 
-    local listH = math.max(n, 1) * SETUP_ROW_H
-    setupPanel.list:SetHeight(listH)
+    -- Only the space the content uses: no hint line when there is no hint, and no empty
+    -- row when there are no items. The hint gets two lines, the most it wraps to at
+    -- this width; a wrapped string measures short until it has been drawn.
+    local hintH = (setupPanel.hint:GetText() or "") ~= "" and (SETUP_HINT_H + SETUP_GAP) or 0
+    local listH = n * SETUP_ROW_H
+    setupPanel.list:ClearAllPoints()
+    setupPanel.list:SetPoint("TOPLEFT", setupPanel, "TOPLEFT", 0, -hintH)
+    setupPanel.list:SetHeight(math.max(listH, 1))
 
     frame:SetWidth(PAD * 2 + SETUP_W)
-    frame:SetHeight(70 + 20 + listH + 12 + BUTTON_H + PAD)
+    frame:SetHeight(SETUP_TOP + hintH + listH + SETUP_GAP + BUTTON_H + PAD)
 end
 
 --------------------------------------------------------------------------------
@@ -1790,6 +1811,14 @@ local function buildEntryPanel(parent)
     panel:SetPoint("TOPLEFT", parent, "TOPLEFT", PAD, -70)
     panel:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -PAD, PAD)
 
+    -- Above the grid, in the gap under the title. Shown by layoutGrid only while some
+    -- row offers the star.
+    panel.starNote = Widgets.Label(panel, "|T" .. STAR_ICON .. ":12|t marks the item a "
+        .. "character keeps if it would win several.", "GameFontHighlightSmall")
+    panel.starNote:SetPoint("BOTTOMLEFT", panel, "TOPLEFT", 0, 6)
+    panel.starNote:SetJustifyH("LEFT")
+    panel.starNote:Hide()
+
     -- Frozen row header on the left, the item columns to its right.
     rowHeaders = CreateFrame("Frame", nil, panel)
     rowHeaders:SetWidth(HEADER_W)
@@ -1879,40 +1908,27 @@ local function buildEntryPanel(parent)
     panel.submit = Widgets.Button(panel, "Submit", 130, BUTTON_H, function() submitGrid(false) end)
     panel.submit:SetPoint("TOPRIGHT", panel.warning, "BOTTOMRIGHT", 0, -6)
 
-    -- "unsent changes" sits between the left-hand buttons and Submit. Anchored only
-    -- by its right edge it grew leftwards *under* Full list and Pass all and read as
-    -- clipped text; the left anchor is what stops it, and the fixed height keeps it on
-    -- the one footer row the height arithmetic below allows for. The anchor is Pass
-    -- all, not Full list: at the 420px minimum width a Full list anchor leaves ~66px,
-    -- narrower than the text, which then wraps to two lines and clips inside the
-    -- one-row height.
-    panel.dirty = Widgets.Label(panel, "", "GameFontHighlightSmall")
-    panel.dirty:SetPoint("LEFT", panel.pass, "RIGHT", 8, 0)
-    panel.dirty:SetPoint("RIGHT", panel.submit, "LEFT", -8, 0)
-    panel.dirty:SetHeight(BUTTON_H)
-    panel.dirty:SetJustifyH("RIGHT")
-    panel.dirty:SetJustifyV("MIDDLE")
-    if panel.dirty.SetNonSpaceWrap then panel.dirty:SetNonSpaceWrap(false) end
-
     return panel
 end
 
 local function buildSetupPanel(parent)
     local panel = CreateFrame("Frame", nil, parent)
-    panel:SetPoint("TOPLEFT", parent, "TOPLEFT", PAD, -70)
+    panel:SetPoint("TOPLEFT", parent, "TOPLEFT", PAD, -SETUP_TOP)
     panel:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -PAD, PAD)
 
     panel.hint = Widgets.Label(panel, "", "GameFontDisableSmall")
     panel.hint:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
     panel.hint:SetWidth(SETUP_W - 20)
     panel.hint:SetJustifyH("LEFT")
+    panel.hint:SetJustifyV("TOP")
 
+    -- Anchored by refreshSetup, directly under the hint or in its place.
     panel.list = CreateFrame("Frame", nil, panel)
-    panel.list:SetPoint("TOPLEFT", panel.hint, "BOTTOMLEFT", 0, -6)
+    panel.list:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
     panel.list:SetWidth(SETUP_W - 20)
     panel.list:SetHeight(1)
 
-    panel.addBox = Widgets.EditBox(panel, 200, 20)
+    panel.addBox = Widgets.EditBox(panel, 150, 20)
     panel.addBox:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 2, 0)
     panel.addBox:SetScript("OnEnterPressed", function(self) addItem(self:GetText()) end)
     panel.addBox:SetScript("OnReceiveDrag", receiveCursorItem)
@@ -2129,7 +2145,7 @@ local function setupActiveFor(requested)
     local round = hostRound() or {}
     local blocking = RollWindow.SetupBlockingAwards(outstandingFor(round.id), function(record)
         -- Slot numbers repeat on every corpse: only the round's own corpse can hold it.
-        return ns.LootDetect.SourceOpen(roundCorpses[record.roundId])
+        return ns.LootDetect.SourceOpen(ns.LootDetect.CorpseOf(record.roundId))
             and ns.LootDetect.SlotHolds(record.lootSlot, record.itemString)
     end)
     return RollWindow.SetupActive(ns.Round.IsHost(), requested, round.state, blocking)
@@ -2154,9 +2170,6 @@ local function closeLootIfDone()
     -- A corpse that has aged out of the remembered sources can never be reopened as itself.
     for roundId, source in pairs(closeLootPending) do
         if not ns.LootDetect.SourceKnown(source) then closeLootPending[roundId] = nil end
-    end
-    for roundId, source in pairs(roundCorpses) do
-        if not ns.LootDetect.SourceKnown(source) then roundCorpses[roundId] = nil end
     end
     local done = RollWindow.LootDone({
         candidates = ns.LootDetect.candidates,
@@ -2267,7 +2280,6 @@ local function onRoundChanged(round)
     if lastHostClosedRoundId == round.id then return end
     lastHostClosedRoundId = round.id
     setupRequested = false
-    roundCorpses[round.id] = ns.LootDetect.RoundSource(round.id)
     -- The corpse has nothing left to offer this round, so the host's loot
     -- window is dismissed for them -- but only once every award from it has
     -- been made (section 2).

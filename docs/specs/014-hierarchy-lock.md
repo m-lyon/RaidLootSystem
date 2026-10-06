@@ -66,7 +66,7 @@ the one permitted change.
 | Change | Allowed | Why |
 |---|---|---|
 | Nothing changes | yes | A republish is not an edit, and republishing happens constantly. |
-| A character appended at the end | **yes** | It lands in Rest, below everyone already ranked, so it jumps nobody — and without this a character rolled mid-campaign could never be brought in at all. |
+| A character appended at the end | **yes** | It lands in the member's lowest tier — the next unfilled real tier if they ranked fewer characters than the tier count, otherwise Rest — below everyone they already ranked, so it jumps none of their own characters. Without this a character rolled mid-campaign could never be brought in at all. (v0.4.0 allowed an append only into Rest, which left a member ranked short of the tier count unable to add anyone; v0.4.1 drops that.) |
 | Two characters swapped | no | The change the lock exists to stop. |
 | A character inserted above an existing one | no | It displaces everything under it. A re-rank however it is spelled. |
 | A character removed | no | A reorder wearing a disguise: removing your T1 promotes every character below it by one. |
@@ -139,5 +139,5 @@ it; at the host it was a caption on a tick box that already said the same thing.
 
 - With the lock on and a round already run, a simulated member's re-ranked `ROSTER` leaves their
   stored ordering unchanged and prints the refusal.
-- The same member appending a new character succeeds, and it lands in Rest.
+- The same member appending a new character succeeds, and it lands in their lowest tier.
 - Unlocking mid-round succeeds where changing the tier count is refused.

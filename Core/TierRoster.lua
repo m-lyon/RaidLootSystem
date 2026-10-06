@@ -127,7 +127,7 @@ function TierRoster.groupRows(rows, tierCount)
         bands[tier] = { tier = tier, label = Tiers.label(tier, tierCount), rows = {} }
         byTier[tier] = bands[tier]
     end
-    local unknown = { tier = nil, label = "No hierarchy", rows = {} }
+    local unknown = { tier = nil, label = "No tier list", rows = {} }
 
     for _, row in ipairs(rows or {}) do
         local band = row.tier and byTier[row.tier] or unknown
@@ -135,7 +135,7 @@ function TierRoster.groupRows(rows, tierCount)
     end
 
     -- Carried only when it has something in it: an empty tier is a fact about the
-    -- campaign worth showing, but an empty "No hierarchy" is just noise.
+    -- campaign worth showing, but an empty "No tier list" is just noise.
     if #unknown.rows > 0 then bands[#bands + 1] = unknown end
 
     for _, band in ipairs(bands) do

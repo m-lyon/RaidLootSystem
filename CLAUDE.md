@@ -61,7 +61,10 @@ with the reasoning.
   window means walking `GetChildren()` and shifting every descendant by the same delta, which is
   what `Widgets.Raise` does and why two overlapping windows used to draw half in front of each
   other and half behind. Every window keeps strata `DIALOG`, so `StaticPopup` and dropdowns stay
-  above them. Spec 000 §8.
+  above them. Spec 000 §8. **But don't trust a child's level after touching its parent:** at
+  least some children *do* move with a parent, so `Raise` records every level in the subtree
+  first and writes recorded + delta. Reading as it went compounded the delta per depth and threw
+  "negative frame level" (0.4.1).
 - **Nothing irreversible without a confirmation dialog** — awarding loot, clearing history,
   overwriting a roster on import.
 - **Failures are surfaced, never swallowed.** A silently dropped entry or a silently failed award
@@ -91,7 +94,8 @@ with the reasoning.
 - **The hierarchy lock is enforced on receipt, not only in the editor.** `lockHierarchy` is on by
   default and bites once a campaign has resolved a round (any non-aborted history record names it). A locked
   ordering may only be *appended* to -- a swap, an insert, a removal and a truncation are all
-  re-ranks, and an append lands in Rest where it jumps nobody. Refusing only in the sender's own
+  re-ranks, and an append lands in the member's lowest tier, below everything they already
+  ranked. Refusing only in the sender's own
   editor would be a suggestion: an older build or an edited saved-variables file walks past it,
   and `onRoster`'s copy is what the host stamps entry tiers from. Spec 014.
 - **`lockHierarchy` is assigned, never `or`-defaulted, wherever `CFG` / `CSTATE` are applied.**
@@ -141,6 +145,10 @@ with the reasoning.
   wins what; only the order suicides are applied in. Spec 010 §7.
 - **`itemLevel` / `quality` / `equipLoc` are logged on every item under both modes.** Nothing in
   v1 reads them; they cannot be backfilled once the client cache is cold.
+- **A loot slot number is only good for the window it was read in.** Every scan of a remembered
+  corpse re-finds the open round's items and the owed awards by item id (`LootDetect.Rebind`)
+  before anything reads a slot, and an award is refused while that scan is still running. Do not
+  add a path that trusts a slot remembered across `LOOT_CLOSED`. Spec 004 §3.
 ## Testing
 
 `lua tests/run.lua` runs the pure-core fixture suites with no dependencies beyond a Lua 5.1
@@ -169,6 +177,10 @@ Add a fixture case for every bug fixed in `Core/`.
   raid-night check.
 - **The exact mod-playerbots `equip` command syntax** (spec 007) is still unconfirmed against
   the server build.
+- **Whether a reopened corpse renumbers its slots is unconfirmed on 3.3.5a.** Gaps while one
+  window stays open are the expected behaviour; compaction on reopen is the assumption
+  `LootDetect.Rebind` exists for, and it is correct either way. Raid-night check: take one item
+  off a corpse with several, close and reopen it, and see whether the rest moved up.
 - **A `StaticPopup` drawing above a raised window is unconfirmed on 3.3.5a.** `Widgets.Raise`
   stacks windows from `BASE_LEVEL` in `LEVEL_STEP`s, so with several open the front window's
   subtree sits near level 100, still in strata `DIALOG` -- which is `StaticPopupTemplate`'s strata
@@ -276,6 +288,11 @@ The rules that are easiest to get wrong when working on it, each with its spec s
   column. A stale constant does not merely look wrong -- it reports a raid full of mismatched
   builds as matching, which is the opposite of what that column is for. They drifted apart once,
   0.2.0 against 0.5.0, and the column said nothing for four specs.
+- **Players see "tier list"; the code says "hierarchy".** Since 0.4.1 every user-facing string
+  calls a member's ranking their *tier list* (`/rls tierlist`, "Your tier list"). Identifiers,
+  saved variables, wire fields (`lockHierarchy`, `campaign.hierarchy`) and spec titles keep
+  "hierarchy" -- renaming those would break saved data and older peers for no player benefit.
+  `/rls hierarchy` still works as an unlisted alias.
 - Frames created in Lua, no XML.
 - Commit subjects name the spec: `spec 003: tie re-roll loop`.
 - English only; no locale layer.

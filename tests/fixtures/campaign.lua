@@ -124,8 +124,7 @@ local function run(input, ns)
             local checked, refused = {}, {}
             for i, other in ipairs(Campaign.OverlappingOrders(campaign, publish.player,
                     publish.order)) do
-                local ok = ns.Roster.LockedChangeAllowed(other.order, publish.order,
-                    publish.tierCount)
+                local ok = ns.Roster.LockedChangeAllowed(other.order, publish.order)
                 checked[i] = other.player .. (ok and "=allowed" or "=refused")
                 if not ok then refused[#refused + 1] = other.player end
             end
@@ -665,24 +664,26 @@ return {
                 { player = "Alice", order = { "Alice", "Bot1", "Bot2" }, at = 1 },
                 { player = "Dave", order = { "Dave" }, at = 2 },
             }, publish = { player = "Carol", order = { "Bot2", "Bot1", "Alice" },
-                           tierCount = 2, record = true, at = 3 } },
+                           record = true, at = 3 } },
             expected = { checked = { "Alice=refused" },
                          contested = { "Alice", "Bot1", "Bot2" },
                          members = { "Alice=Alice,Bot1,Bot2", "Carol=Bot2,Bot1,Alice",
                                      "Dave=Dave" } },
         },
         {
-            name = "under a lock, an unranked alt's append that would land above Rest is refused",
+            -- v0.4.1: an append into an unfilled real tier is allowed; it still sits
+            -- below every character the member had already ranked.
+            name = "under a lock, an unranked alt's append into an unfilled tier is allowed",
             input = { op = "members", records = {
                 { player = "Alice", order = { "Alice" }, at = 1 },
-            }, publish = { player = "Carol", order = { "Alice", "Carol" }, tierCount = 3 } },
-            expected = { checked = { "Alice=refused" } },
+            }, publish = { player = "Carol", order = { "Alice", "Carol" } } },
+            expected = { checked = { "Alice=allowed" } },
         },
         {
             name = "under a lock, an unranked alt appending to the stored order is allowed",
             input = { op = "members", records = {
                 { player = "Alice", order = { "Alice", "Bot1" }, at = 1 },
-            }, publish = { player = "Carol", order = { "Alice", "Bot1", "Carol" }, tierCount = 2 } },
+            }, publish = { player = "Carol", order = { "Alice", "Bot1", "Carol" } } },
             expected = { checked = { "Alice=allowed" } },
         },
         {
