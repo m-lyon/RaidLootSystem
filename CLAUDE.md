@@ -145,6 +145,10 @@ with the reasoning.
   wins what; only the order suicides are applied in. Spec 010 §7.
 - **`itemLevel` / `quality` / `equipLoc` are logged on every item under both modes.** Nothing in
   v1 reads them; they cannot be backfilled once the client cache is cold.
+- **A loot slot number is only good for the window it was read in.** Every scan of a remembered
+  corpse re-finds the open round's items and the owed awards by item id (`LootDetect.Rebind`)
+  before anything reads a slot, and an award is refused while that scan is still running. Do not
+  add a path that trusts a slot remembered across `LOOT_CLOSED`. Spec 004 §3.
 ## Testing
 
 `lua tests/run.lua` runs the pure-core fixture suites with no dependencies beyond a Lua 5.1
@@ -173,6 +177,10 @@ Add a fixture case for every bug fixed in `Core/`.
   raid-night check.
 - **The exact mod-playerbots `equip` command syntax** (spec 007) is still unconfirmed against
   the server build.
+- **Whether a reopened corpse renumbers its slots is unconfirmed on 3.3.5a.** Gaps while one
+  window stays open are the expected behaviour; compaction on reopen is the assumption
+  `LootDetect.Rebind` exists for, and it is correct either way. Raid-night check: take one item
+  off a corpse with several, close and reopen it, and see whether the rest moved up.
 - **A `StaticPopup` drawing above a raised window is unconfirmed on 3.3.5a.** `Widgets.Raise`
   stacks windows from `BASE_LEVEL` in `LEVEL_STEP`s, so with several open the front window's
   subtree sits near level 100, still in strata `DIALOG` -- which is `StaticPopupTemplate`'s strata

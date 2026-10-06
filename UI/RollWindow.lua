@@ -1425,7 +1425,6 @@ local OPENING_MAX_RESENDS = 3
 local openingResends = 0              -- OPEN resends spent on the round still opening
 local openingGaveUpId                 -- the host round whose echo was given up on
 local closeLootPending = {}          -- closed round id -> the corpse its awards are still owed on
-local roundCorpses = {}              -- closed round id -> its corpse; outlives ReleaseRound
 local lastHostClosedRoundId          -- the host round whose loot-frame close was already handled
 local lastResultsShownRoundId        -- the closed round whose results already opened the window
 
@@ -1456,13 +1455,6 @@ end
 -- what /rls start must open on too, or the command and the button disagree.
 function RollWindow.TickedItems()
     return tickedItems()
-end
-
-local function hasLootSlot(items)
-    for _, item in ipairs(items) do
-        if item.lootSlot then return true end
-    end
-    return false
 end
 
 local function startRoll()
@@ -1593,7 +1585,6 @@ local function refreshSetup()
         roundOpen = round ~= nil and round.state == C.ROUND_STATE.OPEN,
         scanning = LootDetect.scanning,
         ticked = #tickedItems(),
-        staleSlots = not LootDetect.windowOpen and hasLootSlot(tickedItems()),
     })
     if blocker then setupPanel.start:Disable() else setupPanel.start:Enable() end
     Widgets.Tooltip(setupPanel.start, "Start roll",
@@ -2119,7 +2110,7 @@ local function setupActiveFor(requested)
     local round = hostRound() or {}
     local blocking = RollWindow.SetupBlockingAwards(outstandingFor(round.id), function(record)
         -- Slot numbers repeat on every corpse: only the round's own corpse can hold it.
-        return ns.LootDetect.SourceOpen(roundCorpses[record.roundId])
+        return ns.LootDetect.SourceOpen(ns.LootDetect.CorpseOf(record.roundId))
             and ns.LootDetect.SlotHolds(record.lootSlot, record.itemString)
     end)
     return RollWindow.SetupActive(ns.Round.IsHost(), requested, round.state, blocking)
@@ -2144,9 +2135,6 @@ local function closeLootIfDone()
     -- A corpse that has aged out of the remembered sources can never be reopened as itself.
     for roundId, source in pairs(closeLootPending) do
         if not ns.LootDetect.SourceKnown(source) then closeLootPending[roundId] = nil end
-    end
-    for roundId, source in pairs(roundCorpses) do
-        if not ns.LootDetect.SourceKnown(source) then roundCorpses[roundId] = nil end
     end
     local done = RollWindow.LootDone({
         candidates = ns.LootDetect.candidates,
@@ -2257,7 +2245,6 @@ local function onRoundChanged(round)
     if lastHostClosedRoundId == round.id then return end
     lastHostClosedRoundId = round.id
     setupRequested = false
-    roundCorpses[round.id] = ns.LootDetect.RoundSource(round.id)
     -- The corpse has nothing left to offer this round, so the host's loot
     -- window is dismissed for them -- but only once every award from it has
     -- been made (section 2).

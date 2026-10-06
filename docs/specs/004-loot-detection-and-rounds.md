@@ -62,8 +62,19 @@ Item-link rounds have **no `lootSlot`**, so the award step goes straight to the 
 
 A corpse-path round is bound to a loot source. The host tracks:
 
-- `LOOT_CLOSED` — the window closed. Not fatal; slot indices survive and the window can be
-  reopened on the same corpse.
+- `LOOT_CLOSED` — the window closed. Not fatal; the corpse can be reopened. Its slot numbers
+  are **not** assumed to survive: taking an item leaves a gap only while one window stays open,
+  and a reopened corpse lists what is left, so later items can move up. Every scan of a
+  remembered corpse therefore re-finds the open round's items and the awards still owed on it
+  **by item id** (`LootDetect.Rebind`) before anything reads a slot. Copies of one id are
+  interchangeable, and a stacked slot serves as many claims as it holds units. A round item the
+  rescan cannot find is dropped with a notice, as for `LOOT_SLOT_CLEARED` -- but only when every
+  scanned row has an id, since an unidentified row might be it. Until that scan
+  lands, an award from the corpse is refused with "still reading the corpse" rather than
+  checked against a slot that may have moved. (0.4.0 trusted the old numbers, which marked
+  awards LOST for loot still on the corpse, and read a hand-looted neighbour as the round's
+  own item disappearing. It also refused Start roll with the corpse closed; that refusal is
+  gone, since nothing now depends on the corpse being open when a round starts.)
 - `LOOT_SLOT_CLEARED` — a slot was emptied. If it belonged to an open round and was not cleared
   by our own award, that item is dropped from the round with a visible notice.
 - The loot source becoming unreachable (corpse despawned) — detected at award time when

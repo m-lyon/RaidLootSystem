@@ -36,8 +36,8 @@ function HostPanel.StartBlocker(ctx)
     if ctx.roundOpen then return "A round is already open. Close or cancel it first." end
     if ctx.scanning then return "Still looking the loot up." end
     if (ctx.ticked or 0) == 0 then return "No items are ticked." end
-    -- A ticked drop's slot index means nothing once the loot window is closed.
-    if ctx.staleSlots then return "Reopen the corpse first." end
+    -- No "reopen the corpse" rule: a round may open with the corpse closed, because the
+    -- scan on reopening re-finds every item by id (LootDetect.Rebind, spec 004 section 3).
     return nil
 end
 

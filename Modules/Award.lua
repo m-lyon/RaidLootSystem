@@ -471,12 +471,24 @@ local function candidateIndex(name)
 end
 
 local OPEN_CORPSE = "Open the corpse to award from it, or loot the item yourself and award again."
+local READING_CORPSE = "Still reading the corpse; award again in a moment."
+
+--- Is the corpse open but not yet re-read? Its slot numbers may have moved since it was
+-- last open, and are only re-found once the scan lands (LootDetect.Rebind). Checking a
+-- slot before then would read loot still on the corpse as lost.
+local function corpseUnread()
+    return ns.LootDetect.windowOpen and ns.LootDetect.scanning
+end
 
 local function giveFromCorpse(record)
     local slot = record.lootSlot
     if not ns.LootDetect.windowOpen then
         -- The dialog can outlive the loot window. Nothing has changed; say what to do.
         ns.Print(OPEN_CORPSE)
+        return
+    end
+    if corpseUnread() then
+        ns.Print(READING_CORPSE)
         return
     end
     if not ns.LootDetect.SlotHolds(slot, record.itemString) then
@@ -504,6 +516,10 @@ end
 
 local function takeIntoBags(record)
     local slot = record.lootSlot
+    if slot and corpseUnread() then
+        ns.Print(READING_CORPSE)
+        return
+    end
     if slot and ns.LootDetect.windowOpen and ns.LootDetect.SlotHolds(slot, record.itemString) then
         -- Loot it ourselves. The record turns PENDING only once the slot clears, so a
         -- cancelled bind confirmation or full bags never produce a phantom record.
@@ -557,6 +573,10 @@ function Award.Prompt(roundId, itemIdx, copy, forceTrade)
     if not Award.Retryable(record) then
         ns.Print(labelFor(record) .. " for " .. record.char .. ": "
             .. Award.StatusText(record) .. ".")
+        return false
+    end
+    if record.lootSlot and corpseUnread() then
+        ns.Print(READING_CORPSE)
         return false
     end
     local existing = ns.Pending.Find(record)

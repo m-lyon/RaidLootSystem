@@ -51,9 +51,10 @@ return {
         { name = "nothing ticked",
           input = { op = "start", ctx = { isHost = true, lootMethod = "master", ticked = 0 } },
           expected = "No items are ticked." },
-        { name = "ticked corpse slots with the loot window closed",
-          input = { op = "start", ctx = { isHost = true, lootMethod = "master", ticked = 2, staleSlots = true } },
-          expected = "Reopen the corpse first." },
+        -- 0.4.1: a closed corpse no longer blocks. Its slots are re-found on reopening.
+        { name = "ticked corpse items with the loot window closed may start",
+          input = { op = "start", ctx = { isHost = true, lootMethod = "master", ticked = 2 } },
+          expected = "" },
         { name = "ready to start",
           input = { op = "start", ctx = { isHost = true, lootMethod = "master", ticked = 3 } },
           expected = "" },

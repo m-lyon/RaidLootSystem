@@ -136,10 +136,6 @@ local function startRound()
         return
     end
     -- The same rule the roll window's Start roll button is gated by.
-    local hasLootSlot = false
-    for _, item in ipairs(items) do
-        if item.lootSlot then hasLootSlot = true break end
-    end
     local round = ns.Round.current
     local blocker = ns.HostPanel.StartBlocker({
         isHost = ns.Round.IsHost(),
@@ -147,7 +143,6 @@ local function startRound()
         roundOpen = round ~= nil and round.state == C.ROUND_STATE.OPEN,
         scanning = ns.LootDetect.scanning,
         ticked = #items,
-        staleSlots = not ns.LootDetect.windowOpen and hasLootSlot,
     })
     if blocker then
         ns.Print(blocker)
