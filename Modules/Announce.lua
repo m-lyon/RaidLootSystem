@@ -185,12 +185,12 @@ local FORMATS = {
         return "Loot mode is now " .. modeName(a.lootMode)
     end,
 
-    -- Hierarchies are locked - tier rankings are fixed for this campaign
+    -- Tier lists are locked - tier rankings are fixed for this campaign
     HIERARCHY_LOCK = function(a)
         if a.locked then
-            return "Hierarchies are locked - tier rankings are fixed for this campaign"
+            return "Tier lists are locked - tier rankings are fixed for this campaign"
         end
-        return "Hierarchies are unlocked - you may re-rank your characters"
+        return "Tier lists are unlocked - you may re-rank your characters"
     end,
 
     PRIORITY = function(a)

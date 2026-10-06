@@ -454,7 +454,7 @@ local function buildTransfer()
 
     transferFrame.hint = Widgets.Label(transferFrame,
         "Copy this to share the campaign's list and settings, or paste one in and press "
-        .. "Import. It carries no hierarchy: yours stays yours.", "GameFontDisableSmall")
+        .. "Import. It carries no tier list: yours stays yours.", "GameFontDisableSmall")
     transferFrame.hint:SetPoint("TOPLEFT", transferFrame, "TOPLEFT", 20, -40)
     transferFrame.hint:SetWidth(WIDTH + 20)
     transferFrame.hint:SetJustifyH("LEFT")

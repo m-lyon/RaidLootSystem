@@ -237,24 +237,18 @@ function Editor.Refresh()
 
     frame.picker:SetOptions(targetOptions())
     frame.picker:SetValue(target)
+    -- Only the template gets a note: a campaign is already named in the picker.
     frame.scope:SetText(editingDefault()
-        and "|cffffcc00This is the template new campaigns will use.|r"
-        or string.format("|cff888888Ranking for \"%s\".|r",
-            ns.Campaign.LabelFor(target)))
+        and "|cffffcc00This is the template new campaigns will use.|r" or "")
 
     -- The lock outranks the roll-open note: one says a change you make now lands
     -- late, the other says you cannot make it at all, and a reader who tries and is
     -- refused learned the second one the hard way (spec 014 section 6).
     local locked = not editingDefault() and ns.Campaign.HierarchyLocked(target)
     if locked then
-        -- Only promise an add that SetIncludedIn would accept: an append above Rest is
-        -- refused too.
-        local campaign = ns.Campaign.Get(target)
-        local canAppend = ns.Roster.LockedAppendAllowed(order, "?",
-            campaign and campaign.host.tierCount)
-        frame.warning:SetText("|cffffcc00This campaign has started and its hierarchies are "
-            .. "locked. " .. (canAppend and "You can still add a character; it joins your "
-            .. "Rest tier. " or "") .. "The master looter can unlock them.|r")
+        frame.warning:SetText("|cffffcc00This campaign has started and its tier lists are "
+            .. "locked. You can still add a character, which will be added to the lowest "
+            .. "tier.|r")
     elseif not editingDefault() and roundIsOpen() then
         frame.warning:SetText("|cffffcc00A roll is open. Entries you already submitted keep "
             .. "the tiers they had at submit time.|r")
@@ -564,7 +558,7 @@ local function build()
     rows, bands = {}, {}
 
     frame = Widgets.Window("RaidLootSystemHierarchyEditor", "hierarchy",
-        "Raid Loot System - Your hierarchy", LIST_WIDTH + 40, START_HEIGHT)
+        "Raid Loot System - Your tier list", LIST_WIDTH + 40, START_HEIGHT)
 
     local hint = Widgets.Label(frame,
         "Drag a row, or use the arrows, to set which characters you most want geared.",

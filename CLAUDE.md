@@ -91,7 +91,8 @@ with the reasoning.
 - **The hierarchy lock is enforced on receipt, not only in the editor.** `lockHierarchy` is on by
   default and bites once a campaign has resolved a round (any non-aborted history record names it). A locked
   ordering may only be *appended* to -- a swap, an insert, a removal and a truncation are all
-  re-ranks, and an append lands in Rest where it jumps nobody. Refusing only in the sender's own
+  re-ranks, and an append lands in the member's lowest tier, below everything they already
+  ranked. Refusing only in the sender's own
   editor would be a suggestion: an older build or an edited saved-variables file walks past it,
   and `onRoster`'s copy is what the host stamps entry tiers from. Spec 014.
 - **`lockHierarchy` is assigned, never `or`-defaulted, wherever `CFG` / `CSTATE` are applied.**
@@ -276,6 +277,11 @@ The rules that are easiest to get wrong when working on it, each with its spec s
   column. A stale constant does not merely look wrong -- it reports a raid full of mismatched
   builds as matching, which is the opposite of what that column is for. They drifted apart once,
   0.2.0 against 0.5.0, and the column said nothing for four specs.
+- **Players see "tier list"; the code says "hierarchy".** Since 0.4.1 every user-facing string
+  calls a member's ranking their *tier list* (`/rls tierlist`, "Your tier list"). Identifiers,
+  saved variables, wire fields (`lockHierarchy`, `campaign.hierarchy`) and spec titles keep
+  "hierarchy" -- renaming those would break saved data and older peers for no player benefit.
+  `/rls hierarchy` still works as an unlisted alias.
 - Frames created in Lua, no XML.
 - Commit subjects name the spec: `spec 003: tie re-roll loop`.
 - English only; no locale layer.

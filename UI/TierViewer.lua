@@ -170,7 +170,7 @@ function Viewer.Refresh()
             row.name:SetText(label)
 
             Widgets.Tooltip(row, entry.char, string.format(
-                "%s ranked this character %d in their hierarchy, submitted %s. %s",
+                "%s ranked this character %d in their tier list, submitted %s. %s",
                 tostring(entry.owner), entry.position, ageOf(entry.at),
                 entry.present and "In the raid." or "Not in the raid."))
 
@@ -185,10 +185,10 @@ function Viewer.Refresh()
     local missing = TierRoster.missing(announced(campaign.id), members)
     if #missing > 0 then
         frame.footer:SetText(string.format("|cffffaa00Not submitted: %s.|r |cff888888Their "
-            .. "characters are in no tier until they publish a hierarchy.|r",
+            .. "characters are in no tier until they publish a tier list.|r",
             table.concat(missing, ", ")))
     elseif #members == 0 then
-        frame.footer:SetText("|cff888888Nobody has submitted a hierarchy for this campaign "
+        frame.footer:SetText("|cff888888Nobody has submitted a tier list for this campaign "
             .. "yet.|r")
     else
         frame.footer:SetText("|cff888888A tier decides who competes for an item before any "

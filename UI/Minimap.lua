@@ -75,7 +75,7 @@ end
 local LABELS = {
     HOST = "the host panel",
     ROLL = "the roll window",
-    HIERARCHY = "your hierarchy",
+    HIERARCHY = "your tier list",
 }
 
 function Minimap.Init()
@@ -124,7 +124,7 @@ function Minimap.Init()
                 tooltip:AddLine("Ctrl-click: " .. LABELS[ctrl], 1, 1, 1)
             end
             if Minimap.PrimaryTarget(isHost, hasContent, inSetup) ~= "HIERARCHY" then
-                tooltip:AddLine("Shift-click: your hierarchy", 1, 1, 1)
+                tooltip:AddLine("Shift-click: your tier list", 1, 1, 1)
             end
             tooltip:AddLine("Right-click: republish your roster", 1, 1, 1)
             if ns.RollWindow.NeedsAttention() then

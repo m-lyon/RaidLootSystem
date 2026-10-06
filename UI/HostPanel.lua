@@ -231,7 +231,7 @@ local function buildCampaign(parent)
     end)
     panel.tiers:SetPoint("TOPLEFT", panel.invite, "BOTTOMLEFT", 0, -4)
     Widgets.Tooltip(panel.tiers, "Campaign tiers",
-        "Who composes each tier, from the hierarchies this campaign's members submitted. "
+        "Who composes each tier, from the tier lists this campaign's members submitted. "
         .. "A tier decides who competes for an item before any roll or list position does.")
 
     panel.note = Widgets.Label(panel, "", "GameFontDisableSmall")
@@ -334,13 +334,13 @@ local function buildSettings(parent)
     -- hatch for a member who ranked their characters wrong, and a host who needs it
     -- needs it now rather than after the boss.
     panel.lockHierarchy = Widgets.CheckBox(panel, "RaidLootSystemHostLockHierarchy",
-        "Lock tier hierarchies once the campaign starts",
+        "Lock tier lists once the campaign starts",
         function(checked) change("lockHierarchy", checked) end)
     panel.lockHierarchy:SetPoint("TOPLEFT", panel.autoClose, "BOTTOMLEFT", 0, -2)
-    Widgets.Tooltip(panel.lockHierarchy, "Lock tier hierarchies",
+    Widgets.Tooltip(panel.lockHierarchy, "Lock tier lists",
         "Takes effect when this campaign runs its first round; until then everyone "
         .. "arranges their characters freely. Once it is in force members can still add "
-        .. "a new character, which joins at the bottom of their own ranking.")
+        .. "a new character, which is added to the lowest tier of their own tier list.")
 
     -- A client setting, not a campaign rule: it changes what this client says, not
     -- how the group plays. On by default, because a link in raid chat is answered by
@@ -402,7 +402,7 @@ local function refreshSettings()
         settings.frozen:SetText("")
     end
     Widgets.Tooltip(settings.tier, "Tier count", frozen
-        or "How many hierarchy positions count as distinct tiers. Announced to the raid.")
+        or "How many tier list positions count as distinct tiers. Announced to the raid.")
     Widgets.Tooltip(settings.timer, "Entry timer", frozen
         or "Seconds a round stays open. Announced to the raid.")
 end
