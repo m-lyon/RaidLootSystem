@@ -201,9 +201,9 @@ return {
           expected = { path = "", why = "already delivered" } },
 
         -- Confirmation (section 6): item, winner and path, every time.
-        { name = "the master-loot confirmation names the item, the winner and the binding",
+        { name = "the master-loot confirmation names the item and the winner, and no binding",
           input = { op = "confirm", record = CORPSE, label = "[Deathbringer's Will]", path = "MASTER_LOOT" },
-          expected = "Give [Deathbringer's Will] to Bonk (Dave)?\n\nFrom the corpse. It binds to Bonk." },
+          expected = "Give [Deathbringer's Will] to Bonk (Dave)?" },
         { name = "the trade confirmation says it binds to the host for two hours",
           input = { op = "confirm", record = CORPSE, label = "[Deathbringer's Will]", path = "TRADE" },
           expected = "Take [Deathbringer's Will] into your bags for Bonk (Dave)?\n\n"

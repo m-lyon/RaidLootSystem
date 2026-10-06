@@ -154,7 +154,9 @@ Awarding is irreversible on the master-loot path and near-irreversible on the tr
 award is confirmed with a dialog naming **the item, the winner, and the path**:
 
 > Give **[Deathbringer's Will]** to **Botty** (Dave)?
-> — from the corpse, binds to Botty.
+
+The master-loot line carries no binding text: "Give" already says it goes straight to the winner,
+and "binds to Botty" was untrue for a bind-on-equip drop (removed in 0.4.1).
 
 or
 

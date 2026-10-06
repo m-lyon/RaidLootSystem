@@ -119,8 +119,9 @@ function Award.ConfirmText(record, label, path)
             .. "You won it, so it is delivered the moment it reaches your bags.", label)
     end
     if path == C.DELIVERY_PATH.MASTER_LOOT then
-        return string.format("Give %s to %s?\n\nFrom the corpse. It binds to %s.",
-            label, who, record.char)
+        -- No binding line: the item says how it binds, and a bind-on-equip drop made
+        -- "it binds to X" untrue.
+        return string.format("Give %s to %s?", label, who)
     end
     return string.format("Take %s into your bags for %s?\n\n"
         .. "It binds to YOU and stays tradeable to kill-eligible characters for 2 hours.",
