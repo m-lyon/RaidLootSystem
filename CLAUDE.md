@@ -61,7 +61,10 @@ with the reasoning.
   window means walking `GetChildren()` and shifting every descendant by the same delta, which is
   what `Widgets.Raise` does and why two overlapping windows used to draw half in front of each
   other and half behind. Every window keeps strata `DIALOG`, so `StaticPopup` and dropdowns stay
-  above them. Spec 000 §8.
+  above them. Spec 000 §8. **But don't trust a child's level after touching its parent:** at
+  least some children *do* move with a parent, so `Raise` records every level in the subtree
+  first and writes recorded + delta. Reading as it went compounded the delta per depth and threw
+  "negative frame level" (0.4.1).
 - **Nothing irreversible without a confirmation dialog** — awarding loot, clearing history,
   overwriting a roster on import.
 - **Failures are surfaced, never swallowed.** A silently dropped entry or a silently failed award

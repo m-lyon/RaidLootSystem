@@ -95,10 +95,24 @@ local BASE_LEVEL = 2
 local LEVEL_STEP = 12
 local stack = {}                    -- windows, back to front
 
-local function shiftLevels(frame, delta)
-    frame:SetFrameLevel(frame:GetFrameLevel() + delta)
+local function collectLevels(frame, out)
+    out[#out + 1] = { frame = frame, level = frame:GetFrameLevel() }
     local children = { frame:GetChildren() }
-    for i = 1, #children do shiftLevels(children[i], delta) end
+    for i = 1, #children do collectLevels(children[i], out) end
+    return out
+end
+
+-- Every level is read before any is written. Setting a parent's level can drag its
+-- children along with it, so reading a child after its parent moved and adding the
+-- delta again compounds once per depth: lowering a window by 2 sent a deeply nested
+-- child to -6, and SetFrameLevel throws on a negative level. Writing each frame's
+-- recorded level plus the delta, parent first, lands on the intended value whether
+-- or not the client propagated. Clamped at 0 regardless.
+local function shiftLevels(frame, delta)
+    local levels = collectLevels(frame, {})
+    for i = 1, #levels do
+        levels[i].frame:SetFrameLevel(math.max(0, levels[i].level + delta))
+    end
 end
 
 local function minLevel(frame)
