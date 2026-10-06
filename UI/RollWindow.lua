@@ -167,16 +167,22 @@ local function flagSignature(entries)
     return table.concat(keys, ",")
 end
 
---- Do the local ticks differ from what the host has accepted for this player?
+--- Do the local ticks differ from what this player last submitted?
 --
--- (item, character) pairs are compared against STATE, which carries nothing else. The
--- override and star flags are compared against what this client last sent: a moved
--- star is a material change under SK (spec 010 section 7) that STATE cannot reflect.
+-- Against the last SUBMIT when there is one, flags included: a moved star is a material
+-- change under SK (spec 010 section 7) that STATE cannot reflect. Against STATE's
+-- (item, character) pairs only when this client has sent nothing it remembers.
 -- @param lastSent  the entries of the last SUBMIT, or nil before the first
 function RollWindow.IsDirty(localEntries, accepted, lastSent)
-    if pairSignature(localEntries) ~= pairSignature(accepted) then return true end
-    if lastSent and flagSignature(localEntries) ~= flagSignature(lastSent) then return true end
-    return false
+    -- Once this client has sent, "unsent" means unsent: compared against the last SUBMIT,
+    -- not STATE. STATE lags a submit by a round trip, and judged against it every submit
+    -- read as "unsent changes" until the host's answer came back. An entry the host
+    -- refused is not unsent either -- the refusal line names it (section 4).
+    if lastSent then
+        return flagSignature(localEntries) ~= flagSignature(lastSent)
+    end
+    -- Nothing sent this session (a /reload since): STATE is all there is to go on.
+    return pairSignature(localEntries) ~= pairSignature(accepted)
 end
 
 --- This player's entries as the host last reported them.
@@ -1191,7 +1197,6 @@ local function renderFooter(round, sk)
     entryPanel.submit:SetText(submitted and "Revise" or
         string.format("Submit %d entr%s", #localEntries, #localEntries == 1 and "y" or "ies"))
     local dirty = submitted and RollWindow.IsDirty(localEntries, accepted, ns.Client.LastSent())
-    entryPanel.dirty:SetText(dirty and "|cffffaa00unsent changes|r" or "")
 
     -- Read-only: this round belongs to a campaign this client is not in, so there is
     -- nothing to submit (spec 012 section 6). The controls are disabled rather than
@@ -1204,20 +1209,23 @@ local function renderFooter(round, sk)
         entryPanel.pass:Enable()
     end
 
+    -- One full-width line for everything the footer has to say. "unsent changes" used
+    -- to sit squeezed between the buttons, where it ran under Submit.
+    local notes = {}
     if round.lastRejected and #round.lastRejected > 0 then
-        entryPanel.warning:SetText("|cffff6060The host refused: "
-            .. table.concat(round.lastRejected, ", ") .. "|r")
+        notes[#notes + 1] = "|cffff6060The host refused: "
+            .. table.concat(round.lastRejected, ", ") .. "|r"
     elseif round.priorityNotice then
-        entryPanel.warning:SetText("|cffffaa00" .. round.priorityNotice .. "|r")
-    else
-        entryPanel.warning:SetText("")
+        notes[#notes + 1] = "|cffffaa00" .. round.priorityNotice .. "|r"
     end
+    if dirty then notes[#notes + 1] = "|cffffaa00Unsent changes - press Revise.|r" end
+    entryPanel.warning:SetText(table.concat(notes, "  "))
 end
 
 --- Window size follows the grid. The terms are the entry panel's anchors, top to
 -- bottom: column header, grid, the gap holding the slider, the toggle, the detail
--- panel, the warning line, the button row. BUTTON_H covers the whole footer row --
--- Pass all, Full list, the dirty indicator and Submit all sit on it at that height.
+-- panel, the warning line (refusals, notices, unsent changes), the button row. BUTTON_H
+-- covers the whole footer row -- Pass all, Full list and Submit all sit on it.
 -- A change to the panel's anchors in its builder has to change this sum with it.
 local function sizeEntryWindow(gridH, visibleCols)
     local width = PAD * 2 + HEADER_W + visibleCols * CELL_W + 8
@@ -1888,21 +1896,6 @@ local function buildEntryPanel(parent)
 
     panel.submit = Widgets.Button(panel, "Submit", 130, BUTTON_H, function() submitGrid(false) end)
     panel.submit:SetPoint("TOPRIGHT", panel.warning, "BOTTOMRIGHT", 0, -6)
-
-    -- "unsent changes" sits between the left-hand buttons and Submit. Anchored only
-    -- by its right edge it grew leftwards *under* Full list and Pass all and read as
-    -- clipped text; the left anchor is what stops it, and the fixed height keeps it on
-    -- the one footer row the height arithmetic below allows for. The anchor is Pass
-    -- all, not Full list: at the 420px minimum width a Full list anchor leaves ~66px,
-    -- narrower than the text, which then wraps to two lines and clips inside the
-    -- one-row height.
-    panel.dirty = Widgets.Label(panel, "", "GameFontHighlightSmall")
-    panel.dirty:SetPoint("LEFT", panel.pass, "RIGHT", 8, 0)
-    panel.dirty:SetPoint("RIGHT", panel.submit, "LEFT", -8, 0)
-    panel.dirty:SetHeight(BUTTON_H)
-    panel.dirty:SetJustifyH("RIGHT")
-    panel.dirty:SetJustifyV("MIDDLE")
-    if panel.dirty.SetNonSpaceWrap then panel.dirty:SetNonSpaceWrap(false) end
 
     return panel
 end

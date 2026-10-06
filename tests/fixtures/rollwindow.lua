@@ -313,6 +313,23 @@ return {
             expected = { dirty = true, accepted = 2 },
         },
         {
+            -- The flash after every submit: STATE has not come back yet, so nothing is
+            -- accepted, but the ticks are exactly what was just sent.
+            name = "ticks matching the last submit are clean before the host answers",
+            input = { op = "dirty", me = "Steve", entries = {},
+                      lastSent = { { itemIdx = 1, char = "Steve" }, { itemIdx = 2, char = "Sneaky" } },
+                      localEntries = { { itemIdx = 2, char = "Sneaky" }, { itemIdx = 1, char = "Steve" } } },
+            expected = { dirty = false, accepted = 0 },
+        },
+        {
+            name = "a tick added since the last submit is dirty",
+            input = { op = "dirty", me = "Steve",
+                      entries = { [1] = { { char = "Steve", owner = "Steve", tier = 1 } } },
+                      lastSent = { { itemIdx = 1, char = "Steve" } },
+                      localEntries = { { itemIdx = 1, char = "Steve" }, { itemIdx = 2, char = "Sneaky" } } },
+            expected = { dirty = true, accepted = 1 },
+        },
+        {
             name = "unchanged flags against the last submit are clean",
             input = { op = "dirty", me = "Steve",
                       entries = { [1] = { { char = "Steve", owner = "Steve", tier = 1 } } },

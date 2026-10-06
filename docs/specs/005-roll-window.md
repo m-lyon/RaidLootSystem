@@ -162,7 +162,11 @@ player a position the host will not honour.
 - **Countdown** to `endsAt`, turning amber in the last 30 seconds.
 - **Submitted counter** — `4/6 in`, tooltip listing who hasn't submitted.
 - **Submit** — sends the whole grid. After first submit the button reads **Revise**, and a
-  dirty-state indicator shows when local ticks differ from what the host has accepted.
+  dirty-state indicator shows when local ticks differ from what this client last submitted
+  (from what the host has accepted only after a `/reload`, when there is no last submit to
+  compare). Judged against the host's STATE it flashed after every submit, for the round trip.
+  It reads "Unsent changes - press Revise." on the full-width line above the buttons, not
+  between them, where it ran under Submit.
 - **Pass all** — clears every tick and submits an empty set, which is materially different from
   never submitting: it marks you as in, so the host can force-close.
 
