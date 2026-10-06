@@ -1467,6 +1467,11 @@ local function recordsOfRound(list, roundId)
 end
 
 local SETUP_ROW_H = 22
+-- The setup state has no status line, counter or banner, so its content starts just
+-- under the title instead of at the entry grid's 70.
+local SETUP_TOP = 40
+local SETUP_HINT_H = 26        -- two lines of GameFontDisableSmall
+local SETUP_GAP = 8
 
 local function tickKey(item)
     return (item.info and item.info.itemId) or item.itemString
@@ -1619,11 +1624,17 @@ local function refreshSetup()
     Widgets.Tooltip(setupPanel.start, "Start roll",
         blocker or string.format("Open a round on the %d ticked item(s).", #tickedItems()))
 
-    local listH = math.max(n, 1) * SETUP_ROW_H
-    setupPanel.list:SetHeight(listH)
+    -- Only the space the content uses: no hint line when there is no hint, and no empty
+    -- row when there are no items. The hint gets two lines, the most it wraps to at
+    -- this width; a wrapped string measures short until it has been drawn.
+    local hintH = (setupPanel.hint:GetText() or "") ~= "" and (SETUP_HINT_H + SETUP_GAP) or 0
+    local listH = n * SETUP_ROW_H
+    setupPanel.list:ClearAllPoints()
+    setupPanel.list:SetPoint("TOPLEFT", setupPanel, "TOPLEFT", 0, -hintH)
+    setupPanel.list:SetHeight(math.max(listH, 1))
 
     frame:SetWidth(PAD * 2 + SETUP_W)
-    frame:SetHeight(70 + 20 + listH + 12 + BUTTON_H + PAD)
+    frame:SetHeight(SETUP_TOP + hintH + listH + SETUP_GAP + BUTTON_H + PAD)
 end
 
 --------------------------------------------------------------------------------
@@ -1902,16 +1913,18 @@ end
 
 local function buildSetupPanel(parent)
     local panel = CreateFrame("Frame", nil, parent)
-    panel:SetPoint("TOPLEFT", parent, "TOPLEFT", PAD, -70)
+    panel:SetPoint("TOPLEFT", parent, "TOPLEFT", PAD, -SETUP_TOP)
     panel:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -PAD, PAD)
 
     panel.hint = Widgets.Label(panel, "", "GameFontDisableSmall")
     panel.hint:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
     panel.hint:SetWidth(SETUP_W - 20)
     panel.hint:SetJustifyH("LEFT")
+    panel.hint:SetJustifyV("TOP")
 
+    -- Anchored by refreshSetup, directly under the hint or in its place.
     panel.list = CreateFrame("Frame", nil, panel)
-    panel.list:SetPoint("TOPLEFT", panel.hint, "BOTTOMLEFT", 0, -6)
+    panel.list:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
     panel.list:SetWidth(SETUP_W - 20)
     panel.list:SetHeight(1)
 
