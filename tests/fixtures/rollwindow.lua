@@ -9,7 +9,9 @@ local ns = ...
 local function run(input, ns)
     local RW = ns.RollWindow
 
-    if input.op == "tooltip" then
+    if input.op == "star" then
+        return RW.StarShown(input.sk, input.ticks)
+    elseif input.op == "tooltip" then
         local title, body, hint = RW.CellTooltip(input.state, input.char, input.label)
         return { title = title, body = body or "", hint = hint or "" }
     elseif input.op == "delivery" then
@@ -754,5 +756,13 @@ return {
         { name = "a delivered item offers nothing",
           input = { op = "delivery", delivery = "DELIVERED", retryable = false },
           expected = { colour = "|cff66ff66", action = "", button = "" } },
+
+        -- The priority-pick star (spec 010 section 7): only where it can matter.
+        { name = "no star with one item ticked under SK",
+          input = { op = "star", sk = true, ticks = 1 }, expected = false },
+        { name = "the star appears once two items are ticked under SK",
+          input = { op = "star", sk = true, ticks = 2 }, expected = true },
+        { name = "no star under ROLL, however many are ticked",
+          input = { op = "star", sk = false, ticks = 3 }, expected = false },
     },
 }

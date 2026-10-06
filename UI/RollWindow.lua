@@ -109,6 +109,17 @@ function RollWindow.CellState(info, char, tick, config)
     return state
 end
 
+--- Does this character's row offer the priority-pick star (spec 010 section 7)?
+--
+-- Only under SK, and only once it has two or more items ticked: the star decides which
+-- item a character keeps when it would win several, so with one tick it can never do
+-- anything, and a control that does nothing just reads as noise.
+-- @param sk         is the round on Suicide Kings
+-- @param tickCount  how many items this character has ticked
+function RollWindow.StarShown(sk, tickCount)
+    return sk == true and (tickCount or 0) >= 2
+end
+
 --------------------------------------------------------------------------------
 -- Pure: the submission (section 3, "Footer") and the dirty check
 --------------------------------------------------------------------------------
@@ -610,6 +621,7 @@ local Widgets = ns.Widgets          -- nil under the fixture runner, which never
 local HEADER_W = 150           -- the frozen row header
 local CELL_W = 56
 local ROW_H = 26
+local STAR_ICON = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_1"   -- the priority pick
 local COL_HEADER_H = 40
 local MAX_VISIBLE_COLS = 6     -- past this the columns scroll (section 3)
 local DETAIL_H = 84
@@ -864,7 +876,7 @@ local function createCell()
     cell.star:SetHeight(14)
     cell.star:SetPoint("TOPRIGHT", cell, "TOPRIGHT", -2, -1)
     cell.star.icon = cell.star:CreateTexture(nil, "OVERLAY")
-    cell.star.icon:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcon_1")
+    cell.star.icon:SetTexture(STAR_ICON)
     cell.star.icon:SetAllPoints()
     cell.star:SetScript("OnClick", onStarClick)
     Widgets.Tooltip(cell.star, "Priority pick",
@@ -1017,7 +1029,7 @@ local function layoutColumns(round, items)
 end
 
 --- Draw one cell and report whether it can be entered and whether it is ticked.
-local function drawCell(cell, round, item, char, y, c, sk, settings)
+local function drawCell(cell, round, item, char, y, c, starShown, settings)
     local info = infoFor(round, item)
     local tick = getTick(round, item.idx, char.name)
     local state = RollWindow.CellState(info, char, tick,
@@ -1029,7 +1041,7 @@ local function drawCell(cell, round, item, char, y, c, sk, settings)
     cell.box:SetAlpha(state.enterable and 1 or 0.3)
     if state.ticked then cell.check:Show() else cell.check:Hide() end
     if state.override then cell.border:Show() else cell.border:Hide() end
-    if sk and state.ticked then
+    if starShown and state.ticked then
         cell.star:Show()
         cell.star.icon:SetAlpha(state.star and 1 or 0.25)
     else
@@ -1081,7 +1093,7 @@ local function layoutGrid(round, items, roster, sk, ranks)
         for _, cell in ipairs(line) do cell:Hide() end
     end
 
-    local y = 0
+    local y, anyStar = 0, false
     for r, char in ipairs(roster) do
         local row = rows[r]
         if not row then
@@ -1090,6 +1102,12 @@ local function layoutGrid(round, items, roster, sk, ranks)
         end
         cells[r] = cells[r] or {}
 
+        local tickCount = 0
+        for _, item in ipairs(items) do
+            if getTick(round, item.idx, char.name) then tickCount = tickCount + 1 end
+        end
+        local starShown = RollWindow.StarShown(sk, tickCount)
+
         local rowEnterable, rowTicked = false, false
         for c, item in ipairs(items) do
             local cell = cells[r][c]
@@ -1097,17 +1115,20 @@ local function layoutGrid(round, items, roster, sk, ranks)
                 cell = createCell()
                 cells[r][c] = cell
             end
-            local enterable, ticked = drawCell(cell, round, item, char, y, c, sk, settings)
+            local enterable, ticked = drawCell(cell, round, item, char, y, c, starShown, settings)
             if enterable then rowEnterable = true end
             if ticked then rowTicked = true end
         end
 
         if not hideIneligible or rowEnterable or rowTicked then
+            if starShown then anyStar = true end
             drawRowHeader(row, round, char, y, sk, ranks)
             for c = 1, #items do cells[r][c]:Show() end
             y = y + ROW_H
         end
     end
+    -- The key to the star sits above the grid, and only while a star is on screen.
+    if anyStar then entryPanel.starNote:Show() else entryPanel.starNote:Hide() end
     return math.max(y, ROW_H)
 end
 
@@ -1770,6 +1791,14 @@ local function buildEntryPanel(parent)
     local panel = CreateFrame("Frame", nil, parent)
     panel:SetPoint("TOPLEFT", parent, "TOPLEFT", PAD, -70)
     panel:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -PAD, PAD)
+
+    -- Above the grid, in the gap under the title. Shown by layoutGrid only while some
+    -- row offers the star.
+    panel.starNote = Widgets.Label(panel, "|T" .. STAR_ICON .. ":12|t marks the item a "
+        .. "character keeps if it would win several.", "GameFontHighlightSmall")
+    panel.starNote:SetPoint("BOTTOMLEFT", panel, "TOPLEFT", 0, 6)
+    panel.starNote:SetJustifyH("LEFT")
+    panel.starNote:Hide()
 
     -- Frozen row header on the left, the item columns to its right.
     rowHeaders = CreateFrame("Frame", nil, panel)

@@ -422,7 +422,9 @@ Under `SK`, added to 005:
   raid's median are visually distinct — the thing people want to know at a glance is *am I near
   the top*.
 - **The star control** — one radio per character row, across the item columns, clearing any
-  previous star for that character.
+  previous star for that character. Offered only on a row with **two or more** items ticked
+  (`RollWindow.StarShown`): with one tick it can never change anything. While any row offers
+  it, one line above the grid says what it means.
 - The detail panel shows entrants ordered by list position, so the outcome is legible before
   submission. Under SK the result is fully determined at close, and pretending otherwise would
   be theatre.
