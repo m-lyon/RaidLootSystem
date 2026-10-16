@@ -29,6 +29,7 @@ local lastHost
 local expectedCount          -- entries in our last SUBMIT, for the section 5 check
 local lastSent = {}          -- the entries themselves, so a refused one can be named
 local warnedForSubmission
+local pendingRefusal         -- { at, accepted, missing } while a short STATE settles
 
 function Client.RegisterListener(fn)
     listeners[#listeners + 1] = fn
@@ -159,7 +160,7 @@ local function onOpen(sender, body)
         campaignLabel = ns.Campaign.LabelFor(msg.campaignId),
         readOnly = not member,
     }
-    expectedCount, lastSent, warnedForSubmission = nil, {}, false
+    expectedCount, lastSent, warnedForSubmission, pendingRefusal = nil, {}, false, nil
     fireChanged()
 end
 
@@ -246,18 +247,24 @@ local function onState(sender, body)
     -- The refused entries are named (spec 005 section 4); the host does not say why,
     -- so the likely causes are listed instead. The window shows the list until the
     -- next submit replaces it.
+    --
+    -- A STATE is not necessarily an answer to our SUBMIT: it is encoded on the host's
+    -- coalesce timer and can sit in its send queue, so one built before our SUBMIT
+    -- arrived can land after we sent it. Judging that one reported accepted entries
+    -- as refused (0.4.2). So a short STATE only arms a warning; any later STATE
+    -- re-judges it, and the host always sends one after applying our SUBMIT. A STATE
+    -- that does not list us as submitted predates our first SUBMIT and says nothing.
     if expectedCount and not warnedForSubmission then
         local myName = UnitName("player")
         local mine = ownEntryCount(round, myName)
-        if mine < expectedCount then
-            warnedForSubmission = true
-            local missing = missingEntries(round, lastSent, myName)
-            round.lastRejected = missing
-            ns.Print(string.format(
-                "the host accepted %d of your %d entries. Refused: %s - "
-                .. "check that those characters are yours, present, not contested "
-                .. "and can use the item.",
-                mine, expectedCount, table.concat(missing, ", ")))
+        if mine >= expectedCount then
+            pendingRefusal = nil
+        elseif myName and round.submitted[myName] then
+            pendingRefusal = {
+                at = (pendingRefusal and pendingRefusal.at) or (GetTime() + C.SUBMIT_SETTLE),
+                accepted = mine,
+                missing = missingEntries(round, lastSent, myName),
+            }
         end
     end
 
@@ -400,6 +407,7 @@ function Client.Submit(entries)
     expectedCount = #entries
     lastSent = entries
     warnedForSubmission = false
+    pendingRefusal = nil
     round.lastRejected = nil
     return true
 end
@@ -443,8 +451,24 @@ end
 -- The pump: a host that vanished without saying so
 --------------------------------------------------------------------------------
 
+--- Report a short STATE that no later STATE corrected (section 5, see onState).
+local function reportRefusal(round)
+    if not pendingRefusal or GetTime() < pendingRefusal.at then return end
+    local p = pendingRefusal
+    pendingRefusal, warnedForSubmission = nil, true
+    if not round then return end
+    round.lastRejected = p.missing
+    ns.Print(string.format(
+        "the host accepted %d of your %d entries. Refused: %s - "
+        .. "check that those characters are yours, present, not contested "
+        .. "and can use the item.",
+        p.accepted, expectedCount or 0, table.concat(p.missing, ", ")))
+    fireChanged()
+end
+
 local function onUpdate()
     local round = Client.round
+    reportRefusal(round)
     if not round or round.state ~= C.ROUND_STATE.OPEN then return end
     if GetTime() > round.endsAt + C.HOST_LEFT_GRACE then
         -- The timer ran out a minute ago and no result arrived. Say so rather than

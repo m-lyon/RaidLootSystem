@@ -86,9 +86,14 @@ Host-side validation, applied to every entry in a `SUBMIT`:
 The host computes the **tier** for each accepted entry itself, from the sender's published
 roster order and the frozen tier count. It never trusts a client-supplied tier.
 
-Rejected entries are not silently swallowed: the accepted-entry count is readable in the next
-`STATE`, and the submitting client compares it to what it sent and warns the player if they
-differ. The count is **derived, not a new field** — every accepted entry in `STATE` carries its
+Rejected entries are not silently swallowed: the accepted-entry count is readable in `STATE`,
+and the submitting client compares it to what it sent and warns the player if they differ.
+The *next* `STATE` is not necessarily the answer: it is encoded on the host's coalesce timer
+and can wait in its send queue, so one built before the `SUBMIT` arrived can land after it was
+sent. A short count therefore only arms the warning; it is reported once it has stood for
+`C.SUBMIT_SETTLE` seconds, and any later `STATE` re-judges it. The host always broadcasts a
+`STATE` after applying a `SUBMIT`, so a real refusal still warns. A `STATE` that does not list
+the sender as submitted predates their first `SUBMIT` and is not judged at all (0.4.2). The count is **derived, not a new field** — every accepted entry in `STATE` carries its
 owner, so a client counts its own and no protocol change is needed. Losing an entry to a validation quirk and finding out after the roll is exactly
 the failure mode that destroys trust in a loot addon.
 

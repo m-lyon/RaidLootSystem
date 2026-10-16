@@ -172,8 +172,8 @@ player a position the host will not honour.
 
 ## 4. Submission feedback
 
-After `SUBMIT`, compare the accepted-entry count in the next `STATE` against what was sent
-(002 §5). On a mismatch, show a visible warning naming the dropped entries and why. Silently
+After `SUBMIT`, compare the accepted-entry count in `STATE` against what was sent, once the
+count has settled (002 §5). On a mismatch, show a visible warning naming the dropped entries and why. Silently
 losing an entry and discovering it after the roll is the failure mode that destroys trust in a
 loot addon, so it gets a loud, specific message rather than a generic error.
 
