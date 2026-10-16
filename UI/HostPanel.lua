@@ -441,15 +441,22 @@ end
 
 local function refreshHealth()
     local Roster = ns.Roster
-    local n = 0
+    local n, y = 0, 0
+    -- A row is as tall as its wrapped label. The label is centred in its row, so a
+    -- long Unclaimed or Contested list in a fixed ROW_H row wrapped both upwards over
+    -- the line above and downwards into the addon status rows (0.4.2). A FontString
+    -- with only a width set reports its wrapped height.
     local function line(left, right)
         n = n + 1
         local row = textRow(healthRows, health.list, n)
-        row:ClearAllPoints()
-        row:SetPoint("TOPLEFT", health.list, "TOPLEFT", 0, -(n - 1) * ROW_H)
         row.left:SetText(left)
         row.right:SetText(right or "")
+        local h = math.max(ROW_H, math.ceil(row.left:GetHeight() or 0) + 6)
+        row:SetHeight(h)
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", health.list, "TOPLEFT", 0, -y)
         row:Show()
+        y = y + h
     end
 
     local contested = Roster.ContestedNames()
@@ -477,8 +484,8 @@ local function refreshHealth()
     end
 
     for i = n + 1, #healthRows do healthRows[i]:Hide() end
-    health.list:SetHeight(n * ROW_H)
-    health:SetHeight(34 + n * ROW_H + 8)
+    health.list:SetHeight(math.max(y, 1))
+    health:SetHeight(34 + y + 8)
 end
 
 --------------------------------------------------------------------------------
