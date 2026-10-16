@@ -28,6 +28,17 @@ local function run(input, ns)
         end
         return out
 
+    elseif input.kind == "recordPublished" then
+        local published = Roster.RecordPublished(input.published, input.sender, input.order, {})
+        local players, contested = {}, {}
+        for player in pairs(published) do players[#players + 1] = player end
+        for _, claim in pairs(Roster.BuildClaims(published)) do
+            if claim.contested then contested[#contested + 1] = claim.name end
+        end
+        table.sort(players)
+        table.sort(contested)
+        return { players = players, contested = contested }
+
     elseif input.kind == "contestReason" then
         local claims = Roster.BuildClaims(input.published)
         return Roster.ContestReason(claims[input.name])
@@ -246,6 +257,55 @@ return {
                               Dave = { order = { "Sneaky" } } },
             },
             expected = "contested - Dave and Steve both claim Sneaky",
+        },
+
+        -- The live claim index across a character switch (0.4.2). Each case lists
+        -- who is left in the index and what reads as contested afterwards.
+        {
+            name = "switching to a character both lists name supersedes the old entry",
+            input = {
+                kind = "recordPublished",
+                published = { Steve = { order = { "Steve", "Sneaky", "Smash" } } },
+                sender = "Sneaky", order = { "Steve", "Sneaky", "Smash" },
+            },
+            expected = { players = { "Sneaky" }, contested = {} },
+        },
+        {
+            name = "a stranger ranking your main does not supersede you: it contests",
+            input = {
+                kind = "recordPublished",
+                published = { Steve = { order = { "Steve", "Sneaky" } } },
+                sender = "Dave", order = { "Dave", "Steve" },
+            },
+            expected = { players = { "Dave", "Steve" }, contested = { "Steve" } },
+        },
+        {
+            name = "an old entry that does not name the sender back is kept",
+            input = {
+                kind = "recordPublished",
+                published = { Steve = { order = { "Steve", "Sneaky" } } },
+                sender = "Newbie", order = { "Steve", "Sneaky", "Newbie" },
+            },
+            expected = { players = { "Newbie", "Steve" }, contested = { "Sneaky", "Steve" } },
+        },
+        {
+            name = "an unrelated player's entry is untouched",
+            input = {
+                kind = "recordPublished",
+                published = { Steve = { order = { "Steve", "Sneaky" } },
+                              Dave = { order = { "Dave", "Locky" } } },
+                sender = "Sneaky", order = { "Steve", "Sneaky" },
+            },
+            expected = { players = { "Dave", "Sneaky" }, contested = {} },
+        },
+        {
+            name = "a resubmission replaces the sender's own entry",
+            input = {
+                kind = "recordPublished",
+                published = { Steve = { order = { "Steve", "Sneaky" } } },
+                sender = "Steve", order = { "Steve" },
+            },
+            expected = { players = { "Steve" }, contested = {} },
         },
 
         -- Export and import, section 8.

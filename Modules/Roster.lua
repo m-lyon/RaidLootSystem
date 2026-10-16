@@ -146,6 +146,27 @@ function Roster.BuildClaims(published)
     return claims
 end
 
+--- Store one publish in the live claim index (`Roster.published`). Mutates and returns
+-- `published`.
+--
+-- The index is keyed by the name a ROSTER came from, which is whichever character the
+-- player is logged in on. A player who switches to another of their characters
+-- mid-campaign publishes the same ordering under a new name, and the old entry stayed
+-- behind: every character on the list read as claimed by both names, contested, and
+-- the host refused all of their entries (0.4.2). So an entry is superseded by the
+-- same mutual rule Campaign.RecordMember collapses the stored records with. Mutual,
+-- not one-way: a stranger wrongly ranking your main stays a contested claim.
+function Roster.RecordPublished(published, sender, order, chars)
+    for player, entry in pairs(published) do
+        if player ~= sender
+            and ns.Campaign.SameMember(player, entry.order, sender, order) then
+            published[player] = nil
+        end
+    end
+    published[sender] = { order = order, chars = chars }
+    return published
+end
+
 --------------------------------------------------------------------------------
 -- Pure: the hierarchy lock (spec 014)
 --------------------------------------------------------------------------------
@@ -873,8 +894,8 @@ function Roster.Publish()
     -- Record our own claim locally too, so conflicts show without a round trip.
     local me = UnitName("player")
     if me then
-        Roster.published[me] = { order = Util.copy(roster.order),
-                                 chars = Util.deepCopy(roster.chars) }
+        Roster.RecordPublished(Roster.published, me, Util.copy(roster.order),
+                               Util.deepCopy(roster.chars))
         -- And our own submission onto the campaign, by the same rule that stores
         -- everyone else's (spec 013 section 3): the roster must name us whether or
         -- not anyone was online to hear the broadcast.
@@ -985,7 +1006,7 @@ local function onRoster(sender, body)
     -- letting one in would make two players claiming a character in unrelated
     -- groups read as a conflict.
     if msg.campaignId ~= ns.Campaign.ActiveId() then return end
-    Roster.published[sender] = { order = msg.order, chars = msg.chars }
+    Roster.RecordPublished(Roster.published, sender, msg.order, msg.chars)
     for _, player in ipairs(overlaps) do
         local record = campaign.members and campaign.members[player]
         if record and not Roster.published[player] then

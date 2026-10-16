@@ -91,6 +91,11 @@ with the reasoning.
   roster draws everyone once per alt. `Campaign.RecordMember` supersedes any stored record that
   *mutually* names the incoming one. Mutual, not one-way: a stranger wrongly holding your main in
   their hierarchy must stay a contested character, which is loud, not a silent record deletion.
+  The live claim index (`Roster.published`) is keyed by sender too and applies the same rule
+  through `Roster.RecordPublished`; without it, a player switching characters mid-campaign
+  left both names claiming every character, all contested (0.4.2). Known limitation: a switch
+  *during an open round* leaves the old name's entries in it, so a character can be entered
+  under both names. Rare, and not worth the state to prevent.
 - **The hierarchy lock is enforced on receipt, not only in the editor.** `lockHierarchy` is on by
   default and bites once a campaign has resolved a round (any non-aborted history record names it). A locked
   ordering may only be *appended* to -- a swap, an insert, a removal and a truncation are all
