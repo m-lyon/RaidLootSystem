@@ -13,7 +13,7 @@ local C = ns.Constants
 -- differs, so a stale constant silently reports a raid full of matching builds. The
 -- .toc's is the half an addon manager lists. They drifted apart once already, at
 -- 0.2.0 against 0.5.0, which made the drift column say nothing for four specs.
-C.VERSION = "0.4.1"
+C.VERSION = "0.4.2"
 
 --------------------------------------------------------------------------------
 -- Comms (spec 000 section 5)
@@ -123,6 +123,7 @@ C.REJECT = {
 }
 
 C.STATE_COALESCE = 0.5        -- trailing timer on STATE broadcasts, seconds
+C.SUBMIT_SETTLE = 3           -- a short STATE must stand this long before a refusal is reported
 C.SYNC_INTERVAL = 5           -- a client sends SYNC at most this often
 C.HOST_LEFT_GRACE = 60        -- seconds past endsAt with no RESULT before a client aborts
 C.ROUND_EXPIRY = 15 * 60      -- an unresolved round aborts as EXPIRED after this
